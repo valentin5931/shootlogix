@@ -6189,15 +6189,64 @@ const App = (() => {
 
   function locExportCSV() {
     const schedules = state.locationSchedules || [];
+    const sites = state.locationSites || [];
     if (!schedules.length) { toast('No location data to export', 'info'); return; }
-    let csv = 'Location,Type,Date,Status,Locked\n';
-    schedules.forEach(s => {
-      csv += `"${s.location_name}","${s.location_type}","${s.date}","${s.status}","${s.locked ? 'Yes' : 'No'}"\n`;
+
+    // Build pricing lookup from sites
+    const pricing = {};
+    sites.forEach(s => {
+      pricing[s.name] = {
+        price_p: s.price_p || 0,
+        price_f: s.price_f || 0,
+        price_w: s.price_w || 0,
+        global_deal: s.global_deal || null,
+      };
     });
+
+    // Group schedules by location
+    const byLoc = {};
+    schedules.forEach(s => {
+      if (!byLoc[s.location_name]) byLoc[s.location_name] = [];
+      byLoc[s.location_name].push(s);
+    });
+
+    let csv = 'Location,Date,Type (P/F/W),Price per P,Price per F,Price per W,Global Deal,Total Price\n';
+    const locNames = Object.keys(byLoc).sort();
+    for (const locName of locNames) {
+      const entries = byLoc[locName].sort((a, b) => a.date.localeCompare(b.date));
+      const p = pricing[locName] || { price_p: 0, price_f: 0, price_w: 0, global_deal: null };
+      const counts = { P: 0, F: 0, W: 0 };
+      entries.forEach(e => { if (counts[e.status] !== undefined) counts[e.status]++; });
+
+      let total;
+      if (p.global_deal && p.global_deal > 0) {
+        total = p.global_deal;
+      } else {
+        total = counts.P * p.price_p + counts.F * p.price_f + counts.W * p.price_w;
+      }
+
+      // One row per day
+      entries.forEach(e => {
+        csv += `"${locName}","${e.date}","${e.status}","${p.price_p || ''}","${p.price_f || ''}","${p.price_w || ''}","${p.global_deal || ''}",""\n`;
+      });
+      // Summary row
+      const daysSummary = [];
+      if (counts.P) daysSummary.push(`${counts.P}P`);
+      if (counts.F) daysSummary.push(`${counts.F}F`);
+      if (counts.W) daysSummary.push(`${counts.W}W`);
+      csv += `"${locName} - TOTAL","","${daysSummary.join(' + ')}","","","","","${total.toFixed(2)}"\n`;
+    }
+
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const fname = `KLAS7_LOCATIONS_${yy}${mm}${dd}.csv`;
+
     const blob = new Blob([csv], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'shootlogix_locations.csv';
+    a.download = fname;
     a.click();
   }
 
@@ -6206,6 +6255,10 @@ const App = (() => {
     $('nl-name').value = '';
     $('nl-type').value = 'game';
     $('nl-notes').value = '';
+    $('nl-price-p').value = '';
+    $('nl-price-f').value = '';
+    $('nl-price-w').value = '';
+    $('nl-global-deal').value = '';
     $('nl-edit-id').value = '';
     $('loc-modal-title').textContent = 'Add Location';
     $('nl-confirm-btn').textContent = 'Create';
@@ -6219,6 +6272,10 @@ const App = (() => {
     $('nl-name').value = site.name || '';
     $('nl-type').value = site.location_type || 'game';
     $('nl-notes').value = site.access_note || '';
+    $('nl-price-p').value = site.price_p != null ? site.price_p : '';
+    $('nl-price-f').value = site.price_f != null ? site.price_f : '';
+    $('nl-price-w').value = site.price_w != null ? site.price_w : '';
+    $('nl-global-deal').value = site.global_deal != null ? site.global_deal : '';
     $('nl-edit-id').value = String(site.id);
     $('loc-modal-title').textContent = 'Edit Location';
     $('nl-confirm-btn').textContent = 'Save';
@@ -6234,10 +6291,18 @@ const App = (() => {
     const name = $('nl-name').value.trim();
     if (!name) { toast('Name is required', 'error'); return; }
     const editId = $('nl-edit-id').value;
+    const pricePVal = $('nl-price-p').value.trim();
+    const priceFVal = $('nl-price-f').value.trim();
+    const priceWVal = $('nl-price-w').value.trim();
+    const globalDealVal = $('nl-global-deal').value.trim();
     const data = {
       name,
       location_type: $('nl-type').value,
       access_note: $('nl-notes').value.trim(),
+      price_p: pricePVal !== '' ? parseFloat(pricePVal) : null,
+      price_f: priceFVal !== '' ? parseFloat(priceFVal) : null,
+      price_w: priceWVal !== '' ? parseFloat(priceWVal) : null,
+      global_deal: globalDealVal !== '' ? parseFloat(globalDealVal) : null,
     };
     try {
       if (editId) {

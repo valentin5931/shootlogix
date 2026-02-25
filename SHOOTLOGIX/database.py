@@ -411,7 +411,11 @@ CREATE TABLE IF NOT EXISTS locations (
     lng             REAL,
     type            TEXT DEFAULT 'île',  -- île / plage / quai / hôtel
     location_type   TEXT DEFAULT 'game', -- tribal_camp / game / reward
-    access_note     TEXT
+    access_note     TEXT,
+    price_p         REAL,            -- Price per Prep day
+    price_f         REAL,            -- Price per Filming day
+    price_w         REAL,            -- Price per Wrap day
+    global_deal     REAL             -- Flat rate (overrides per-day pricing)
 );
 
 -- Guard posts (dynamic list of guard positions)
@@ -665,6 +669,13 @@ def _migrate_db():
         if 'location_type' not in loc_cols:
             conn.execute("ALTER TABLE locations ADD COLUMN location_type TEXT DEFAULT 'game'")
             print("Migration: added locations.location_type")
+        # locations pricing columns
+        if 'price_p' not in loc_cols:
+            conn.execute("ALTER TABLE locations ADD COLUMN price_p REAL")
+            conn.execute("ALTER TABLE locations ADD COLUMN price_f REAL")
+            conn.execute("ALTER TABLE locations ADD COLUMN price_w REAL")
+            conn.execute("ALTER TABLE locations ADD COLUMN global_deal REAL")
+            print("Migration: added locations pricing columns (price_p, price_f, price_w, global_deal)")
 
 
 # ─── Working days ─────────────────────────────────────────────────────────────
@@ -2241,7 +2252,8 @@ def get_location_sites(prod_id):
 
 
 def create_location_site(data):
-    cols = ["production_id", "name", "location_type", "type", "access_note", "lat", "lng"]
+    cols = ["production_id", "name", "location_type", "type", "access_note", "lat", "lng",
+            "price_p", "price_f", "price_w", "global_deal"]
     fields = {k: data[k] for k in cols if k in data}
     placeholders = ", ".join("?" * len(fields))
     col_names = ", ".join(fields.keys())
@@ -2255,7 +2267,8 @@ def create_location_site(data):
 
 
 def update_location_site(loc_id, data):
-    allowed = ["name", "location_type", "type", "access_note", "lat", "lng"]
+    allowed = ["name", "location_type", "type", "access_note", "lat", "lng",
+               "price_p", "price_f", "price_w", "global_deal"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -2684,9 +2697,55 @@ def get_budget(prod_id):
             "source": "auto",
         })
 
-    # GUARDS - LOCATION (auto from location_schedules)
+    # LOCATIONS (site pricing)
     loc_schedules = get_location_schedules(prod_id)
     loc_sites = get_location_sites(prod_id)
+    site_pricing = {}
+    for s in loc_sites:
+        site_pricing[s['name']] = {
+            'price_p': s.get('price_p') or 0,
+            'price_f': s.get('price_f') or 0,
+            'price_w': s.get('price_w') or 0,
+            'global_deal': s.get('global_deal'),
+        }
+
+    # Count P/F/W days per location
+    loc_day_counts = {}
+    for ls in loc_schedules:
+        loc_name = ls['location_name']
+        loc_day_counts.setdefault(loc_name, {'P': 0, 'F': 0, 'W': 0})
+        if ls['status'] in ('P', 'F', 'W'):
+            loc_day_counts[loc_name][ls['status']] += 1
+
+    for loc_name, counts in loc_day_counts.items():
+        pricing = site_pricing.get(loc_name, {'price_p': 0, 'price_f': 0, 'price_w': 0, 'global_deal': None})
+        if pricing['global_deal'] and pricing['global_deal'] > 0:
+            total = pricing['global_deal']
+        else:
+            total = (counts['P'] * pricing['price_p'] +
+                     counts['F'] * pricing['price_f'] +
+                     counts['W'] * pricing['price_w'])
+        if total > 0:
+            grand_total_est += total
+            days_str = []
+            if counts['P']: days_str.append(f"{counts['P']}P")
+            if counts['F']: days_str.append(f"{counts['F']}F")
+            if counts['W']: days_str.append(f"{counts['W']}W")
+            rows.append({
+                "department": "LOCATIONS",
+                "name": loc_name,
+                "boat": "",
+                "vendor": "GLOBAL DEAL" if (pricing['global_deal'] and pricing['global_deal'] > 0) else ", ".join(days_str),
+                "start_date": None,
+                "end_date": None,
+                "working_days": counts['P'] + counts['F'] + counts['W'],
+                "unit_price_estimate": pricing['global_deal'] if (pricing['global_deal'] and pricing['global_deal'] > 0) else total / max(counts['P'] + counts['F'] + counts['W'], 1),
+                "amount_estimate": total,
+                "amount_actual": None,
+                "source": "auto",
+            })
+
+    # GUARDS - LOCATION (auto from location_schedules)
     type_by_name = {s['name']: s.get('location_type', 'game') for s in loc_sites}
     loc_guard_by_loc = {}
     for ls in loc_schedules:
