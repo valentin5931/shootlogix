@@ -1889,6 +1889,48 @@ def api_security_auto_fill(prod_id):
     })
 
 
+# ─── FNB Budget Export ───────────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/export/fnb-budget/csv")
+def api_export_fnb_budget_csv(prod_id):
+    """Export simplified FNB budget: totals by category only.
+    Two columns: Up to Date (consumption) and Estimate (purchases).
+    Filename: KLAS7_FNB_YYMMDD
+    """
+    from datetime import datetime as dt
+    prod_or_404(prod_id)
+    budget = get_fnb_budget_data(prod_id)
+
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["KLAS 7 - FNB BUDGET EXPORT"])
+    w.writerow([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    w.writerow([])
+    w.writerow(["Category", "Up to Date ($)", "Estimate ($)", "Total ($)"])
+
+    grand_utd = 0
+    grand_est = 0
+    for cat in budget.get('categories', []):
+        utd = round(cat.get('consumption_total', 0), 2)
+        est = round(cat.get('purchase_total', 0), 2)
+        total = round(utd + est, 2)
+        w.writerow([cat['name'], utd, est, total])
+        grand_utd += utd
+        grand_est += est
+
+    w.writerow([])
+    grand_total = round(grand_utd + grand_est, 2)
+    w.writerow(["GRAND TOTAL", round(grand_utd, 2), round(grand_est, 2), grand_total])
+    w.writerow([])
+    balance = round(grand_est - grand_utd, 2)
+    w.writerow([f"Balance (Estimate - Up to Date): ${balance}"])
+
+    out.seek(0)
+    fname = f"KLAS7_FNB_{dt.now().strftime('%y%m%d')}.csv"
+    return Response(out.read(), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename={fname}"})
+
+
 # ─── FNB Tracking ───────────────────────────────────────────────────────────
 
 @app.route("/api/productions/<int:prod_id>/fnb-tracking", methods=["GET"])

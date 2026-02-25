@@ -8144,25 +8144,9 @@ const App = (() => {
   // ── FNB Export ────────────────────────────────────────────────
   function fnbExportCSV() {
     const items = state.fnbItems || [];
-    const entries = state.fnbEntries || [];
-    const cats = state.fnbCategories || [];
     if (!items.length) { toast('No FNB data to export', 'info'); return; }
-
-    const catMap = {};
-    cats.forEach(c => { catMap[c.id] = c.name; });
-
-    let csv = 'Category,Item,Unit,Unit Price,Type,Date,Quantity,Total\n';
-    entries.forEach(e => {
-      const it = items.find(i => i.id === e.item_id);
-      if (!it) return;
-      const total = (e.quantity || 0) * (it.unit_price || 0);
-      csv += `"${catMap[it.category_id] || ''}","${it.name}","${it.unit || 'unit'}",${(it.unit_price || 0).toFixed(2)},"${e.entry_type}","${e.date}",${e.quantity || 0},${total.toFixed(2)}\n`;
-    });
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'shootlogix_fnb.csv';
-    a.click();
+    // Use server-side simplified export (totals by category, Up to Date + Estimate)
+    window.location.href = `/api/productions/${PROD}/export/fnb-budget/csv`;
   }
 
 
