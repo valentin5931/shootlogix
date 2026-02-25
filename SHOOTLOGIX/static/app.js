@@ -64,6 +64,7 @@ const App = (() => {
     fuelMachinery:  [],
     fuelTab:        'boats',
     fuelLockedDays: {},
+    fuelLockedPrices: {},   // {date: {diesel_price, petrol_price}} — snapshots from DB
     fuelPricePerL:  { DIESEL: 0, PETROL: 0 },
   };
 
@@ -3802,7 +3803,63 @@ const App = (() => {
   const FUEL_DEFAULTS = { boats: 100, picture_boats: 40, security_boats: 40, transport: 20 };
   const _FUEL_TABS = ['boats','picture_boats','security_boats','transport','machinery','budget'];
 
+  // Load global fuel prices and locked price snapshots from DB
+  async function _loadFuelGlobals() {
+    try {
+      const [prices, locked] = await Promise.all([
+        api('GET', '/api/fuel-prices'),
+        api('GET', '/api/fuel-locked-prices'),
+      ]);
+      state.fuelPricePerL = { DIESEL: prices.diesel || 0, PETROL: prices.petrol || 0 };
+      state.fuelLockedPrices = locked || {};
+      // Rebuild fuelLockedDays from DB locked prices
+      state.fuelLockedDays = {};
+      for (const d of Object.keys(state.fuelLockedPrices)) {
+        state.fuelLockedDays[d] = true;
+      }
+      // Sync localStorage for offline fallback
+      try { localStorage.setItem('fuel_locked_days', JSON.stringify(state.fuelLockedDays)); } catch(e) {}
+      try { localStorage.setItem('fuel_price_per_l', JSON.stringify(state.fuelPricePerL)); } catch(e) {}
+      _renderFuelPriceBar();
+    } catch(e) { console.warn('Could not load fuel globals from DB:', e); }
+  }
+
+  // Render the persistent fuel price bar in the topbar area
+  function _renderFuelPriceBar() {
+    const bar = $('fuel-price-bar');
+    if (!bar) return;
+    const pD = state.fuelPricePerL.DIESEL || 0;
+    const pP = state.fuelPricePerL.PETROL || 0;
+    bar.innerHTML = `
+      <label style="display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:#3B82F6;font-weight:600">
+        <span style="width:6px;height:6px;border-radius:50%;background:#3B82F6"></span>DIESEL
+        <input type="number" step="0.01" min="0" value="${pD||''}" placeholder="0.00"
+          id="fp-diesel" onchange="App.fuelGlobalPriceChange('DIESEL',this.value)"
+          style="width:56px;font-size:.68rem;padding:.12rem .25rem;background:var(--bg-surface);border:1px solid var(--border);border-radius:4px;color:var(--text-0);text-align:right"> $/L
+      </label>
+      <label style="display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:#F97316;font-weight:600">
+        <span style="width:6px;height:6px;border-radius:50%;background:#F97316"></span>PETROL
+        <input type="number" step="0.01" min="0" value="${pP||''}" placeholder="0.00"
+          id="fp-petrol" onchange="App.fuelGlobalPriceChange('PETROL',this.value)"
+          style="width:56px;font-size:.68rem;padding:.12rem .25rem;background:var(--bg-surface);border:1px solid var(--border);border-radius:4px;color:var(--text-0);text-align:right"> $/L
+      </label>`;
+  }
+
+  async function fuelGlobalPriceChange(type, val) {
+    const price = parseFloat(val) || 0;
+    state.fuelPricePerL[type] = price;
+    try {
+      const payload = type === 'DIESEL' ? { diesel: price } : { petrol: price };
+      await api('PUT', '/api/fuel-prices', payload);
+      try { localStorage.setItem('fuel_price_per_l', JSON.stringify(state.fuelPricePerL)); } catch(e) {}
+      // Re-render fuel budget if currently viewing it
+      if (state.tab === 'fuel' && state.fuelTab === 'budget') renderFuelBudget();
+    } catch(e) { toast('Error saving fuel price: ' + e.message, 'error'); }
+  }
+
   async function _loadAndRenderFuel() {
+    // Always refresh global fuel prices + locked snapshots from DB
+    await _loadFuelGlobals();
     try {
       const [entries, machinery] = await Promise.all([
         api('GET', `/api/productions/${state.prodId}/fuel-entries`),
@@ -4083,9 +4140,23 @@ const App = (() => {
 
   // ── Lock day ──────────────────────────────────────────────────────────────
 
-  function fuelToggleDayLock(date, locked) {
-    if (locked) state.fuelLockedDays[date] = true;
-    else delete state.fuelLockedDays[date];
+  async function fuelToggleDayLock(date, locked) {
+    if (locked) {
+      // Snapshot current prices
+      const dP = state.fuelPricePerL.DIESEL || 0;
+      const pP = state.fuelPricePerL.PETROL || 0;
+      state.fuelLockedDays[date] = true;
+      state.fuelLockedPrices[date] = { diesel_price: dP, petrol_price: pP };
+      try {
+        await api('POST', '/api/fuel-locked-prices', { date, diesel_price: dP, petrol_price: pP });
+      } catch(e) { console.warn('Failed to persist fuel lock:', e); }
+    } else {
+      delete state.fuelLockedDays[date];
+      delete state.fuelLockedPrices[date];
+      try {
+        await api('DELETE', `/api/fuel-locked-prices/${date}`);
+      } catch(e) { console.warn('Failed to persist fuel unlock:', e); }
+    }
     try { localStorage.setItem('fuel_locked_days', JSON.stringify(state.fuelLockedDays)); } catch(e) {}
     const tab = state.fuelTab;
     if (['boats','picture_boats','security_boats','transport'].includes(tab)) renderFuelGrid(tab);
@@ -4202,31 +4273,50 @@ const App = (() => {
     const cats = ['boats','picture_boats','security_boats','transport'];
     const catLabels = { boats:'BOATS', picture_boats:'PICTURE BOATS', security_boats:'SECURITY BOATS', transport:'TRANSPORT', machinery:'MACHINERY' };
 
+    const pD = state.fuelPricePerL.DIESEL || 0;
+    const pP = state.fuelPricePerL.PETROL || 0;
+
+    // Compute per-category: litres + cost split by locked (Up to Date) vs unlocked (Estimate)
     const catData = {};
     cats.forEach(cat => {
       const es = (state.fuelEntries||[]).filter(e => e.source_type === cat);
-      const diesel = es.filter(e => e.fuel_type==='DIESEL').reduce((s,e) => s+(e.liters||0), 0);
-      const petrol = es.filter(e => e.fuel_type==='PETROL').reduce((s,e) => s+(e.liters||0), 0);
-      catData[cat] = { diesel: Math.round(diesel), petrol: Math.round(petrol), total: Math.round(diesel+petrol) };
+      let diesel = 0, petrol = 0, costUtd = 0, costEst = 0;
+      es.forEach(e => {
+        const l = e.liters || 0;
+        const ft = e.fuel_type || 'DIESEL';
+        const d = e.date || '';
+        if (ft === 'PETROL') petrol += l; else diesel += l;
+        // Locked day: use snapshot price; unlocked: use current price
+        if (state.fuelLockedPrices[d]) {
+          const lp = state.fuelLockedPrices[d];
+          costUtd += l * (ft === 'PETROL' ? (lp.petrol_price||0) : (lp.diesel_price||0));
+        } else {
+          costEst += l * (ft === 'PETROL' ? pP : pD);
+        }
+      });
+      catData[cat] = { diesel: Math.round(diesel), petrol: Math.round(petrol), total: Math.round(diesel+petrol), costUtd: Math.round(costUtd), costEst: Math.round(costEst) };
     });
-    let mD=0, mP=0;
+
+    // Machinery (always estimate since not day-locked)
+    let mD=0, mP=0, mCost=0;
     (state.fuelMachinery||[]).forEach(m => {
       const wd = workingDays(m.start_date, m.end_date);
       const tot = Math.round((m.liters_per_day||0)*wd);
-      if (m.fuel_type==='PETROL') mP += tot; else mD += tot;
+      if (m.fuel_type==='PETROL') { mP += tot; mCost += tot * pP; }
+      else { mD += tot; mCost += tot * pD; }
     });
-    catData['machinery'] = { diesel:mD, petrol:mP, total:mD+mP };
+    catData['machinery'] = { diesel:mD, petrol:mP, total:mD+mP, costUtd:0, costEst:Math.round(mCost) };
 
     const allCats = [...cats, 'machinery'];
     const gD = allCats.reduce((s,c) => s+catData[c].diesel, 0);
     const gP = allCats.reduce((s,c) => s+catData[c].petrol, 0);
     const gT = gD + gP;
+    const gUtd = allCats.reduce((s,c) => s+catData[c].costUtd, 0);
+    const gEst = allCats.reduce((s,c) => s+catData[c].costEst, 0);
+    const gTotal = gUtd + gEst;
 
-    const pD = state.fuelPricePerL.DIESEL || 0;
-    const pP = state.fuelPricePerL.PETROL || 0;
-    const costEst = Math.round(gD*pD + gP*pP);
-    const fmtL = l => l > 0 ? l.toLocaleString('fr-FR')+' L' : '—';
-    const fmtE = c => c > 0 ? c.toLocaleString('fr-FR')+' €' : '—';
+    const fmtL = l => l > 0 ? l.toLocaleString('fr-FR')+' L' : '---';
+    const fmtC = c => c > 0 ? '$'+c.toLocaleString('fr-FR') : '---';
 
     const cards = `<div class="stat-grid" style="margin-bottom:.75rem">
       <div class="stat-card" style="border:1px solid #3B82F6;background:rgba(59,130,246,.06)">
@@ -4239,37 +4329,53 @@ const App = (() => {
       </div>
       <div class="stat-card" style="border:1px solid var(--border)">
         <div class="stat-val">${fmtL(gT)}</div>
-        <div class="stat-lbl">TOTAL GÉNÉRAL</div>
+        <div class="stat-lbl">TOTAL LITRES</div>
       </div>
-      ${costEst>0?`<div class="stat-card" style="border:1px solid var(--green);background:rgba(34,197,94,.07)">
-        <div class="stat-val" style="color:var(--green)">${fmtE(costEst)}</div>
-        <div class="stat-lbl">COÛT ESTIMÉ</div>
+      <div class="stat-card" style="border:1px solid #10B981;background:rgba(16,185,129,.07)">
+        <div class="stat-val" style="color:#10B981">${fmtC(gUtd)}</div>
+        <div class="stat-lbl">UP TO DATE (locked)</div>
+      </div>
+      <div class="stat-card" style="border:1px solid #F59E0B;background:rgba(245,158,11,.07)">
+        <div class="stat-val" style="color:#F59E0B">${fmtC(gEst)}</div>
+        <div class="stat-lbl">ESTIMATE (unlocked)</div>
+      </div>
+      ${gTotal>0?`<div class="stat-card" style="border:1px solid var(--green);background:rgba(34,197,94,.07)">
+        <div class="stat-val" style="color:var(--green)">${fmtC(gTotal)}</div>
+        <div class="stat-lbl">TOTAL COST</div>
       </div>`:''}
     </div>`;
 
     const priceInputs = `<div style="display:flex;gap:1rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
-      <span style="font-size:.75rem;color:var(--text-3);font-weight:600">Prix carburant :</span>
+      <span style="font-size:.75rem;color:var(--text-3);font-weight:600">Fuel prices :</span>
       <label style="display:flex;align-items:center;gap:.35rem;font-size:.75rem;color:var(--text-2)">DIESEL
         <input type="number" step="0.01" min="0" value="${pD||''}" placeholder="0.00" onchange="App.fuelPriceChange('DIESEL',this.value)"
-          style="width:64px;font-size:.75rem;padding:.2rem .35rem;background:var(--bg-surface);border:1px solid var(--border);border-radius:4px;color:var(--text-0);text-align:right"> €/L
+          style="width:64px;font-size:.75rem;padding:.2rem .35rem;background:var(--bg-surface);border:1px solid var(--border);border-radius:4px;color:var(--text-0);text-align:right"> $/L
       </label>
       <label style="display:flex;align-items:center;gap:.35rem;font-size:.75rem;color:var(--text-2)">PETROL
         <input type="number" step="0.01" min="0" value="${pP||''}" placeholder="0.00" onchange="App.fuelPriceChange('PETROL',this.value)"
-          style="width:64px;font-size:.75rem;padding:.2rem .35rem;background:var(--bg-surface);border:1px solid var(--border);border-radius:4px;color:var(--text-0);text-align:right"> €/L
+          style="width:64px;font-size:.75rem;padding:.2rem .35rem;background:var(--bg-surface);border:1px solid var(--border);border-radius:4px;color:var(--text-0);text-align:right"> $/L
       </label>
+      <div style="flex:1"></div>
+      <button class="btn btn-sm btn-primary" onclick="App.fuelBudgetExportCSV()">Export CSV</button>
     </div>`;
 
     const tableRows = allCats.map((cat,i) => {
       const d = catData[cat];
-      const cost = Math.round(d.diesel*pD + d.petrol*pP);
       return `<tr style="${i%2?'background:var(--bg-surface)':''}">
         <td style="font-weight:600;color:var(--text-0)">${catLabels[cat]}</td>
         <td style="text-align:right;color:#3B82F6">${fmtL(d.diesel)}</td>
         <td style="text-align:right;color:#F97316">${fmtL(d.petrol)}</td>
         <td style="text-align:right;font-weight:700;color:var(--text-1)">${fmtL(d.total)}</td>
-        <td style="text-align:right;color:var(--green)">${cost>0?fmtE(cost):''}</td>
+        <td style="text-align:right;color:#10B981">${d.costUtd>0?fmtC(d.costUtd):'---'}</td>
+        <td style="text-align:right;color:#F59E0B">${d.costEst>0?fmtC(d.costEst):'---'}</td>
+        <td style="text-align:right;color:var(--green);font-weight:600">${(d.costUtd+d.costEst)>0?fmtC(d.costUtd+d.costEst):'---'}</td>
       </tr>`;
     }).join('');
+
+    const lockedCount = Object.keys(state.fuelLockedPrices).length;
+    const lockedNote = lockedCount > 0
+      ? `<div style="font-size:.7rem;color:var(--text-4);margin-top:.5rem">${lockedCount} day${lockedCount>1?'s':''} locked with frozen prices. Up to Date = actual cost at lock-time price. Estimate = projected cost at current price.</div>`
+      : `<div style="font-size:.7rem;color:var(--text-4);margin-top:.5rem">No days locked yet. Lock days in the schedule sub-tabs to freeze their fuel cost at the current price.</div>`;
 
     container.innerHTML = `<div style="padding:1rem">
       ${cards}${priceInputs}
@@ -4280,7 +4386,9 @@ const App = (() => {
             <th style="text-align:right">DIESEL (L)</th>
             <th style="text-align:right">PETROL (L)</th>
             <th style="text-align:right">Total (L)</th>
-            <th style="text-align:right">Coût est.</th>
+            <th style="text-align:right">Up to Date ($)</th>
+            <th style="text-align:right">Estimate ($)</th>
+            <th style="text-align:right">Total ($)</th>
           </tr></thead>
           <tbody>
             ${tableRows}
@@ -4289,21 +4397,36 @@ const App = (() => {
               <td style="text-align:right;color:#3B82F6;font-weight:700">${fmtL(gD)}</td>
               <td style="text-align:right;color:#F97316;font-weight:700">${fmtL(gP)}</td>
               <td style="text-align:right;font-weight:700;color:var(--text-0);font-size:1.05rem">${fmtL(gT)}</td>
-              <td style="text-align:right;color:var(--green);font-weight:700">${costEst>0?fmtE(costEst):''}</td>
+              <td style="text-align:right;color:#10B981;font-weight:700">${fmtC(gUtd)}</td>
+              <td style="text-align:right;color:#F59E0B;font-weight:700">${fmtC(gEst)}</td>
+              <td style="text-align:right;color:var(--green);font-weight:700;font-size:1.05rem">${fmtC(gTotal)}</td>
             </tr>
           </tbody>
         </table>
       </div>
+      ${lockedNote}
     </div>`;
   }
 
-  function fuelPriceChange(type, val) {
+  async function fuelPriceChange(type, val) {
     state.fuelPricePerL[type] = parseFloat(val) || 0;
     try { localStorage.setItem('fuel_price_per_l', JSON.stringify(state.fuelPricePerL)); } catch(e) {}
+    // Persist to DB
+    try {
+      const payload = type === 'DIESEL' ? { diesel: state.fuelPricePerL.DIESEL } : { petrol: state.fuelPricePerL.PETROL };
+      await api('PUT', '/api/fuel-prices', payload);
+    } catch(e) { /* silent */ }
+    _renderFuelPriceBar();
     renderFuelBudget();
   }
 
   // ── Export ─────────────────────────────────────────────────────────────────
+
+  // ── Fuel Budget Export (KLAS7_FUEL_YYMMDD.csv) ─────────────────────────────
+
+  function fuelBudgetExportCSV() {
+    window.location.href = `/api/productions/${state.prodId}/export/fuel-budget/csv`;
+  }
 
   function fuelToggleExport() {
     $('fuel-exp-menu').classList.toggle('hidden');
@@ -8081,6 +8204,8 @@ const App = (() => {
     try {
       state.lbLockedDays = JSON.parse(localStorage.getItem('labour_locked_days') || '{}');
     } catch(e) { state.lbLockedDays = {}; }
+    // Fuel prices + locked days are now loaded from DB (see _loadFuelGlobals below)
+    // Keep localStorage as fallback for initial render before async load completes
     try {
       state.fuelLockedDays = JSON.parse(localStorage.getItem('fuel_locked_days') || '{}');
     } catch(e) { state.fuelLockedDays = {}; }
@@ -8177,7 +8302,7 @@ const App = (() => {
 
     try {
       await loadProduction();
-      await Promise.all([loadShootingDays(), loadBoatsData(), loadPictureBoatsData()]);
+      await Promise.all([loadShootingDays(), loadBoatsData(), loadPictureBoatsData(), _loadFuelGlobals()]);
       renderPDT();
     } catch (e) {
       console.error('Init error:', e);
@@ -8300,7 +8425,7 @@ const App = (() => {
     fuelCellInput, fuelRowTypeChange,
     fuelToggleExport, fuelExportCSV, fuelExportJSON,
     showFuelMachineryModal, closeFuelMachineryModal, confirmFuelMachineryModal, deleteFuelMachinery,
-    fuelPriceChange,
+    fuelPriceChange, fuelGlobalPriceChange, fuelBudgetExportCSV,
     // Labour (ex-Helpers)
     lbSetView, lbFilterWorkers, lbOpenWorkerView,
     lbOnWorkerDragStart, lbOnWorkerDragEnd, lbOnDragOver, lbOnDragLeave, lbOnDrop,

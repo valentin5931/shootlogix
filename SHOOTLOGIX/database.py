@@ -619,6 +619,14 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- Fuel locked day price snapshots: stores the diesel/petrol price at lock time
+CREATE TABLE IF NOT EXISTS fuel_locked_prices (
+    date          TEXT PRIMARY KEY,
+    diesel_price  REAL DEFAULT 0,
+    petrol_price  REAL DEFAULT 0,
+    locked_at     TEXT DEFAULT (datetime('now'))
+);
         """)
 
     print("Database initialized — ShootLogix schema v1")
@@ -1461,6 +1469,30 @@ def update_fuel_machinery(machinery_id, data):
 def delete_fuel_machinery(machinery_id):
     with get_db() as conn:
         conn.execute("DELETE FROM fuel_machinery WHERE id=?", (machinery_id,))
+
+
+# ─── Fuel locked prices ─────────────────────────────────────────────────────
+
+def get_fuel_locked_prices():
+    """Return all locked day price snapshots as {date: {diesel_price, petrol_price}}."""
+    with get_db() as conn:
+        rows = conn.execute("SELECT * FROM fuel_locked_prices ORDER BY date").fetchall()
+        return {r["date"]: {"diesel_price": r["diesel_price"], "petrol_price": r["petrol_price"]} for r in rows}
+
+
+def set_fuel_locked_price(date, diesel_price, petrol_price):
+    """Lock a day with the current fuel prices."""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO fuel_locked_prices (date, diesel_price, petrol_price) VALUES (?,?,?)",
+            (date, diesel_price, petrol_price)
+        )
+
+
+def delete_fuel_locked_price(date):
+    """Unlock a day (remove the price snapshot)."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM fuel_locked_prices WHERE date=?", (date,))
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────

@@ -30,6 +30,7 @@ from database import (
     delete_transport_assignment, delete_transport_assignment_by_function,
     get_fuel_entries, upsert_fuel_entry, delete_fuel_entry, delete_fuel_entries_for_assignment,
     get_fuel_machinery, create_fuel_machinery, update_fuel_machinery, delete_fuel_machinery,
+    get_fuel_locked_prices, set_fuel_locked_price, delete_fuel_locked_price,
     get_helpers, create_helper, update_helper, delete_helper,
     get_helper_assignments, create_helper_assignment, update_helper_assignment,
     delete_helper_assignment, delete_helper_assignment_by_function,
@@ -1274,6 +1275,164 @@ def api_update_fuel_machinery(machinery_id):
 def api_delete_fuel_machinery(machinery_id):
     delete_fuel_machinery(machinery_id)
     return jsonify({"ok": True})
+
+
+# ─── Fuel prices (global settings) ───────────────────────────────────────────
+
+@app.route("/api/fuel-prices", methods=["GET"])
+def api_get_fuel_prices():
+    """Get global fuel prices (diesel/petrol in USD per litre)."""
+    diesel = get_setting("fuel_price_diesel", "0")
+    petrol = get_setting("fuel_price_petrol", "0")
+    return jsonify({"diesel": float(diesel), "petrol": float(petrol)})
+
+
+@app.route("/api/fuel-prices", methods=["PUT"])
+def api_set_fuel_prices():
+    """Set global fuel prices."""
+    data = request.json or {}
+    if "diesel" in data:
+        set_setting("fuel_price_diesel", str(float(data["diesel"])))
+    if "petrol" in data:
+        set_setting("fuel_price_petrol", str(float(data["petrol"])))
+    diesel = get_setting("fuel_price_diesel", "0")
+    petrol = get_setting("fuel_price_petrol", "0")
+    return jsonify({"diesel": float(diesel), "petrol": float(petrol)})
+
+
+# ─── Fuel locked prices (day snapshots) ─────────────────────────────────────
+
+@app.route("/api/fuel-locked-prices", methods=["GET"])
+def api_get_fuel_locked_prices():
+    """Get all locked day price snapshots."""
+    return jsonify(get_fuel_locked_prices())
+
+
+@app.route("/api/fuel-locked-prices", methods=["POST"])
+def api_lock_fuel_day():
+    """Lock a day with current fuel prices snapshot."""
+    data = request.json or {}
+    date = data.get("date")
+    if not date:
+        return jsonify({"error": "date is required"}), 400
+    diesel_price = float(data.get("diesel_price", 0))
+    petrol_price = float(data.get("petrol_price", 0))
+    set_fuel_locked_price(date, diesel_price, petrol_price)
+    return jsonify({"ok": True, "date": date, "diesel_price": diesel_price, "petrol_price": petrol_price})
+
+
+@app.route("/api/fuel-locked-prices/<date>", methods=["DELETE"])
+def api_unlock_fuel_day(date):
+    """Unlock a day (remove the price snapshot)."""
+    delete_fuel_locked_price(date)
+    return jsonify({"ok": True})
+
+
+# ─── Fuel budget export (from BUDGET tab) ────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/export/fuel-budget/csv")
+def api_export_fuel_budget_csv(prod_id):
+    """Export fuel budget breakdown by consumer: total litres + total price.
+    Filename: KLAS7_FUEL_YYMMDD
+    """
+    from datetime import datetime as dt
+    prod_or_404(prod_id)
+    entries = get_fuel_entries(prod_id)
+    machinery = get_fuel_machinery(prod_id)
+    locked_prices = get_fuel_locked_prices()
+
+    # Current global prices
+    cur_diesel = float(get_setting("fuel_price_diesel", "0"))
+    cur_petrol = float(get_setting("fuel_price_petrol", "0"))
+
+    # Build consumer breakdown: group by source_type + entity name
+    # We need assignment data to resolve consumer names
+    from database import (get_boat_assignments, get_picture_boat_assignments,
+                          get_transport_assignments, get_security_boat_assignments)
+    asgn_map = {}
+    for ctx, fetcher in [
+        ('boats', lambda: get_boat_assignments(prod_id, context='boats')),
+        ('picture_boats', lambda: get_picture_boat_assignments(prod_id)),
+        ('security_boats', lambda: get_security_boat_assignments(prod_id)),
+        ('transport', lambda: get_transport_assignments(prod_id)),
+    ]:
+        for a in fetcher():
+            asgn_map[(ctx, a['id'])] = (
+                a.get('boat_name_override') or a.get('boat_name') or
+                a.get('vehicle_name_override') or a.get('vehicle_name') or '?',
+                a.get('function_name') or '?'
+            )
+
+    # Group entries by consumer
+    consumers = {}
+    for e in entries:
+        key = (e['source_type'], e['assignment_id'])
+        name_info = asgn_map.get(key, (f"#{e['assignment_id']}", '?'))
+        consumer_key = f"{e['source_type'].upper()} | {name_info[0]} | {name_info[1]}"
+        if consumer_key not in consumers:
+            consumers[consumer_key] = {'diesel_l': 0, 'petrol_l': 0, 'cost_up_to_date': 0, 'cost_estimate': 0}
+        ft = e.get('fuel_type', 'DIESEL')
+        liters = e.get('liters', 0) or 0
+        date = e.get('date', '')
+        # Price: use locked price if day is locked, else current price
+        if date in locked_prices:
+            price = locked_prices[date]['diesel_price'] if ft == 'DIESEL' else locked_prices[date]['petrol_price']
+            consumers[consumer_key]['cost_up_to_date'] += liters * price
+        else:
+            price = cur_diesel if ft == 'DIESEL' else cur_petrol
+            consumers[consumer_key]['cost_estimate'] += liters * price
+        if ft == 'PETROL':
+            consumers[consumer_key]['petrol_l'] += liters
+        else:
+            consumers[consumer_key]['diesel_l'] += liters
+
+    # Add machinery
+    for m in machinery:
+        consumer_key = f"MACHINERY | {m['name']}"
+        ft = m.get('fuel_type', 'DIESEL')
+        wd = working_days(m.get('start_date'), m.get('end_date'))
+        total_l = round((m.get('liters_per_day') or 0) * wd, 1)
+        price = cur_diesel if ft == 'DIESEL' else cur_petrol
+        consumers[consumer_key] = {
+            'diesel_l': total_l if ft == 'DIESEL' else 0,
+            'petrol_l': total_l if ft == 'PETROL' else 0,
+            'cost_up_to_date': 0,
+            'cost_estimate': total_l * price,
+        }
+
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["Consumer", "Diesel (L)", "Petrol (L)", "Total (L)",
+                "Cost Up to Date ($)", "Cost Estimate ($)", "Total Cost ($)"])
+    grand_diesel = 0
+    grand_petrol = 0
+    grand_cost_utd = 0
+    grand_cost_est = 0
+    for name, data in sorted(consumers.items()):
+        total_l = data['diesel_l'] + data['petrol_l']
+        total_cost = data['cost_up_to_date'] + data['cost_estimate']
+        w.writerow([name, round(data['diesel_l'], 1), round(data['petrol_l'], 1),
+                    round(total_l, 1), round(data['cost_up_to_date'], 2),
+                    round(data['cost_estimate'], 2), round(total_cost, 2)])
+        grand_diesel += data['diesel_l']
+        grand_petrol += data['petrol_l']
+        grand_cost_utd += data['cost_up_to_date']
+        grand_cost_est += data['cost_estimate']
+    w.writerow([])
+    grand_total_l = grand_diesel + grand_petrol
+    grand_total_cost = grand_cost_utd + grand_cost_est
+    avg_price = grand_total_cost / grand_total_l if grand_total_l > 0 else 0
+    w.writerow(["GRAND TOTAL", round(grand_diesel, 1), round(grand_petrol, 1),
+                round(grand_total_l, 1), round(grand_cost_utd, 2),
+                round(grand_cost_est, 2), round(grand_total_cost, 2)])
+    w.writerow(["AVERAGE PRICE PER LITRE", "", "", "", "", "", round(avg_price, 4)])
+    w.writerow([])
+    w.writerow([f"Current Diesel price: ${cur_diesel}/L"])
+    w.writerow([f"Current Petrol price: ${cur_petrol}/L"])
+    out.seek(0)
+    fname = f"KLAS7_FUEL_{dt.now().strftime('%y%m%d')}.csv"
+    return Response(out.read(), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename={fname}"})
 
 
 # ─── Fuel exports ─────────────────────────────────────────────────────────────
