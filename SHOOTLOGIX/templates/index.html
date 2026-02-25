@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShootLogix — KLAS7 Panama</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Top navigation ──────────────────────────────────────────────────── -->
+  <nav id="topbar">
+    <div class="topbar-brand">Shoot<span>Logix</span></div>
+    <div class="topbar-sep"></div>
+    <button class="tab-btn active" data-tab="pdt"           onclick="App.setTab('pdt')">
+      <span class="dot" style="background:#94A3B8"></span>PDT
+    </button>
+    <div class="topbar-sep"></div>
+    <button class="tab-btn" data-tab="locations"            onclick="App.setTab('locations')">
+      <span class="dot" style="background:#22C55E"></span>LOCATIONS
+    </button>
+    <div class="topbar-sep"></div>
+    <button class="tab-btn" data-tab="boats"                onclick="App.setTab('boats')">
+      <span class="dot" style="background:#3B82F6"></span>BOATS
+    </button>
+    <button class="tab-btn" data-tab="picture-boats"        onclick="App.setTab('picture-boats')">
+      <span class="dot" style="background:#8B5CF6"></span>PICTURE BOATS
+    </button>
+    <button class="tab-btn" data-tab="security-boats"       onclick="App.setTab('security-boats')">
+      <span class="dot" style="background:#EF4444"></span>SECURITY BOATS
+    </button>
+    <button class="tab-btn" data-tab="transport"            onclick="App.setTab('transport')">
+      <span class="dot" style="background:#22C55E"></span>TRANSPORT
+    </button>
+    <div class="topbar-sep"></div>
+    <button class="tab-btn" data-tab="fuel"                 onclick="App.setTab('fuel')">
+      <span class="dot" style="background:#F59E0B"></span>FUEL
+    </button>
+    <div class="topbar-sep"></div>
+    <button class="tab-btn" data-tab="labour"               onclick="App.setTab('labour')">
+      <span class="dot" style="background:#F59E0B"></span>LABOUR
+    </button>
+    <button class="tab-btn" data-tab="guards"               onclick="App.setTab('guards')">
+      <span class="dot" style="background:#06B6D4"></span>GUARDS
+    </button>
+    <div class="topbar-sep"></div>
+    <button class="tab-btn" data-tab="fnb"                  onclick="App.setTab('fnb')">
+      <span class="dot" style="background:#F97316"></span>FNB
+    </button>
+    <div class="topbar-sep"></div>
+    <button class="tab-btn" data-tab="budget"               onclick="App.setTab('budget')">
+      <span class="dot" style="background:#22C55E"></span>BUDGET
+    </button>
+  </nav>
+
+  <!-- ── Main panels ─────────────────────────────────────────────────────── -->
+  <div id="main-content">
+
+    <!-- PDT ── -->
+    <div id="view-pdt" class="view-panel active">
+      <div id="pdt-toolbar">
+        <input type="file" id="pdt-file-input" accept=".pdf" style="display:none"
+          onchange="App.handlePDTFileUpload(this)">
+        <button class="btn btn-primary btn-sm" onclick="App.triggerPDTUpload()" title="Upload a PDT PDF and merge with existing data">Upload PDT PDF</button>
+        <button class="btn btn-secondary btn-sm" onclick="App.addDay()">+ Add day</button>
+        <span id="pdt-count" style="font-size:.78rem;color:var(--text-3);margin-left:.5rem"></span>
+        <div style="margin-left:auto">
+          <span id="pdt-status" style="font-size:.75rem;color:var(--text-3)"></span>
+        </div>
+      </div>
+      <div class="pdt-table-wrap">
+        <table class="pdt-table">
+          <thead>
+            <tr>
+              <th style="width:36px">D#</th>
+              <th>Date</th>
+              <th style="width:52px">Event</th>
+              <th>Location</th>
+              <th>Game / Activity</th>
+              <th>Rehearsal</th>
+              <th>Host</th>
+              <th>Time</th>
+              <th>Dep / Arr</th>
+              <th>Tide</th>
+              <th>Ctts</th>
+              <th>Status</th>
+              <th style="width:36px"></th>
+            </tr>
+          </thead>
+          <tbody id="pdt-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- BOATS ── -->
+    <div id="view-boats" class="view-panel">
+      <div id="boats-layout">
+        <!-- Sidebar: boat list -->
+        <div id="boat-sidebar">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+            <span class="section-title" style="margin:0">Boats</span>
+            <button class="btn btn-sm btn-secondary" onclick="App.showAddBoatModal()">+ Add</button>
+          </div>
+          <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.4rem">
+            <button class="filter-pill active" id="boat-filter-all"       onclick="App.filterBoats('all')">All</button>
+            <button class="filter-pill"        id="boat-filter-available" onclick="App.filterBoats('available')">Available</button>
+            <button class="filter-pill"        id="boat-filter-assigned"  onclick="App.filterBoats('assigned')">Assigned</button>
+            <button class="filter-pill"        id="boat-filter-external"  onclick="App.filterBoats('external')">External</button>
+          </div>
+          <div id="boat-list"></div>
+        </div>
+
+        <!-- Main: functions -->
+        <div id="boats-main">
+          <div class="boats-toolbar">
+            <div class="view-toggle">
+              <button id="btab-cards"    class="active" onclick="App.setBoatView('cards')">Cards</button>
+              <button id="btab-schedule"             onclick="App.setBoatView('schedule')">Schedule</button>
+              <button id="btab-budget"               onclick="App.setBoatView('budget')">Budget</button>
+            </div>
+            <button class="btn btn-sm btn-secondary" onclick="App.showAddFunctionModal()">+ Function</button>
+            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('boats')">Groupes</button>
+            <div style="margin-left:auto;display:flex;gap:.4rem">
+              <button class="btn btn-sm btn-secondary" onclick="App.undoBoat()" title="Ctrl+Z">↩ Undo</button>
+              <div id="export-wrap" style="position:relative">
+                <button class="btn btn-sm btn-secondary" onclick="App.toggleExport()">Export ▾</button>
+                <div id="export-menu" class="hidden" style="position:absolute;right:0;top:calc(100%+4px);background:var(--bg-card);border:1px solid var(--border-lt);border-radius:8px;overflow:hidden;z-index:50;min-width:120px">
+                  <button class="btn btn-secondary" style="width:100%;border-radius:0;border:none;justify-content:flex-start" onclick="App.exportCSV()">CSV</button>
+                  <button class="btn btn-secondary" style="width:100%;border-radius:0;border:none;justify-content:flex-start" onclick="App.exportJSON()">JSON</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="boats-view-cards">
+            <div id="role-groups"></div>
+          </div>
+          <div id="boats-view-schedule" class="hidden">
+            <div id="schedule-container"></div>
+          </div>
+          <div id="boats-view-budget" class="hidden">
+            <div id="boats-budget-content"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PICTURE BOATS ── -->
+    <div id="view-picture-boats" class="view-panel">
+      <div id="pb-boats-layout">
+        <!-- Sidebar: boat list -->
+        <div id="pb-boat-sidebar">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+            <span class="section-title" style="margin:0">Picture Boats</span>
+            <button class="btn btn-sm btn-secondary" onclick="App.showAddPictureBoatModal()">+ Add</button>
+          </div>
+          <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.4rem">
+            <button class="filter-pill active" id="pb-boat-filter-all"       onclick="App.pbFilterBoats('all')">All</button>
+            <button class="filter-pill"        id="pb-boat-filter-available" onclick="App.pbFilterBoats('available')">Available</button>
+            <button class="filter-pill"        id="pb-boat-filter-assigned"  onclick="App.pbFilterBoats('assigned')">Assigned</button>
+            <button class="filter-pill"        id="pb-boat-filter-external"  onclick="App.pbFilterBoats('external')">External</button>
+          </div>
+          <div id="pb-boat-list"></div>
+        </div>
+        <!-- Main: functions -->
+        <div id="pb-boats-main">
+          <div class="boats-toolbar">
+            <div class="view-toggle">
+              <button id="pb-btab-cards"    class="active" onclick="App.pbSetBoatView('cards')">Cards</button>
+              <button id="pb-btab-schedule"             onclick="App.pbSetBoatView('schedule')">Schedule</button>
+              <button id="pb-btab-budget"               onclick="App.pbSetBoatView('budget')">Budget</button>
+            </div>
+            <button class="btn btn-sm btn-secondary" onclick="App.pbShowAddFunctionModal()">+ Function</button>
+            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('picture')">Groupes</button>
+            <div style="margin-left:auto;display:flex;gap:.4rem">
+              <button class="btn btn-sm btn-secondary" onclick="App.pbUndoBoat()" title="Ctrl+Z">↩ Undo</button>
+              <div id="pb-export-wrap" style="position:relative">
+                <button class="btn btn-sm btn-secondary" onclick="App.pbToggleExport()">Export ▾</button>
+                <div id="pb-export-menu" class="hidden" style="position:absolute;right:0;top:calc(100%+4px);background:var(--bg-card);border:1px solid var(--border-lt);border-radius:8px;overflow:hidden;z-index:50;min-width:120px">
+                  <button class="btn btn-secondary" style="width:100%;border-radius:0;border:none;justify-content:flex-start" onclick="App.pbExportCSV()">CSV</button>
+                  <button class="btn btn-secondary" style="width:100%;border-radius:0;border:none;justify-content:flex-start" onclick="App.pbExportJSON()">JSON</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="pb-boats-view-cards">
+            <div id="pb-role-groups"></div>
+          </div>
+          <div id="pb-boats-view-schedule" class="hidden">
+            <div id="pb-schedule-container"></div>
+          </div>
+          <div id="pb-boats-view-budget" class="hidden">
+            <div id="pb-boats-budget-content"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECURITY BOATS ── -->
+    <div id="view-security-boats" class="view-panel">
+      <div id="sb-boats-layout">
+        <!-- Sidebar: boat list -->
+        <div id="sb-boat-sidebar">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+            <span class="section-title" style="margin:0">Security Boats</span>
+            <button class="btn btn-sm btn-secondary" onclick="App.showAddSecurityBoatModal()">+ Add</button>
+          </div>
+          <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.4rem">
+            <button class="filter-pill active" id="sb-boat-filter-all"       onclick="App.sbFilterBoats('all')">All</button>
+            <button class="filter-pill"        id="sb-boat-filter-available" onclick="App.sbFilterBoats('available')">Available</button>
+            <button class="filter-pill"        id="sb-boat-filter-assigned"  onclick="App.sbFilterBoats('assigned')">Assigned</button>
+          </div>
+          <div id="sb-boat-list"></div>
+        </div>
+        <!-- Main: functions -->
+        <div id="sb-boats-main">
+          <div class="boats-toolbar">
+            <div class="view-toggle">
+              <button id="sb-btab-cards"    class="active" onclick="App.sbSetView('cards')">Cards</button>
+              <button id="sb-btab-schedule"             onclick="App.sbSetView('schedule')">Schedule</button>
+              <button id="sb-btab-budget"               onclick="App.sbSetView('budget')">Budget</button>
+            </div>
+            <button class="btn btn-sm btn-secondary" onclick="App.sbShowAddFunctionModal()">+ Function</button>
+            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('security')">Groupes</button>
+            <div style="margin-left:auto;display:flex;gap:.4rem">
+              <button class="btn btn-sm btn-secondary" onclick="App.sbUndoBoat()" title="Ctrl+Z">&#8617; Undo</button>
+              <div id="sb-export-wrap" style="position:relative">
+                <button class="btn btn-sm btn-secondary" onclick="App.sbToggleExport()">Export &#9662;</button>
+                <div id="sb-export-menu" class="hidden" style="position:absolute;right:0;top:calc(100%+4px);background:var(--bg-card);border:1px solid var(--border-lt);border-radius:8px;overflow:hidden;z-index:50;min-width:120px">
+                  <button class="btn btn-secondary" style="width:100%;border-radius:0;border:none;justify-content:flex-start" onclick="App.sbExportCSV()">CSV</button>
+                  <button class="btn btn-secondary" style="width:100%;border-radius:0;border:none;justify-content:flex-start" onclick="App.sbExportJSON()">JSON</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="sb-view-cards">
+            <div id="sb-role-groups"></div>
+          </div>
+          <div id="sb-view-schedule" class="hidden">
+            <div id="sb-schedule-container"></div>
+          </div>
+          <div id="sb-view-budget" class="hidden">
+            <div id="sb-budget-content"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FNB ── -->
+    <div id="view-fnb" class="view-panel">
+    </div>
+
+    <!-- FUEL ── -->
+    <div id="view-fuel" class="view-panel">
+      <!-- Sub-tab navigation -->
+      <div class="fuel-sub-nav">
+        <button id="fsn-boats"          class="fuel-sub-btn active" onclick="App.fuelSetTab('boats')">BOATS</button>
+        <button id="fsn-picture_boats"  class="fuel-sub-btn"        onclick="App.fuelSetTab('picture_boats')">PICTURE BOATS</button>
+        <button id="fsn-security_boats" class="fuel-sub-btn"        onclick="App.fuelSetTab('security_boats')">SECURITY BOATS</button>
+        <button id="fsn-transport"      class="fuel-sub-btn"        onclick="App.fuelSetTab('transport')">TRANSPORT</button>
+        <div class="fuel-sub-sep"></div>
+        <button id="fsn-machinery"      class="fuel-sub-btn"        onclick="App.fuelSetTab('machinery')">MACHINERY</button>
+        <div class="fuel-sub-sep"></div>
+        <button id="fsn-budget"         class="fuel-sub-btn"        onclick="App.fuelSetTab('budget')">BUDGET</button>
+      </div>
+
+      <!-- Toolbar (visible only for schedule sub-tabs) -->
+      <div id="fuel-toolbar" class="fuel-toolbar-bar hidden">
+        <button class="btn btn-sm btn-secondary" onclick="App.fuelAutoFill()">⚡ Auto-fill</button>
+        <div style="flex:1"></div>
+        <div id="fuel-exp-wrap" style="position:relative">
+          <button class="btn btn-sm btn-secondary" onclick="App.fuelToggleExport()">Export ▾</button>
+          <div id="fuel-exp-menu" class="hidden" style="position:absolute;right:0;top:calc(100% + 4px);background:var(--bg-card);border:1px solid var(--border-lt);border-radius:8px;overflow:hidden;z-index:50;min-width:120px">
+            <button style="display:block;width:100%;padding:.5rem .75rem;background:none;border:none;color:var(--text-1);cursor:pointer;text-align:left;font-size:.78rem" onclick="App.fuelExportCSV()">Export CSV</button>
+            <button style="display:block;width:100%;padding:.5rem .75rem;background:none;border:none;color:var(--text-1);cursor:pointer;text-align:left;font-size:.78rem" onclick="App.fuelExportJSON()">Export JSON</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Single content area — fully replaced on each sub-tab change -->
+      <div id="fuel-content" class="fuel-content-area"></div>
+    </div>
+
+    <!-- TRANSPORT ── -->
+    <div id="view-transport" class="view-panel">
+      <div id="tb-layout">
+        <!-- Sidebar: vehicle list -->
+        <div id="tb-sidebar">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+            <span class="section-title" style="margin:0">Vehicles</span>
+            <button class="btn btn-sm btn-secondary" onclick="App.showAddTransportVehicleModal()">+ Add</button>
+          </div>
+          <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.4rem">
+            <button class="filter-pill active" id="tb-filter-all"       onclick="App.tbFilterVehicles('all')">All</button>
+            <button class="filter-pill"        id="tb-filter-available" onclick="App.tbFilterVehicles('available')">Available</button>
+            <button class="filter-pill"        id="tb-filter-assigned"  onclick="App.tbFilterVehicles('assigned')">Assigned</button>
+          </div>
+          <div id="tb-vehicle-list"></div>
+        </div>
+        <!-- Main: functions -->
+        <div id="tb-main">
+          <div class="boats-toolbar">
+            <div class="view-toggle">
+              <button id="tb-btab-cards"    class="active" onclick="App.tbSetBoatView('cards')">Cards</button>
+              <button id="tb-btab-schedule"             onclick="App.tbSetBoatView('schedule')">Schedule</button>
+              <button id="tb-btab-budget"               onclick="App.tbSetBoatView('budget')">Budget</button>
+            </div>
+            <button class="btn btn-sm btn-secondary" onclick="App.tbShowAddFunctionModal()">+ Function</button>
+            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('transport')">Groupes</button>
+            <div style="margin-left:auto;display:flex;gap:.4rem">
+              <button class="btn btn-sm btn-secondary" onclick="App.tbUndoVehicle()" title="Ctrl+Z">↩ Undo</button>
+              <div id="tb-export-wrap" style="position:relative">
+                <button class="btn btn-sm btn-secondary" onclick="App.tbToggleExport()">Export ▾</button>
+                <div id="tb-export-menu" class="hidden" style="position:absolute;right:0;top:calc(100%+4px);background:var(--bg-card);border:1px solid var(--border-lt);border-radius:8px;overflow:hidden;z-index:50;min-width:120px">
+                  <button class="btn btn-secondary" style="width:100%;border-radius:0;border:none;justify-content:flex-start" onclick="App.tbExportCSV()">CSV</button>
+                  <button class="btn btn-secondary" style="width:100%;border-radius:0;border:none;justify-content:flex-start" onclick="App.tbExportJSON()">JSON</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="tb-view-cards">
+            <div id="tb-role-groups"></div>
+          </div>
+          <div id="tb-view-schedule" class="hidden">
+            <div id="tb-schedule-container"></div>
+          </div>
+          <div id="tb-view-budget" class="hidden">
+            <div id="tb-budget-content"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GUARDS ── -->
+    <div id="view-guards" class="view-panel">
+    </div>
+
+    <!-- LABOUR ── -->
+    <div id="view-labour" class="view-panel">
+      <div id="lb-layout">
+        <!-- Sidebar: worker list -->
+        <div id="lb-sidebar">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+            <span class="section-title" style="margin:0">Workers</span>
+            <button class="btn btn-sm btn-secondary" onclick="App.showAddWorkerModal()">+ Add</button>
+          </div>
+          <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.4rem">
+            <button class="filter-pill active" id="lb-filter-all"       onclick="App.lbFilterWorkers('all')">All</button>
+            <button class="filter-pill"        id="lb-filter-available" onclick="App.lbFilterWorkers('available')">Available</button>
+            <button class="filter-pill"        id="lb-filter-assigned"  onclick="App.lbFilterWorkers('assigned')">Assigned</button>
+          </div>
+          <div id="lb-worker-list"></div>
+        </div>
+        <!-- Main: functions -->
+        <div id="lb-main">
+          <div class="boats-toolbar">
+            <div class="view-toggle">
+              <button id="lb-btab-cards"    class="active" onclick="App.lbSetView('cards')">Cards</button>
+              <button id="lb-btab-schedule"             onclick="App.lbSetView('schedule')">Schedule</button>
+              <button id="lb-btab-budget"               onclick="App.lbSetView('budget')">Budget</button>
+            </div>
+            <button class="btn btn-sm btn-secondary" onclick="App.lbShowAddFunctionModal()">+ Function</button>
+            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('labour')">Groups</button>
+            <div style="margin-left:auto;display:flex;gap:.4rem">
+              <button class="btn btn-sm btn-secondary" onclick="App.lbUndo()" title="Ctrl+Z">&#x21A9; Undo</button>
+              <div id="lb-export-wrap" style="position:relative">
+                <button class="btn btn-sm btn-secondary" onclick="App.lbToggleExport()">Export &#x25BE;</button>
+                <div id="lb-export-menu" class="hidden" style="position:absolute;right:0;top:calc(100%+4px);background:var(--bg-card);border:1px solid var(--border-lt);border-radius:8px;overflow:hidden;z-index:50;min-width:120px">
+                  <button class="btn btn-secondary" style="width:100%;border-radius:0;border:none;justify-content:flex-start" onclick="App.lbExportCSV()">CSV</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="lb-view-cards">
+            <div id="lb-role-groups"></div>
+          </div>
+          <div id="lb-view-schedule" class="hidden">
+            <div id="lb-schedule-container"></div>
+          </div>
+          <div id="lb-view-budget" class="hidden">
+            <div id="lb-budget-content"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOCATIONS ── -->
+    <div id="view-locations" class="view-panel">
+    </div>
+
+    <!-- BUDGET ── -->
+    <div id="view-budget" class="view-panel">
+      <div id="budget-content"></div>
+    </div>
+
+  </div><!-- /main-content -->
+</div><!-- /app -->
+
+<!-- ── Day edit modal ──────────────────────────────────────────────────────── -->
+<div id="day-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeDayModal()">
+  <div class="modal-box">
+    <div class="modal-title" id="day-modal-title">Edit day</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Date</label>
+        <input type="date" id="dm-date" class="form-control">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Day #</label>
+        <input type="number" id="dm-day-number" class="form-control" min="1" max="32">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Location / Island</label>
+        <input type="text" id="dm-location" class="form-control" placeholder="e.g. Mogo Mogo">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Game / Activity</label>
+        <input type="text" id="dm-game" class="form-control" placeholder="e.g. POIDS PARTAGÉS">
+      </div>
+    </div>
+    <div class="form-row-3">
+      <div class="form-group">
+        <label class="form-label">Rehearsal</label>
+        <input type="text" id="dm-rehearsal" class="form-control" placeholder="9H30">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Host arrival</label>
+        <input type="text" id="dm-animateur" class="form-control" placeholder="11H15">
+      </div>
+      <div class="form-group">
+        <label class="form-label">GAME</label>
+        <input type="text" id="dm-game-time" class="form-control" placeholder="12H00">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Contestants departure</label>
+        <input type="text" id="dm-depart" class="form-control" placeholder="14H00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Contestants</label>
+        <input type="number" id="dm-candidats" class="form-control" min="0">
+      </div>
+    </div>
+    <div class="form-row-3">
+      <div class="form-group">
+        <label class="form-label">Tide height (m)</label>
+        <input type="number" id="dm-maree-h" class="form-control" step="0.01" placeholder="2.40">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tide status</label>
+        <select id="dm-maree-s" class="form-control">
+          <option value="">—</option>
+          <option value="E">E (slack)</option>
+          <option value="D">D (falling)</option>
+          <option value="M">M (rising)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Council tonight</label>
+        <select id="dm-conseil" class="form-control">
+          <option value="0">No</option>
+          <option value="1">Yes</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Reward</label>
+      <input type="text" id="dm-recompense" class="form-control" placeholder="Île des Récompenses">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Status</label>
+      <select id="dm-status" class="form-control">
+        <option value="brouillon">Draft</option>
+        <option value="validé">Approved</option>
+        <option value="modifié">Edited</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea id="dm-notes" class="form-control" rows="2" placeholder="Additional info…"></textarea>
+    </div>
+    <!-- ── Events section (collapsible advanced) ── -->
+    <div id="dm-events-section" style="display:none">
+      <div class="modal-section-divider">
+        <span>Events (advanced)</span>
+      </div>
+      <div id="dm-events-list" style="display:flex;flex-direction:column;gap:.3rem;margin-bottom:.5rem"></div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <button type="button" class="btn btn-sm btn-secondary" onclick="App.addEventToDay('game')">+ Game</button>
+        <button type="button" class="btn btn-sm btn-secondary" style="color:#A78BFA" onclick="App.addEventToDay('council')">+ Council</button>
+        <button type="button" class="btn btn-sm btn-secondary" style="color:#F87171" onclick="App.addEventToDay('arena')">+ Arena</button>
+      </div>
+    </div>
+    <div style="margin-top:.5rem">
+      <button type="button" class="btn btn-sm btn-secondary" style="font-size:.7rem;opacity:.7" onclick="App.toggleEventsSection()">
+        <span id="dm-events-toggle-label">Show advanced events</span>
+      </button>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="dm-delete-btn" onclick="App.deleteDay()">Delete</button>
+      <button class="btn btn-secondary" onclick="App.closeDayModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.saveDay()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Boat assignment modal ───────────────────────────────────────────────── -->
+<div id="assign-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeAssignModal()">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-title" id="assign-modal-title">Assign boat</div>
+    <input type="hidden" id="am-func-id">
+    <input type="hidden" id="am-boat-id">
+    <div style="margin-bottom:1rem">
+      <div style="font-size:.72rem;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em">Function</div>
+      <div id="am-func-name" style="font-weight:700;color:var(--text-0);margin-top:.2rem"></div>
+    </div>
+    <div style="margin-bottom:1rem">
+      <div style="font-size:.72rem;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em">Boat</div>
+      <div id="am-boat-name" style="font-weight:600;color:var(--cyan);margin-top:.2rem"></div>
+    </div>
+    <div id="am-dates-info" style="font-size:.75rem;color:var(--text-3);margin-bottom:.75rem;display:none">
+      <!-- rempli dynamiquement par openAssignModal() -->
+    </div>
+    <div class="form-group">
+      <label class="form-label">Daily rate</label>
+      <div class="price-display" id="am-price-display">—</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <input type="text" id="am-notes" class="form-control" placeholder="Optional">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeAssignModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.confirmAssignment()">Confirm →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add boat modal ──────────────────────────────────────────────────────── -->
+<div id="add-boat-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeAddBoatModal()">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-title">Add a boat</div>
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input type="text" id="nb-name" class="form-control" placeholder="Boat name">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Rate/day ($)</label>
+        <input type="number" id="nb-price" class="form-control" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Capacity (pax)</label>
+        <input type="text" id="nb-capacity" class="form-control" placeholder="12">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Captain</label>
+        <input type="text" id="nb-captain" class="form-control">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Waves</label>
+        <select id="nb-wave" class="form-control">
+          <option value="Waves">Waves</option>
+          <option value="Big Waves">Big Waves</option>
+          <option value="High Waves">High Waves</option>
+          <option value="Dr boat">Dr boat</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:.5rem">
+      <input type="checkbox" id="nb-night" style="width:16px;height:16px">
+      <label for="nb-night" style="font-size:.82rem;color:var(--text-1)">Night navigation OK</label>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea id="nb-notes" class="form-control" rows="2"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeAddBoatModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.createBoat()">Create boat</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add picture boat modal ──────────────────────────────────────────────── -->
+<div id="add-picture-boat-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeAddPictureBoatModal()">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-title">Add a picture boat</div>
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input type="text" id="npb-name" class="form-control" placeholder="Boat name">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Rate/day ($)</label>
+        <input type="number" id="npb-price" class="form-control" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Capacity (pax)</label>
+        <input type="text" id="npb-capacity" class="form-control" placeholder="12">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Captain</label>
+        <input type="text" id="npb-captain" class="form-control">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Waves</label>
+        <select id="npb-wave" class="form-control">
+          <option value="Waves">Waves</option>
+          <option value="Big Waves">Big Waves</option>
+          <option value="High Waves">High Waves</option>
+          <option value="Dr boat">Dr boat</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:.5rem">
+      <input type="checkbox" id="npb-night" style="width:16px;height:16px">
+      <label for="npb-night" style="font-size:.82rem;color:var(--text-1)">Night navigation OK</label>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea id="npb-notes" class="form-control" rows="2"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeAddPictureBoatModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.createPictureBoat()">Create picture boat</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add transport vehicle modal ──────────────────────────────────────── -->
+<div id="add-transport-vehicle-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeAddTransportVehicleModal()">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-title">Add a vehicle</div>
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input type="text" id="ntv-name" class="form-control" placeholder="Vehicle name">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Rate/day ($)</label>
+        <input type="number" id="ntv-price" class="form-control" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nr</label>
+        <input type="number" id="ntv-nr" class="form-control" placeholder="">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <select id="ntv-type" class="form-control">
+          <option value="MULE">MULE</option>
+          <option value="GOLF CART">GOLF CART</option>
+          <option value="PICK UP">PICK UP</option>
+          <option value="SUV" selected>SUV</option>
+          <option value="TRUCK">TRUCK</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Driver</label>
+        <input type="text" id="ntv-driver" class="form-control">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Vendor</label>
+      <input type="text" id="ntv-vendor" class="form-control">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea id="ntv-notes" class="form-control" rows="2"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeAddTransportVehicleModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.createTransportVehicle()">Create vehicle</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add Worker modal (LABOUR) ──────────────────────────────────────────── -->
+<div id="add-worker-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeAddWorkerModal()">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-title">Add a worker</div>
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input type="text" id="nw-name" class="form-control" placeholder="Worker name">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Rate/day ($)</label>
+        <input type="number" id="nw-price" class="form-control" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Group</label>
+        <select id="nw-group" class="form-control">
+          <option value="GENERAL">GENERAL</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Role / Position</label>
+        <input type="text" id="nw-role" class="form-control" placeholder="e.g. Machinist, Diver">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Contact</label>
+        <input type="text" id="nw-contact" class="form-control" placeholder="Phone / email">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea id="nw-notes" class="form-control" rows="2"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeAddWorkerModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.createWorker()">Create worker</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Fuel Machinery modal ───────────────────────────────────────────────── -->
+<div id="fuel-machinery-modal" class="modal-overlay hidden" onclick="if(event.target===this)App.closeFuelMachineryModal()">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-title" id="fuel-machinery-modal-title">Add Machinery</div>
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input type="text" id="fm-name" class="form-control" placeholder="Generator, Crane…">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Fuel type</label>
+        <select id="fm-fuel-type" class="form-control">
+          <option value="DIESEL" selected>DIESEL</option>
+          <option value="PETROL">PETROL</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">L/day</label>
+        <input type="number" id="fm-lpd" class="form-control" placeholder="0" min="0" step="1">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Start date</label>
+        <input type="date" id="fm-start" class="form-control">
+      </div>
+      <div class="form-group">
+        <label class="form-label">End date</label>
+        <input type="date" id="fm-end" class="form-control">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea id="fm-notes" class="form-control" rows="2"></textarea>
+    </div>
+    <input type="hidden" id="fm-edit-id">
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeFuelMachineryModal()">Cancel</button>
+      <button class="btn btn-primary" id="fm-confirm-btn" onclick="App.confirmFuelMachineryModal()">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add location site modal ────────────────────────────────────────────── -->
+<div id="add-location-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeAddLocationModal()">
+  <div class="modal-box" style="max-width:400px">
+    <div class="modal-title" id="loc-modal-title">Add Location</div>
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input type="text" id="nl-name" class="form-control" placeholder="Location name">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <select id="nl-type" class="form-control">
+        <option value="game">Game Site</option>
+        <option value="tribal_camp">Tribal Camp</option>
+        <option value="reward">Reward</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Access note</label>
+      <textarea id="nl-notes" class="form-control" rows="2" placeholder="Boat access, tide info..."></textarea>
+    </div>
+    <input type="hidden" id="nl-edit-id" value="">
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeAddLocationModal()">Cancel</button>
+      <button class="btn btn-danger hidden" id="nl-delete-btn" onclick="App.deleteLocationSite()" style="margin-right:auto">Delete</button>
+      <button class="btn btn-primary" id="nl-confirm-btn" onclick="App.saveLocationSite()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add guard post modal ──────────────────────────────────────────────── -->
+<div id="add-guard-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeAddGuardModal()">
+  <div class="modal-box" style="max-width:400px">
+    <div class="modal-title" id="gp-modal-title">Add Guard Post</div>
+    <div class="form-group">
+      <label class="form-label">Post name *</label>
+      <input type="text" id="ngp-name" class="form-control" placeholder="Guard post name">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Rate/day ($)</label>
+      <input type="number" id="ngp-rate" class="form-control" placeholder="45" value="45" min="0" step="1">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea id="ngp-notes" class="form-control" rows="2" placeholder="Notes..."></textarea>
+    </div>
+    <input type="hidden" id="ngp-edit-id" value="">
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeAddGuardModal()">Cancel</button>
+      <button class="btn btn-danger hidden" id="ngp-delete-btn" onclick="App.deleteGuardPost()" style="margin-right:auto">Delete</button>
+      <button class="btn btn-primary" id="ngp-confirm-btn" onclick="App.saveGuardPost()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add security boat modal ───────────────────────────────────────────── -->
+<div id="add-security-boat-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeAddSecurityBoatModal()">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-title" id="nsb-modal-title">Add a security boat</div>
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input type="text" id="nsb-name" class="form-control" placeholder="Boat name">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Rate/day ($)</label>
+        <input type="number" id="nsb-price" class="form-control" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Capacity (pax)</label>
+        <input type="text" id="nsb-capacity" class="form-control" placeholder="6">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Captain</label>
+        <input type="text" id="nsb-captain" class="form-control">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Waves</label>
+        <select id="nsb-wave" class="form-control">
+          <option value="Waves">Waves</option>
+          <option value="Big Waves">Big Waves</option>
+          <option value="High Waves">High Waves</option>
+          <option value="Dr boat">Dr boat</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Vendor</label>
+      <input type="text" id="nsb-vendor" class="form-control">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea id="nsb-notes" class="form-control" rows="2"></textarea>
+    </div>
+    <input type="hidden" id="nsb-edit-id" value="">
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeAddSecurityBoatModal()">Cancel</button>
+      <button class="btn btn-danger hidden" id="nsb-delete-btn" onclick="App.deleteSecurityBoatFromModal()" style="margin-right:auto">Delete</button>
+      <button class="btn btn-primary" id="nsb-confirm-btn" onclick="App.saveSecurityBoat()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add function modal ──────────────────────────────────────────────────── -->
+<div id="add-func-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeAddFunctionModal()">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-title">New function</div>
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input type="text" id="nf-name" class="form-control" placeholder="e.g. PROD BOAT 3">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Group</label>
+        <select id="nf-group" class="form-control">
+          <option value="Games">Games</option>
+          <option value="Reality">Reality</option>
+          <option value="Construction">Construction</option>
+          <option value="Crew">Crew</option>
+          <option value="Contestants">Contestants</option>
+          <option value="Special">Special</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Color</label>
+        <input type="color" id="nf-color" class="form-control" value="#3B82F6" style="height:40px;padding:4px">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Default start</label>
+        <input type="date" id="nf-start" class="form-control">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Default end</label>
+        <input type="date" id="nf-end" class="form-control">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Specs</label>
+      <input type="text" id="nf-specs" class="form-control" placeholder="Capacity, notes...">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeAddFunctionModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.createFunction()">Create function</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Groups modal ────────────────────────────────────────────────────────── -->
+<div id="groups-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeGroupsModal()">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-title">Gérer les groupes</div>
+    <div id="groups-list" style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.75rem"></div>
+    <div style="border-top:1px solid var(--border);padding-top:.75rem">
+      <div style="font-size:.72rem;color:var(--text-3);margin-bottom:.4rem">Nouveau groupe</div>
+      <div class="form-row">
+        <div class="form-group" style="flex:1">
+          <input type="text" id="ng-name" class="form-control" placeholder="Nom du groupe">
+        </div>
+        <div class="form-group" style="flex:0">
+          <input type="color" id="ng-color" class="form-control" value="#6b7280" style="height:40px;padding:4px;width:52px">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeGroupsModal()">Fermer</button>
+      <button class="btn btn-primary" onclick="App.addGroup()">+ Ajouter</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Confirm dialog ──────────────────────────────────────────────────────── -->
+<div id="confirm-overlay" class="modal-overlay hidden">
+  <div id="confirm-box">
+    <div style="font-size:1.25rem;margin-bottom:.75rem">⚠</div>
+    <div id="confirm-msg" style="font-size:.9rem;color:var(--text-1);margin-bottom:1.25rem"></div>
+    <div style="display:flex;gap:.5rem;justify-content:center">
+      <button class="btn btn-secondary" onclick="App.cancelConfirm()">Cancel</button>
+      <button class="btn btn-danger" id="confirm-ok">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Boat view popup (large) ─────────────────────────────────────────────── -->
+<div id="boat-view-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeBoatView()">
+  <div class="boat-view-box">
+    <!-- Left: full photo -->
+    <div class="bv-photo-col">
+      <img id="bv-photo" src="" alt="" class="bv-photo" onerror="this.style.display='none';document.getElementById('bv-photo-placeholder').style.display='flex'">
+      <div id="bv-photo-placeholder" class="bv-photo-placeholder"></div>
+    </div>
+    <!-- Right: info -->
+    <div class="bv-info-col">
+      <div class="bv-close" onclick="App.closeBoatView()">✕</div>
+      <div id="bv-name" class="bv-title"></div>
+      <div id="bv-nr-group" class="bv-subtitle"></div>
+      <div id="bv-badges" style="display:flex;flex-wrap:wrap;gap:.4rem;margin:.75rem 0"></div>
+      <div class="bv-fields" id="bv-fields"></div>
+      <div style="margin-top:.75rem;border-top:1px solid var(--border);padding-top:.6rem">
+        <div style="font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-4);margin-bottom:.4rem">Assignments</div>
+        <div id="bv-assignments"></div>
+      </div>
+      <div class="bv-footer">
+        <button class="btn btn-secondary" onclick="App.closeBoatView()">Fermer</button>
+        <button class="btn btn-primary" id="bv-edit-btn" onclick="App.closeBoatView();App.openBoatDetail(0)">✎ Modifier</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Boat edit modal ──────────────────────────────────────────────────────── -->
+<div id="boat-detail-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeBoatDetail()">
+  <div class="modal-box" style="max-width:600px">
+    <div class="modal-title">Edit boat</div>
+    <div class="boat-detail-layout">
+      <!-- Photo column -->
+      <div class="boat-detail-photo-col">
+        <img id="bd-photo" src="" alt="" class="boat-detail-photo" onerror="this.style.display='none'">
+        <div id="bd-photo-placeholder" class="boat-detail-photo-placeholder"></div>
+        <input type="file" id="bd-photo-input" accept="image/*" style="display:none"
+          onchange="App.uploadBoatPhoto(event)">
+        <button class="btn btn-sm btn-secondary" style="width:100%;margin-top:.4rem"
+          onclick="App.triggerPhotoUpload()">📷 Photo</button>
+      </div>
+      <!-- Editable fields -->
+      <div class="boat-detail-info-col">
+        <table class="boat-detail-table">
+          <tr>
+            <td>Name</td>
+            <td><input class="bd-input" id="bd-name" type="text" placeholder="Boat name"></td>
+          </tr>
+          <tr>
+            <td>Nr</td>
+            <td><input class="bd-input" id="bd-nr" type="number" min="1" placeholder="#"></td>
+          </tr>
+          <tr>
+            <td>Group</td>
+            <td><select class="bd-input" id="bd-group">
+              <option value="Swedish">Swedish</option>
+              <option value="Shared">Shared</option>
+              <option value="Quebec">Quebec</option>
+              <option value="External">External</option>
+              <option value="Custom">Custom</option>
+            </select></td>
+          </tr>
+          <tr>
+            <td>Category</td>
+            <td><select class="bd-input" id="bd-category">
+              <option value="picture">Picture</option>
+              <option value="security">Security</option>
+              <option value="safety">Safety</option>
+              <option value="cargo">Cargo</option>
+            </select></td>
+          </tr>
+          <tr>
+            <td>Capacity</td>
+            <td><input class="bd-input" id="bd-capacity" type="text" placeholder="20 pax / EQ"></td>
+          </tr>
+          <tr>
+            <td>Captain</td>
+            <td><input class="bd-input" id="bd-captain" type="text" placeholder="Captain name"></td>
+          </tr>
+          <tr>
+            <td>Vendor</td>
+            <td><input class="bd-input" id="bd-vendor" type="text" placeholder="Company name"></td>
+          </tr>
+          <tr>
+            <td>Waves</td>
+            <td><select class="bd-input" id="bd-waves">
+              <option value="Waves">Waves</option>
+              <option value="Big Waves">Big Waves</option>
+              <option value="High Waves">High Waves</option>
+              <option value="Dr boat">Dr boat</option>
+            </select></td>
+          </tr>
+          <tr>
+            <td>Night OK</td>
+            <td style="padding:.35rem .4rem">
+              <input type="checkbox" id="bd-night" style="width:15px;height:15px;cursor:pointer">
+            </td>
+          </tr>
+          <tr>
+            <td>Rate est. $</td>
+            <td><input class="bd-input" id="bd-rate-est" type="number" min="0" placeholder="0"></td>
+          </tr>
+          <tr>
+            <td>Rate actual $</td>
+            <td><input class="bd-input" id="bd-rate-act" type="number" min="0" placeholder="—"></td>
+          </tr>
+          <tr>
+            <td>Notes</td>
+            <td><textarea class="bd-input bd-textarea" id="bd-notes" rows="2" placeholder="Optional notes…"></textarea></td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    <div class="modal-section-divider"><span>Assignments</span></div>
+    <div id="bd-assignments-list" style="max-height:120px;overflow-y:auto"></div>
+    <div class="modal-footer">
+      <button id="bd-delete-btn" class="btn btn-danger btn-sm hidden" onclick="App.deletePictureBoat(App._detailBoatIdForBtn())">Delete</button>
+      <button class="btn btn-secondary" onclick="App.closeBoatDetail()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.saveBoatEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Schedule cell popover ───────────────────────────────────────────────── -->
+<div id="schedule-popover" class="schedule-popover hidden">
+  <div id="sch-pop-content"></div>
+</div>
+
+<!-- ── FNB Category modal ──────────────────────────────────────────────────── -->
+<div id="fnb-cat-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeFnbCatModal()">
+  <div class="modal-box" style="max-width:380px">
+    <div class="modal-title" id="fnb-cat-modal-title">Add Category</div>
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input type="text" id="fc-name" class="form-control" placeholder="Category name">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Color</label>
+      <input type="color" id="fc-color" class="form-control" value="#F97316" style="height:40px;padding:4px">
+    </div>
+    <input type="hidden" id="fc-edit-id" value="">
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeFnbCatModal()">Cancel</button>
+      <button class="btn btn-danger hidden" id="fc-delete-btn" onclick="App.deleteFnbCategory()" style="margin-right:auto">Delete</button>
+      <button class="btn btn-primary" id="fc-confirm-btn" onclick="App.saveFnbCategory()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── FNB Item modal ─────────────────────────────────────────────────────── -->
+<div id="fnb-item-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeFnbItemModal()">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-title" id="fnb-item-modal-title">Add Item</div>
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input type="text" id="fi-name" class="form-control" placeholder="Item name">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Category *</label>
+      <select id="fi-category" class="form-control"></select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Unit price ($)</label>
+        <input type="number" id="fi-price" class="form-control" placeholder="0" min="0" step="0.01">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Unit</label>
+        <select id="fi-unit" class="form-control">
+          <option value="unit">unit</option>
+          <option value="case">case</option>
+          <option value="bottle">bottle</option>
+          <option value="pack">pack</option>
+          <option value="kg">kg</option>
+          <option value="lb">lb</option>
+          <option value="box">box</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea id="fi-notes" class="form-control" rows="2" placeholder="Notes..."></textarea>
+    </div>
+    <input type="hidden" id="fi-edit-id" value="">
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeFnbItemModal()">Cancel</button>
+      <button class="btn btn-danger hidden" id="fi-delete-btn" onclick="App.deleteFnbItem()" style="margin-right:auto">Delete</button>
+      <button class="btn btn-primary" id="fi-confirm-btn" onclick="App.saveFnbItem()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── PDT tooltip ─────────────────────────────────────────────────────────── -->
+<div id="pdt-tooltip" class="pdt-tooltip hidden"></div>
+
+<!-- ── Toast ───────────────────────────────────────────────────────────────── -->
+<div id="toast" class="hidden">
+  <div id="toast-inner" class="success">
+    <span id="toast-icon">✓</span>
+    <span id="toast-msg"></span>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

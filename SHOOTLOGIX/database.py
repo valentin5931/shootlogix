@@ -622,6 +622,12 @@ def _migrate_db():
         if 'image_path' not in h_cols:
             conn.execute("ALTER TABLE helpers ADD COLUMN image_path TEXT")
             print("Migration: added helpers.image_path")
+        # Rename helpers context to labour
+        renamed = conn.execute(
+            "UPDATE boat_functions SET context='labour' WHERE context='helpers'"
+        ).rowcount
+        if renamed:
+            print(f"Migration: renamed {renamed} boat_functions context helpers -> labour")
         # locations.location_type
         loc_cols = [r[1] for r in conn.execute("PRAGMA table_info(locations)").fetchall()]
         if 'location_type' not in loc_cols:
@@ -2472,9 +2478,9 @@ def get_budget(prod_id):
     ta_asgns = get_transport_assignments(prod_id)
     _add_rows("TRANSPORT", ta_asgns, entity_key='vehicle_name', rate_est_key='vehicle_daily_rate_estimate')
 
-    # HELPERS
+    # LABOUR (ex-HELPERS)
     helper_asgns = get_helper_assignments(prod_id)
-    _add_rows("HELPERS", helper_asgns, entity_key='helper_name', rate_est_key='helper_daily_rate_estimate')
+    _add_rows("LABOUR", helper_asgns, entity_key='helper_name', rate_est_key='helper_daily_rate_estimate')
 
     # FNB (dynamic from fnb_categories/items/entries)
     fnb_budget = get_fnb_budget_data(prod_id)

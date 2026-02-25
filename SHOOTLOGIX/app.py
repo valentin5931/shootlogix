@@ -615,6 +615,25 @@ def api_delete_helper(helper_id):
     return jsonify({"deleted": helper_id})
 
 
+@app.route("/api/helpers/<int:helper_id>/upload-image", methods=["POST"])
+def api_upload_helper_image(helper_id):
+    import os
+    f = request.files.get('image')
+    if not f:
+        return jsonify({"error": "No file provided"}), 400
+    upload_dir = os.path.join(os.path.dirname(__file__), 'static', 'uploads', 'labour')
+    os.makedirs(upload_dir, exist_ok=True)
+    ext = os.path.splitext(f.filename or '')[1].lower() or '.jpg'
+    filename = f"worker_{helper_id}{ext}"
+    filepath = os.path.join(upload_dir, filename)
+    f.save(filepath)
+    rel_path = f"static/uploads/labour/{filename}"
+    update_helper(helper_id, {"image_path": rel_path})
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM helpers WHERE id=?", (helper_id,)).fetchone()
+    return jsonify(dict(row)) if row else ("", 404)
+
+
 @app.route("/api/productions/<int:prod_id>/helper-assignments", methods=["GET"])
 def api_helper_assignments(prod_id):
     prod_or_404(prod_id)
@@ -661,38 +680,64 @@ def api_helper_schedules(prod_id):
     return jsonify(get_helper_schedules(prod_id))
 
 
-@app.route("/api/productions/<int:prod_id>/export/helpers/csv")
-def api_export_helpers_csv(prod_id):
+@app.route("/api/productions/<int:prod_id>/export/labour/csv")
+def api_export_labour_csv(prod_id):
     prod_or_404(prod_id)
     rows = [r for r in get_helper_assignments(prod_id) if r.get("working_days")]
+    # Group by function_group
+    from collections import OrderedDict
+    by_group = OrderedDict()
+    for r in rows:
+        g = r.get("function_group") or r.get("helper_group") or "GENERAL"
+        if g not in by_group:
+            by_group[g] = []
+        by_group[g].append(r)
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Function", "Group", "Helper", "Role", "Contact",
-                     "Start", "End", "Working Days", "Rate/day (est.)",
+    writer.writerow(["Group", "Function", "Worker", "Role", "Contact",
+                     "Start", "End", "Working Days", "Rate/day",
                      "Total Estimate", "Total Actual"])
-    for r in rows:
-        writer.writerow([
-            r.get("function_name") or "",
-            r.get("function_group") or "",
-            r.get("helper_name_override") or r.get("helper_name") or "",
-            r.get("helper_role") or "",
-            r.get("helper_contact") or "",
-            r.get("start_date") or "", r.get("end_date") or "",
-            r.get("working_days") or "",
-            r.get("price_override") or r.get("helper_daily_rate_estimate") or "",
-            r.get("amount_estimate") or "",
-            r.get("amount_actual") or "",
-        ])
-    grand_est = sum(r.get("amount_estimate") or 0 for r in rows)
-    grand_act = sum(r.get("amount_actual") or 0 for r in rows)
-    writer.writerow([])
-    writer.writerow(["", "", "", "", "", "", "GRAND TOTAL", "", "", grand_est, grand_act])
+    grand_est = 0
+    grand_act = 0
+    for group_name, group_rows in by_group.items():
+        group_est = 0
+        group_act = 0
+        for r in group_rows:
+            est = r.get("amount_estimate") or 0
+            act = r.get("amount_actual") or 0
+            group_est += est
+            group_act += act
+            writer.writerow([
+                group_name,
+                r.get("function_name") or "",
+                r.get("helper_name_override") or r.get("helper_name") or "",
+                r.get("helper_role") or "",
+                r.get("helper_contact") or "",
+                r.get("start_date") or "", r.get("end_date") or "",
+                r.get("working_days") or "",
+                r.get("price_override") or r.get("helper_daily_rate_estimate") or "",
+                est,
+                act if act else "",
+            ])
+        writer.writerow(["", "", "", "", "", "", f"SUB-TOTAL {group_name}", "", "", group_est, group_act if group_act else ""])
+        writer.writerow([])
+        grand_est += group_est
+        grand_act += group_act
+    writer.writerow(["", "", "", "", "", "", "GRAND TOTAL", "", "", grand_est, grand_act if grand_act else ""])
     output.seek(0)
+    from datetime import datetime as dt
+    fname = f"KLAS7_LABOUR_{dt.now().strftime('%y%m%d')}.csv"
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=shootlogix_helpers.csv"}
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
     )
+
+
+# Keep old endpoint for backward compatibility
+@app.route("/api/productions/<int:prod_id>/export/helpers/csv")
+def api_export_helpers_csv(prod_id):
+    return api_export_labour_csv(prod_id)
 
 
 # ─── Security Boats ──────────────────────────────────────────────────────────
