@@ -875,10 +875,12 @@ def api_export_security_boats_csv(prod_id):
     writer.writerow([])
     writer.writerow(["", "", "", "", "", "", "GRAND TOTAL", "", "", grand_est, grand_act])
     output.seek(0)
+    from datetime import datetime as dt
+    fname = f"KLAS7_SECURITY-BOATS_{dt.now().strftime('%y%m%d')}.csv"
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=shootlogix_security_boats.csv"}
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
     )
 
 
@@ -890,10 +892,12 @@ def api_export_security_boats_json(prod_id):
         "security_boats": get_security_boats(prod_id),
         "assignments": [a for a in get_security_boat_assignments(prod_id) if a.get("working_days")],
     }
+    from datetime import datetime as dt
+    fname = f"KLAS7_SECURITY-BOATS_{dt.now().strftime('%y%m%d')}.json"
     return Response(
         json.dumps(data, indent=2, ensure_ascii=False),
         mimetype="application/json",
-        headers={"Content-Disposition": "attachment; filename=shootlogix_security_boats.json"}
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
     )
 
 
@@ -986,10 +990,12 @@ def api_export_csv(prod_id):
     writer.writerow(["", "", "", "", "", "", "GRAND TOTAL",
                      budget["grand_total_estimate"], budget["grand_total_actual"]])
     output.seek(0)
+    from datetime import datetime as dt
+    fname = f"KLAS7_BOATS_{dt.now().strftime('%y%m%d')}.csv"
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=shootlogix_budget.csv"}
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
     )
 
 
@@ -1004,10 +1010,12 @@ def api_export_json(prod_id):
         "assignments": [a for a in get_boat_assignments(prod_id, context='boats') if a.get("working_days")],
         "budget": get_budget(prod_id),
     }
+    from datetime import datetime as dt
+    fname = f"KLAS7_BOATS_{dt.now().strftime('%y%m%d')}.json"
     return Response(
         json.dumps(data, indent=2, ensure_ascii=False),
         mimetype="application/json",
-        headers={"Content-Disposition": "attachment; filename=shootlogix_export.json"}
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
     )
 
 
@@ -1040,10 +1048,12 @@ def api_export_pb_csv(prod_id):
     writer.writerow([])
     writer.writerow(["", "", "", "", "", "", "GRAND TOTAL", "", "", grand_est, grand_act])
     output.seek(0)
+    from datetime import datetime as dt
+    fname = f"KLAS7_PICTURE-BOATS_{dt.now().strftime('%y%m%d')}.csv"
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=shootlogix_picture_boats.csv"}
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
     )
 
 
@@ -1055,10 +1065,12 @@ def api_export_pb_json(prod_id):
         "picture_boats": get_picture_boats(prod_id),
         "assignments": [a for a in get_picture_boat_assignments(prod_id) if a.get("working_days")],
     }
+    from datetime import datetime as dt
+    fname = f"KLAS7_PICTURE-BOATS_{dt.now().strftime('%y%m%d')}.json"
     return Response(
         json.dumps(data, indent=2, ensure_ascii=False),
         mimetype="application/json",
-        headers={"Content-Disposition": "attachment; filename=shootlogix_picture_boats.json"}
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
     )
 
 
@@ -1191,10 +1203,12 @@ def api_export_transport_csv(prod_id):
     writer.writerow([])
     writer.writerow(["", "", "", "", "", "", "GRAND TOTAL", "", "", "", grand_est, grand_act])
     output.seek(0)
+    from datetime import datetime as dt
+    fname = f"KLAS7_TRANSPORT_{dt.now().strftime('%y%m%d')}.csv"
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=shootlogix_transport.csv"}
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
     )
 
 
@@ -1206,10 +1220,12 @@ def api_export_transport_json(prod_id):
         "transport_vehicles": get_transport_vehicles(prod_id),
         "assignments": [a for a in get_transport_assignments(prod_id) if a.get("working_days")],
     }
+    from datetime import datetime as dt
+    fname = f"KLAS7_TRANSPORT_{dt.now().strftime('%y%m%d')}.json"
     return Response(
         json.dumps(data, indent=2, ensure_ascii=False),
         mimetype="application/json",
-        headers={"Content-Disposition": "attachment; filename=shootlogix_transport.json"}
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
     )
 
 
@@ -1463,8 +1479,10 @@ def api_export_fuel_csv(prod_id):
     w.writerow(["GRAND TOTAL DIESEL", "", "", totals.get("DIESEL", 0), "DIESEL"])
     w.writerow(["GRAND TOTAL PETROL", "", "", totals.get("PETROL", 0), "PETROL"])
     out.seek(0)
+    from datetime import datetime as dt
+    fname = f"KLAS7_FUEL_{dt.now().strftime('%y%m%d')}.csv"
     return Response(out.read(), mimetype="text/csv",
-                    headers={"Content-Disposition": "attachment; filename=shootlogix_fuel.csv"})
+                    headers={"Content-Disposition": f"attachment; filename={fname}"})
 
 
 @app.route("/api/productions/<int:prod_id>/export/fuel/json")
@@ -1475,10 +1493,12 @@ def api_export_fuel_json(prod_id):
         "fuel_entries": get_fuel_entries(prod_id),
         "fuel_machinery": get_fuel_machinery(prod_id),
     }
+    from datetime import datetime as dt
+    fname = f"KLAS7_FUEL_{dt.now().strftime('%y%m%d')}.json"
     return Response(
         json.dumps(data, indent=2, ensure_ascii=False),
         mimetype="application/json",
-        headers={"Content-Disposition": "attachment; filename=shootlogix_fuel.json"}
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
     )
 
 
