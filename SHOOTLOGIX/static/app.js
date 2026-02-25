@@ -8156,10 +8156,8 @@ const App = (() => {
 
   // ── FNB Export ────────────────────────────────────────────────
   function fnbExportCSV() {
-    const items = state.fnbItems || [];
-    if (!items.length) { toast('No FNB data to export', 'info'); return; }
-    // Use server-side simplified export (totals by category, Up to Date + Estimate)
-    window.location.href = `/api/productions/${PROD}/export/fnb-budget/csv`;
+    // Server-side simplified export (totals by category, Up to Date + Estimate)
+    window.location.href = `/api/productions/${state.prodId}/export/fnb-budget/csv`;
   }
 
 
