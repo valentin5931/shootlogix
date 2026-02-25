@@ -6511,10 +6511,17 @@ const App = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════
-  //  SUB-TAB A: LOCATION GUARDS (read-only, auto from Locations)
+  //  SUB-TAB A: LOCATION GUARDS (editable, constrained by Locations activity)
   // ═══════════════════════════════════════════════════════════
 
   const GUARD_RATE_LOCATION = 45; // Fixed $45/guard/day
+
+  // State for guard location schedules
+  if (!state.guardLocSchedules) state.guardLocSchedules = [];
+  if (!state.guardLocLocked) {
+    try { const s = localStorage.getItem('guard_loc_locked_days'); state.guardLocLocked = s ? JSON.parse(s) : {}; }
+    catch(e) { state.guardLocLocked = {}; }
+  }
 
   async function renderGuardLocation() {
     const container = $('gd-location-panel');
@@ -6525,54 +6532,58 @@ const App = (() => {
       try { state.locationSites = await api('GET', `/api/productions/${state.prodId}/locations`); }
       catch(e) { state.locationSites = []; }
     }
-    // Load location schedules
+    // Load location schedules (for activity lookup)
     if (!state.locationSchedules) {
       try { state.locationSchedules = await api('GET', `/api/productions/${state.prodId}/location-schedules`); }
       catch(e) { state.locationSchedules = []; }
     }
 
+    // Sync guard_location_schedules from location_schedules (creates defaults where missing, removes stale)
+    try {
+      state.guardLocSchedules = await api('POST', `/api/productions/${state.prodId}/guard-schedules/sync`);
+    } catch(e) {
+      try { state.guardLocSchedules = await api('GET', `/api/productions/${state.prodId}/guard-schedules`); }
+      catch(e2) { state.guardLocSchedules = []; }
+    }
+
     const sites = state.locationSites || [];
-    const schedules = state.locationSchedules || [];
+    const locSchedules = state.locationSchedules || [];
+    const guardSchedules = state.guardLocSchedules || [];
     const dates = _locDates();
 
     // Build lookup: location_name -> location_type
     const typeByName = {};
     sites.forEach(s => { typeByName[s.name] = s.location_type || 'game'; });
 
-    // Build schedule lookup
-    const lookup = {};
-    schedules.forEach(s => { lookup[`${s.location_name}|${s.date}`] = s; });
+    // Build activity lookup: which location/date pairs have P/F/W
+    const activityLookup = {};
+    locSchedules.forEach(s => { activityLookup[`${s.location_name}|${s.date}`] = s.status; });
 
-    // Compute guard counts per location x date
-    // Rule: tribal_camp -> 4, everything else -> 2
-    const guardData = []; // { location_name, location_type, date, status, nb_guards }
+    // Build guard schedule lookup
+    const gdLookup = {};
+    guardSchedules.forEach(g => { gdLookup[`${g.location_name}|${g.date}`] = g; });
+
+    // Compute totals per location
     const byLoc = {};
-    schedules.forEach(s => {
-      const locType = typeByName[s.location_name] || s.location_type || 'game';
-      const nbGuards = locType === 'tribal_camp' ? 4 : 2;
-      guardData.push({ location_name: s.location_name, location_type: locType, date: s.date, status: s.status, nb_guards: nbGuards });
-      if (!byLoc[s.location_name]) byLoc[s.location_name] = { type: locType, days: 0, totalGuardDays: 0, cost: 0 };
-      byLoc[s.location_name].days++;
-      byLoc[s.location_name].totalGuardDays += nbGuards;
-      byLoc[s.location_name].cost += nbGuards * GUARD_RATE_LOCATION;
+    guardSchedules.forEach(g => {
+      const nb = g.nb_guards || 0;
+      if (!byLoc[g.location_name]) byLoc[g.location_name] = { type: typeByName[g.location_name] || 'game', days: 0, totalGuardDays: 0, cost: 0 };
+      byLoc[g.location_name].days++;
+      byLoc[g.location_name].totalGuardDays += nb;
+      byLoc[g.location_name].cost += nb * GUARD_RATE_LOCATION;
     });
 
     const totalGuardDays = Object.values(byLoc).reduce((s, v) => s + v.totalGuardDays, 0);
     const totalBudget = totalGuardDays * GUARD_RATE_LOCATION;
 
-    // Get unique location names that have schedule entries
-    const activeLocNames = [...new Set(schedules.map(s => s.location_name))];
-    // Sort: tribal camps first, then alphabetically
+    // Get unique location names that have guard schedule entries
+    const activeLocNames = [...new Set(guardSchedules.map(g => g.location_name))];
     activeLocNames.sort((a, b) => {
       const ta = typeByName[a] || 'game', tb = typeByName[b] || 'game';
       if (ta === 'tribal_camp' && tb !== 'tribal_camp') return -1;
       if (tb === 'tribal_camp' && ta !== 'tribal_camp') return 1;
       return a.localeCompare(b);
     });
-
-    // Guard data lookup
-    const gdLookup = {};
-    guardData.forEach(g => { gdLookup[`${g.location_name}|${g.date}`] = g; });
 
     const viewBtns = ['schedule', 'budget'].map(v =>
       `<button class="${state.guardView === v ? 'active' : ''}" id="gdl-btab-${v}" onclick="App.gdSetView('${v}')">${v.charAt(0).toUpperCase() + v.slice(1)}</button>`
@@ -6581,7 +6592,7 @@ const App = (() => {
     let html = `<div style="padding:1rem">
       <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
         <span class="section-title" style="margin:0">Location Guards</span>
-        <span style="font-size:.72rem;color:var(--text-4);padding:.15rem .5rem;background:var(--bg-surface);border-radius:4px">READ-ONLY &mdash; auto-generated from Locations schedule</span>
+        <span style="font-size:.72rem;color:var(--text-4);padding:.15rem .5rem;background:var(--bg-surface);border-radius:4px">Editable &mdash; only active location/date cells (P/F/W) can be modified</span>
         <div class="view-toggle">${viewBtns}</div>
         <div style="margin-left:auto;display:flex;gap:.3rem">
           <button class="btn btn-sm btn-secondary" onclick="App.gdlRefresh()">Refresh</button>
@@ -6606,7 +6617,7 @@ const App = (() => {
         </div>
       </div>
       <div style="font-size:.72rem;color:var(--text-3);margin-bottom:.5rem">
-        Guard counts: <strong>TRIBAL CAMP = 4 guards</strong> &middot; All others = 2 guards &middot; Fixed rate: $${GUARD_RATE_LOCATION}/guard/day
+        Defaults: <strong>TRIBAL CAMP = 4 guards</strong> &middot; All others = 2 guards &middot; Fixed rate: $${GUARD_RATE_LOCATION}/guard/day &middot; Click a cell to edit guard count
       </div>
       <div class="loc-schedule-wrap" style="overflow-x:auto">
         <table class="loc-schedule-table">
@@ -6617,9 +6628,11 @@ const App = (() => {
                 const dt = new Date(d + 'T00:00:00');
                 const day = dt.getDate();
                 const wd = dt.toLocaleDateString('en-US', { weekday: 'short' }).slice(0,2);
-                return `<th class="loc-th-date" style="min-width:32px;text-align:center">
+                const isLocked = !!state.guardLocLocked[d];
+                return `<th class="loc-th-date" style="min-width:32px;text-align:center;cursor:pointer${isLocked ? ';background:rgba(34,197,94,.15)' : ''}" onclick="App.gdlToggleLock('${d}')">
                   <div style="font-size:.6rem;color:var(--text-4)">${wd}</div>
                   <div style="font-size:.7rem">${day}</div>
+                  ${isLocked ? '<div style="font-size:.5rem;color:var(--green)">&#x1F512;</div>' : ''}
                 </th>`;
               }).join('')}
             </tr>
@@ -6628,21 +6641,37 @@ const App = (() => {
             ${activeLocNames.map(locName => {
               const locType = typeByName[locName] || 'game';
               const typeColor = locType === 'tribal_camp' ? '#EAB308' : locType === 'game' ? '#22C55E' : '#3B82F6';
-              const guardCount = locType === 'tribal_camp' ? 4 : 2;
+              const defaultGuards = locType === 'tribal_camp' ? 4 : 2;
               return `<tr>
               <td class="loc-td-name" style="position:sticky;left:0;z-index:2;background:var(--bg-card);border-right:1px solid var(--border)">
                 <div style="display:flex;align-items:center;gap:.3rem">
                   <span style="width:8px;height:8px;border-radius:2px;background:${typeColor};flex-shrink:0"></span>
                   <span style="font-size:.72rem;font-weight:600;white-space:nowrap">${esc(locName)}</span>
-                  <span style="font-size:.6rem;color:var(--text-4);font-weight:400">${guardCount}g</span>
+                  <span style="font-size:.6rem;color:var(--text-4);font-weight:400">${defaultGuards}g</span>
                 </div>
               </td>
               ${dates.map(d => {
+                const hasActivity = !!activityLookup[`${locName}|${d}`];
                 const gd = gdLookup[`${locName}|${d}`];
-                if (!gd) return `<td class="loc-cell-empty" style="text-align:center;min-width:32px;height:28px;cursor:default"></td>`;
-                const cellClass = `loc-cell-${gd.status}`;
-                return `<td class="${cellClass}" style="text-align:center;min-width:32px;height:28px;cursor:default;font-size:.7rem;font-weight:600"
-                  title="${gd.status} - ${gd.nb_guards} guard${gd.nb_guards > 1 ? 's' : ''}">${gd.nb_guards}</td>`;
+                const isLocked = !!state.guardLocLocked[d];
+
+                if (!hasActivity) {
+                  // No activity -- greyed out, not editable
+                  return `<td style="text-align:center;min-width:32px;height:28px;cursor:default;background:var(--bg-surface);opacity:.3"></td>`;
+                }
+
+                const nb = gd ? gd.nb_guards : defaultGuards;
+                const actStatus = activityLookup[`${locName}|${d}`];
+                const cellClass = 'loc-cell-' + actStatus;
+
+                if (isLocked) {
+                  return `<td class="${cellClass}" style="text-align:center;min-width:32px;height:28px;cursor:default;font-size:.7rem;font-weight:600;opacity:.85"
+                    title="${actStatus} - ${nb} guard${nb !== 1 ? 's' : ''} (locked)">${nb}</td>`;
+                }
+
+                return `<td class="${cellClass}" style="text-align:center;min-width:32px;height:28px;cursor:pointer;font-size:.7rem;font-weight:600"
+                  title="${actStatus} - ${nb} guard${nb !== 1 ? 's' : ''} - click to edit"
+                  onclick="App.gdlCellClick('${esc(locName)}','${d}',${nb})">${nb}</td>`;
               }).join('')}
             </tr>`;
             }).join('')}
@@ -6651,40 +6680,141 @@ const App = (() => {
         </table>
       </div>`;
     } else {
-      // Budget view
-      html += `
+      // Budget view -- now shows combined Location + Base Camp
+      await _renderGuardsCombinedBudget(container);
+      return;
+    }
+
+    html += `</div>`;
+    container.innerHTML = html;
+  }
+
+  // Combined budget for all guards (Location + Base Camp)
+  async function _renderGuardsCombinedBudget(container) {
+    const guardSchedules = state.guardLocSchedules || [];
+    const sites = state.locationSites || [];
+    const typeByName = {};
+    sites.forEach(s => { typeByName[s.name] = s.location_type || 'game'; });
+
+    // Location guards totals
+    const byLoc = {};
+    guardSchedules.forEach(g => {
+      const nb = g.nb_guards || 0;
+      if (!byLoc[g.location_name]) byLoc[g.location_name] = { type: typeByName[g.location_name] || 'game', days: 0, totalGuardDays: 0, cost: 0 };
+      byLoc[g.location_name].days++;
+      byLoc[g.location_name].totalGuardDays += nb;
+      byLoc[g.location_name].cost += nb * GUARD_RATE_LOCATION;
+    });
+    const locActiveNames = Object.keys(byLoc).sort();
+    const locTotalGuardDays = Object.values(byLoc).reduce((s, v) => s + v.totalGuardDays, 0);
+    const locTotalBudget = locTotalGuardDays * GUARD_RATE_LOCATION;
+
+    // Base camp totals
+    const gcAsgns = state.gcAssignments || [];
+    const gcFuncs = state.gcFunctions || [];
+    let bcTotal = 0;
+    const bcRows = [];
+    gcAsgns.forEach(a => {
+      const func = gcFuncs.find(f => f.id === a.boat_function_id);
+      const wd = a.working_days ?? workingDays(a.start_date, a.end_date);
+      const rate = a.price_override || a.helper_daily_rate_estimate || 0;
+      const total = Math.round(wd * rate);
+      if (wd <= 0) return;
+      bcRows.push({
+        funcName: func?.name || a.function_name || '---',
+        workerName: a.helper_name_override || a.helper_name || '---',
+        group: func?.function_group || a.function_group || 'GENERAL',
+        start: a.start_date, end: a.end_date, wd, rate, total
+      });
+      bcTotal += total;
+    });
+
+    const grandTotal = locTotalBudget + bcTotal;
+
+    let html = `<div style="padding:1rem">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
+        <span class="section-title" style="margin:0">Guards Budget</span>
+        <div class="view-toggle">
+          <button class="${state.guardView === 'schedule' ? 'active' : ''}" onclick="App.gdSetView('schedule')">Schedule</button>
+          <button class="${state.guardView === 'budget' ? 'active' : ''}" onclick="App.gdSetView('budget')">Budget</button>
+        </div>
+      </div>
+
+      <div class="stat-grid" style="margin-bottom:.75rem">
+        <div class="stat-card" style="border:1px solid var(--border)">
+          <div class="stat-val" style="font-size:1.5rem">${fmtMoney(grandTotal)}</div>
+          <div class="stat-lbl">TOTAL GUARDS</div>
+        </div>
+        <div class="stat-card" style="border-left:3px solid #06B6D4">
+          <div class="stat-val" style="font-size:1.3rem;color:#06B6D4">${fmtMoney(locTotalBudget)}</div>
+          <div class="stat-lbl">LOCATION GUARDS</div>
+        </div>
+        <div class="stat-card" style="border-left:3px solid #8B5CF6">
+          <div class="stat-val" style="font-size:1.3rem;color:#8B5CF6">${fmtMoney(bcTotal)}</div>
+          <div class="stat-lbl">BASE CAMP</div>
+        </div>
+      </div>
+
       <div class="budget-dept-card">
         <div class="budget-dept-header">
-          <span style="font-weight:700;font-size:.82rem;color:var(--text-0)">LOCATION GUARDS BUDGET</span>
-          <span style="font-weight:700;color:var(--green)">${fmtMoney(totalBudget)}</span>
+          <span style="font-weight:700;font-size:.82rem;color:#06B6D4">LOCATION GUARDS</span>
+          <span style="font-weight:700;color:var(--green)">${fmtMoney(locTotalBudget)}</span>
         </div>
         <table class="budget-table"><thead><tr>
-          <th>Location</th><th>Type</th><th>Active Days</th><th>Guards/day</th><th>Total Guard-Days</th><th>Rate</th><th style="text-align:right">Total</th>
+          <th>Location</th><th>Type</th><th>Active Days</th><th>Guard-Days</th><th>Rate</th><th style="text-align:right">Total</th>
         </tr></thead><tbody>
-          ${activeLocNames.map(loc => {
+          ${locActiveNames.map(loc => {
             const info = byLoc[loc];
-            const guardCount = info.type === 'tribal_camp' ? 4 : 2;
             return `<tr>
               <td style="font-weight:600">${esc(loc)}</td>
               <td style="font-size:.72rem;color:var(--text-3)">${info.type === 'tribal_camp' ? 'Tribal Camp' : info.type === 'game' ? 'Game' : 'Reward'}</td>
               <td>${info.days}</td>
-              <td>${guardCount}</td>
               <td>${info.totalGuardDays}</td>
               <td>$${GUARD_RATE_LOCATION}</td>
               <td style="text-align:right;font-weight:600;color:var(--green)">${fmtMoney(info.cost)}</td>
             </tr>`;
-          }).join('') || '<tr><td colspan="7" style="color:var(--text-4)">No location guard data yet</td></tr>'}
+          }).join('') || '<tr><td colspan="6" style="color:var(--text-4)">No location guard data yet</td></tr>'}
           <tr style="border-top:2px solid var(--border)">
-            <td colspan="4" style="font-weight:700;text-align:right">TOTAL</td>
-            <td style="font-weight:700">${totalGuardDays}</td>
+            <td colspan="3" style="font-weight:700;text-align:right">TOTAL LOCATION</td>
+            <td style="font-weight:700">${locTotalGuardDays}</td>
             <td></td>
-            <td style="text-align:right;font-weight:700;color:var(--green)">${fmtMoney(totalBudget)}</td>
+            <td style="text-align:right;font-weight:700;color:var(--green)">${fmtMoney(locTotalBudget)}</td>
           </tr>
         </tbody></table>
-      </div>`;
-    }
+      </div>
 
-    html += `</div>`;
+      ${bcRows.length ? `
+      <div class="budget-dept-card">
+        <div class="budget-dept-header">
+          <span style="font-weight:700;font-size:.82rem;color:#8B5CF6">BASE CAMP GUARDS</span>
+          <span style="font-weight:700;color:var(--green)">${fmtMoney(bcTotal)}</span>
+        </div>
+        <table class="budget-table"><thead><tr>
+          <th>Function</th><th style="text-align:left">Guard</th><th>Group</th><th>Start</th><th>End</th><th>Days</th><th>$/day</th><th style="text-align:right">Total</th>
+        </tr></thead><tbody>
+          ${bcRows.map((r, i) => `<tr style="${i%2 ? 'background:var(--bg-surface)' : ''}">
+            <td style="color:var(--text-1)">${esc(r.funcName)}</td>
+            <td style="color:var(--cyan)">${esc(r.workerName)}</td>
+            <td style="font-size:.72rem;color:var(--text-3)">${esc(r.group)}</td>
+            <td style="font-size:.72rem;color:var(--text-3)">${fmtDate(r.start)}</td>
+            <td style="font-size:.72rem;color:var(--text-3)">${fmtDate(r.end)}</td>
+            <td style="text-align:right">${r.wd ?? '---'}</td>
+            <td style="text-align:right">${fmtMoney(r.rate)}</td>
+            <td style="text-align:right;font-weight:600;color:var(--green)">${fmtMoney(r.total)}</td>
+          </tr>`).join('')}
+          <tr style="border-top:2px solid var(--border)">
+            <td colspan="7" style="font-weight:700;text-align:right">TOTAL BASE CAMP</td>
+            <td style="text-align:right;font-weight:700;color:var(--green)">${fmtMoney(bcTotal)}</td>
+          </tr>
+        </tbody></table>
+      </div>` : ''}
+
+      <div style="margin-top:.75rem;padding:.75rem;background:var(--bg-surface);border-radius:8px;text-align:right">
+        <span style="font-size:.85rem;font-weight:700;color:var(--text-0)">GRAND TOTAL GUARDS: </span>
+        <span style="font-size:1.1rem;font-weight:700;color:var(--green)">${fmtMoney(grandTotal)}</span>
+      </div>
+    </div>`;
+
     container.innerHTML = html;
   }
 
@@ -6697,15 +6827,46 @@ const App = (() => {
   async function gdlRefresh() {
     state.locationSites = null;
     state.locationSchedules = null;
+    state.guardLocSchedules = null;
     await renderGuardLocation();
     toast('Location guards refreshed');
   }
 
+  // Cell click -- prompt for guard count
+  async function gdlCellClick(locName, date, currentNb) {
+    const newVal = prompt(`Guards for ${locName} on ${date}:`, String(currentNb));
+    if (newVal === null) return;
+    const nb = parseInt(newVal, 10);
+    if (isNaN(nb) || nb < 0) { toast('Invalid number', 'error'); return; }
+    try {
+      await api('POST', `/api/productions/${state.prodId}/guard-schedules/update-guards`, {
+        location_name: locName,
+        date: date,
+        nb_guards: nb
+      });
+      // Update local state
+      const key = `${locName}|${date}`;
+      const existing = state.guardLocSchedules.find(g => g.location_name === locName && g.date === date);
+      if (existing) existing.nb_guards = nb;
+      renderGuardLocation();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  // Lock/unlock a day column
+  function gdlToggleLock(date) {
+    if (state.guardLocLocked[date]) {
+      delete state.guardLocLocked[date];
+    } else {
+      state.guardLocLocked[date] = true;
+    }
+    localStorage.setItem('guard_loc_locked_days', JSON.stringify(state.guardLocLocked));
+    renderGuardLocation();
+  }
+
   function gdlExportCSV() {
-    // Build guard data from location schedules
+    const guardSchedules = state.guardLocSchedules || [];
     const sites = state.locationSites || [];
-    const schedules = state.locationSchedules || [];
-    if (!schedules.length) { toast('No location guard data to export', 'info'); return; }
+    if (!guardSchedules.length) { toast('No location guard data to export', 'info'); return; }
     const typeByName = {};
     sites.forEach(s => { typeByName[s.name] = s.location_type || 'game'; });
 
@@ -6714,15 +6875,15 @@ const App = (() => {
 
     let csv = 'Location,Type,Date,Status,Guards,Rate,Cost\n';
     const byLoc = {};
-    schedules.forEach(s => {
-      const locType = typeByName[s.location_name] || s.location_type || 'game';
-      const nb = locType === 'tribal_camp' ? 4 : 2;
+    guardSchedules.forEach(g => {
+      const locType = typeByName[g.location_name] || 'game';
+      const nb = g.nb_guards || 0;
       const cost = nb * GUARD_RATE_LOCATION;
-      csv += `"${s.location_name}","${locType}","${s.date}","${s.status}",${nb},${GUARD_RATE_LOCATION},${cost}\n`;
-      if (!byLoc[s.location_name]) byLoc[s.location_name] = { type: locType, days: 0, totalGuards: 0, totalCost: 0 };
-      byLoc[s.location_name].days++;
-      byLoc[s.location_name].totalGuards += nb;
-      byLoc[s.location_name].totalCost += cost;
+      csv += `"${g.location_name}","${locType}","${g.date}","${g.status}",${nb},${GUARD_RATE_LOCATION},${cost}\n`;
+      if (!byLoc[g.location_name]) byLoc[g.location_name] = { type: locType, days: 0, totalGuards: 0, totalCost: 0 };
+      byLoc[g.location_name].days++;
+      byLoc[g.location_name].totalGuards += nb;
+      byLoc[g.location_name].totalCost += cost;
     });
     csv += '\n';
     csv += 'SUMMARY\n';
@@ -6741,7 +6902,7 @@ const App = (() => {
     a.click();
   }
 
-  // Keep old guard post CRUD for legacy compatibility (still used in guard_location_schedules)
+  // Keep old guard post CRUD for legacy compatibility
   function showAddGuardModal() {
     $('ngp-name').value = '';
     $('ngp-rate').value = '45';
@@ -7478,10 +7639,43 @@ const App = (() => {
   function gcToggleExport() { $('gc-export-menu').classList.toggle('hidden'); }
   function gcExportCSV()  { window.location.href = `/api/productions/${state.prodId}/export/guard-camp/csv`; $('gc-export-menu').classList.add('hidden'); }
 
-  // ── Budget view ──────────────────────────────────────────────
-  function renderGcBudget() {
+  // ── Budget view (combined: Location + Base Camp) ───────────
+  async function renderGcBudget() {
     const container = $('gc-budget-content');
     if (!container) return;
+
+    // Ensure guard location schedules are loaded
+    if (!state.guardLocSchedules || !state.guardLocSchedules.length) {
+      try {
+        state.guardLocSchedules = await api('POST', `/api/productions/${state.prodId}/guard-schedules/sync`);
+      } catch(e) {
+        try { state.guardLocSchedules = await api('GET', `/api/productions/${state.prodId}/guard-schedules`); }
+        catch(e2) { state.guardLocSchedules = []; }
+      }
+    }
+    if (!state.locationSites) {
+      try { state.locationSites = await api('GET', `/api/productions/${state.prodId}/locations`); }
+      catch(e) { state.locationSites = []; }
+    }
+
+    // Location guards totals
+    const sites = state.locationSites || [];
+    const typeByName = {};
+    sites.forEach(s => { typeByName[s.name] = s.location_type || 'game'; });
+
+    const locByLoc = {};
+    (state.guardLocSchedules || []).forEach(g => {
+      const nb = g.nb_guards || 0;
+      if (!locByLoc[g.location_name]) locByLoc[g.location_name] = { type: typeByName[g.location_name] || 'game', days: 0, totalGuardDays: 0, cost: 0 };
+      locByLoc[g.location_name].days++;
+      locByLoc[g.location_name].totalGuardDays += nb;
+      locByLoc[g.location_name].cost += nb * GUARD_RATE_LOCATION;
+    });
+    const locActiveNames = Object.keys(locByLoc).sort();
+    const locTotalBudget = Object.values(locByLoc).reduce((s, v) => s + v.cost, 0);
+    const locTotalGuardDays = Object.values(locByLoc).reduce((s, v) => s + v.totalGuardDays, 0);
+
+    // Base Camp totals
     const asgns = state.gcAssignments;
     const funcs = state.gcFunctions;
     const byGroup = {};
@@ -7502,40 +7696,55 @@ const App = (() => {
       byGroup[g].total += total;
     });
 
-    function rowFigeAmount(row) {
-      if (!row.start || !row.end || !row.total) return 0;
-      const cur = new Date(row.start + 'T00:00:00');
-      const end = new Date(row.end   + 'T00:00:00');
-      let total = 0, lockedCount = 0;
-      while (cur <= end) {
-        total++;
-        if (state.gcLockedDays[_localDk(cur)]) lockedCount++;
-        cur.setDate(cur.getDate() + 1);
-      }
-      return total === 0 ? 0 : Math.round(row.total * lockedCount / total);
-    }
-
-    const allRows = Object.values(byGroup).flatMap(g => g.rows);
-    const totalGlobal   = allRows.reduce((s, r) => s + r.total, 0);
-    const totalFige     = allRows.reduce((s, r) => s + rowFigeAmount(r), 0);
-    const totalEstimate = totalGlobal - totalFige;
+    const bcTotal = Object.values(byGroup).reduce((s, g) => s + g.total, 0);
+    const grandTotal = locTotalBudget + bcTotal;
 
     let html = `
       <div class="stat-grid" style="margin-bottom:.75rem">
         <div class="stat-card" style="border:1px solid var(--border)">
-          <div class="stat-val">${fmtMoney(totalGlobal)}</div>
-          <div class="stat-lbl">TOTAL GLOBAL</div>
+          <div class="stat-val" style="font-size:1.5rem">${fmtMoney(grandTotal)}</div>
+          <div class="stat-lbl">TOTAL GUARDS</div>
         </div>
-        <div class="stat-card" style="border:1px solid var(--green);background:rgba(34,197,94,.07)">
-          <div class="stat-val" style="color:var(--green)">${fmtMoney(totalFige)}</div>
-          <div class="stat-lbl">UP TO DATE <span style="font-size:.6rem;opacity:.55">(locked)</span></div>
+        <div class="stat-card" style="border-left:3px solid #06B6D4">
+          <div class="stat-val" style="font-size:1.3rem;color:#06B6D4">${fmtMoney(locTotalBudget)}</div>
+          <div class="stat-lbl">LOCATION GUARDS</div>
         </div>
-        <div class="stat-card" style="border:1px solid #F59E0B;background:rgba(245,158,11,.07)">
-          <div class="stat-val" style="color:#F59E0B">${fmtMoney(totalEstimate)}</div>
-          <div class="stat-lbl">ESTIMATE</div>
+        <div class="stat-card" style="border-left:3px solid #8B5CF6">
+          <div class="stat-val" style="font-size:1.3rem;color:#8B5CF6">${fmtMoney(bcTotal)}</div>
+          <div class="stat-lbl">BASE CAMP</div>
         </div>
       </div>`;
 
+    // Location Guards section
+    html += `<div class="budget-dept-card">
+      <div class="budget-dept-header">
+        <span style="font-weight:700;font-size:.82rem;color:#06B6D4">LOCATION GUARDS</span>
+        <span style="font-weight:700;color:var(--green)">${fmtMoney(locTotalBudget)}</span>
+      </div>
+      <table class="budget-table"><thead><tr>
+        <th>Location</th><th>Type</th><th>Active Days</th><th>Guard-Days</th><th>Rate</th><th style="text-align:right">Total</th>
+      </tr></thead><tbody>
+        ${locActiveNames.map(loc => {
+          const info = locByLoc[loc];
+          return `<tr>
+            <td style="font-weight:600">${esc(loc)}</td>
+            <td style="font-size:.72rem;color:var(--text-3)">${info.type === 'tribal_camp' ? 'Tribal Camp' : info.type === 'game' ? 'Game' : 'Reward'}</td>
+            <td>${info.days}</td>
+            <td>${info.totalGuardDays}</td>
+            <td>$${GUARD_RATE_LOCATION}</td>
+            <td style="text-align:right;font-weight:600;color:var(--green)">${fmtMoney(info.cost)}</td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="6" style="color:var(--text-4)">No location guard data yet</td></tr>'}
+        <tr style="border-top:2px solid var(--border)">
+          <td colspan="3" style="font-weight:700;text-align:right">TOTAL LOCATION</td>
+          <td style="font-weight:700">${locTotalGuardDays}</td>
+          <td></td>
+          <td style="text-align:right;font-weight:700;color:var(--green)">${fmtMoney(locTotalBudget)}</td>
+        </tr>
+      </tbody></table>
+    </div>`;
+
+    // Base Camp groups
     Object.entries(byGroup).forEach(([name, data]) => {
       if (!data.rows.length) return;
       html += `<div class="budget-dept-card">
@@ -7567,13 +7776,9 @@ const App = (() => {
       </div>`;
     });
 
-    html += `<div class="budget-dept-card" style="margin-top:.5rem">
-      <table class="budget-table">
-        <tbody><tr class="budget-total-row">
-          <td colspan="6" style="text-align:right;color:var(--text-1)">TOTAL BASE CAMP GUARDS</td>
-          <td style="text-align:right;color:var(--green);font-size:1.05rem">${fmtMoney(totalGlobal)}</td>
-        </tr></tbody>
-      </table>
+    html += `<div style="margin-top:.75rem;padding:.75rem;background:var(--bg-surface);border-radius:8px;text-align:right">
+      <span style="font-size:.85rem;font-weight:700;color:var(--text-0)">GRAND TOTAL GUARDS: </span>
+      <span style="font-size:1.1rem;font-weight:700;color:var(--green)">${fmtMoney(grandTotal)}</span>
     </div>`;
 
     container.innerHTML = html;
@@ -8445,8 +8650,8 @@ const App = (() => {
     saveLocationSite, deleteLocationSite,
     // Guards — sub-tab navigation
     gdSetSubTab, gdSetView,
-    // Guards — Location Guards (read-only)
-    gdlRefresh, gdlExportCSV,
+    // Guards — Location Guards (editable)
+    gdlRefresh, gdlExportCSV, gdlCellClick, gdlToggleLock,
     // Guards — legacy guard post CRUD
     showAddGuardModal, closeAddGuardModal, editGuardPost,
     saveGuardPost, deleteGuardPost,

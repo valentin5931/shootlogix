@@ -2272,6 +2272,69 @@ def lock_guard_location_schedules(prod_id, dates, locked):
             )
 
 
+def sync_guard_location_from_locations(prod_id):
+    """Sync guard_location_schedules from location_schedules.
+    For each location/date with P/F/W activity, ensure a guard_location_schedule
+    entry exists (with default nb_guards based on location_type).
+    Remove entries where the location no longer has activity.
+    Returns the full list of guard_location_schedules."""
+    loc_sites = get_location_sites(prod_id)
+    loc_schedules = get_location_schedules(prod_id)
+    type_by_name = {s['name']: s.get('location_type', 'game') for s in loc_sites}
+
+    # Build set of active (location_name, date) from location_schedules
+    active_pairs = set()
+    for ls in loc_schedules:
+        active_pairs.add((ls['location_name'], ls['date']))
+
+    with get_db() as conn:
+        # Get existing guard_location_schedules
+        existing = conn.execute(
+            "SELECT * FROM guard_location_schedules WHERE production_id=?",
+            (prod_id,)
+        ).fetchall()
+        existing_pairs = {(r['location_name'], r['date']): dict(r) for r in existing}
+
+        # Insert missing entries with default nb_guards
+        for ls in loc_schedules:
+            key = (ls['location_name'], ls['date'])
+            if key not in existing_pairs:
+                loc_type = type_by_name.get(ls['location_name'], 'game')
+                default_guards = 4 if loc_type == 'tribal_camp' else 2
+                conn.execute(
+                    """INSERT OR IGNORE INTO guard_location_schedules
+                       (production_id, location_name, date, status, nb_guards, locked)
+                       VALUES (?,?,?,?,?,0)""",
+                    (prod_id, ls['location_name'], ls['date'],
+                     ls.get('status', 'P'), default_guards)
+                )
+
+        # Remove entries where the location no longer has activity
+        for (loc_name, date), entry in existing_pairs.items():
+            if (loc_name, date) not in active_pairs:
+                conn.execute(
+                    "DELETE FROM guard_location_schedules WHERE production_id=? AND location_name=? AND date=?",
+                    (prod_id, loc_name, date)
+                )
+
+    return get_guard_location_schedules(prod_id)
+
+
+def update_guard_location_nb_guards(prod_id, location_name, date, nb_guards):
+    """Update the nb_guards value for a specific guard_location_schedule entry."""
+    with get_db() as conn:
+        conn.execute(
+            """UPDATE guard_location_schedules SET nb_guards=?
+               WHERE production_id=? AND location_name=? AND date=?""",
+            (nb_guards, prod_id, location_name, date)
+        )
+        row = conn.execute(
+            "SELECT * FROM guard_location_schedules WHERE production_id=? AND location_name=? AND date=?",
+            (prod_id, location_name, date)
+        ).fetchone()
+        return dict(row) if row else None
+
+
 # ─── Location Sites CRUD ────────────────────────────────────────────────────
 
 def get_location_sites(prod_id):
@@ -2777,37 +2840,38 @@ def get_budget(prod_id):
                 "source": "auto",
             })
 
-    # GUARDS - LOCATION (auto from location_schedules)
-    type_by_name = {s['name']: s.get('location_type', 'game') for s in loc_sites}
+    # GUARDS (merged: Location Guards + Base Camp)
+    # Location Guards: read from guard_location_schedules (actual stored values)
+    guard_loc_schedules = get_guard_location_schedules(prod_id)
     loc_guard_by_loc = {}
-    for ls in loc_schedules:
-        loc_name = ls['location_name']
-        loc_type = type_by_name.get(loc_name, ls.get('location_type', 'game'))
-        nb_guards = 4 if loc_type == 'tribal_camp' else 2
-        loc_guard_by_loc.setdefault(loc_name, {'days': 0, 'guards': nb_guards, 'cost': 0, 'type': loc_type})
+    for gls in guard_loc_schedules:
+        loc_name = gls['location_name']
+        nb = gls.get('nb_guards', 2)
+        loc_guard_by_loc.setdefault(loc_name, {'days': 0, 'total_guard_days': 0, 'cost': 0})
         loc_guard_by_loc[loc_name]['days'] += 1
-        loc_guard_by_loc[loc_name]['cost'] += nb_guards * 45
+        loc_guard_by_loc[loc_name]['total_guard_days'] += nb
+        loc_guard_by_loc[loc_name]['cost'] += nb * 45
 
     if loc_guard_by_loc:
         for loc, info in loc_guard_by_loc.items():
             grand_total_est += info['cost']
             rows.append({
-                "department": "GUARDS - LOCATION",
-                "name": f"GUARD - {loc}",
+                "department": "GUARDS",
+                "name": f"LOCATION - {loc}",
                 "boat": "",
                 "vendor": "LOCALS",
                 "start_date": None,
                 "end_date": None,
-                "working_days": info['days'],
-                "unit_price_estimate": info['guards'] * 45,
+                "working_days": info['total_guard_days'],
+                "unit_price_estimate": 45,
                 "amount_estimate": info['cost'],
                 "amount_actual": None,
                 "source": "auto",
             })
 
-    # GUARDS - BASE CAMP (manual, from guard_camp_assignments)
+    # Base Camp guards
     gc_asgns = get_guard_camp_assignments(prod_id)
-    _add_rows("GUARDS - BASE CAMP", gc_asgns, entity_key='helper_name', rate_est_key='helper_daily_rate_estimate')
+    _add_rows("GUARDS", gc_asgns, entity_key='helper_name', rate_est_key='helper_daily_rate_estimate')
 
     # Manual budget_lines (other departments)
     with get_db() as conn:

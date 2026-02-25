@@ -54,6 +54,7 @@ from database import (
     sync_pdt_day_to_locations, remove_pdt_film_days_for_date,
     get_guard_location_schedules, upsert_guard_location_schedule,
     delete_guard_location_schedule, lock_guard_location_schedules,
+    sync_guard_location_from_locations, update_guard_location_nb_guards,
     get_fnb_tracking, upsert_fnb_tracking, delete_fnb_tracking, get_fnb_summary,
     # FNB v2
     get_fnb_categories, create_fnb_category, update_fnb_category, delete_fnb_category,
@@ -1742,6 +1743,28 @@ def api_lock_guard_location_schedules(prod_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/productions/<int:prod_id>/guard-schedules/sync", methods=["POST"])
+def api_sync_guard_location_schedules(prod_id):
+    """Sync guard_location_schedules from location_schedules (auto-populate defaults)."""
+    prod_or_404(prod_id)
+    result = sync_guard_location_from_locations(prod_id)
+    return jsonify(result)
+
+
+@app.route("/api/productions/<int:prod_id>/guard-schedules/update-guards", methods=["POST"])
+def api_update_guard_location_nb_guards(prod_id):
+    """Update nb_guards for a specific location/date."""
+    prod_or_404(prod_id)
+    data = request.json or {}
+    if not data.get('location_name') or not data.get('date'):
+        return jsonify({"error": "location_name and date required"}), 400
+    nb_guards = int(data.get('nb_guards', 0))
+    if nb_guards < 0:
+        return jsonify({"error": "nb_guards must be >= 0"}), 400
+    result = update_guard_location_nb_guards(prod_id, data['location_name'], data['date'], nb_guards)
+    return jsonify(result or {})
+
+
 # ─── Guard Camp (Base Camp) Workers & Assignments ─────────────────────────
 
 @app.route("/api/productions/<int:prod_id>/guard-camp-workers", methods=["GET"])
@@ -2471,53 +2494,54 @@ def api_export_budget_global(prod_id):
     auto_width(ws)
     summary_data["LABOUR"] = round(grand_est, 2)
 
-    # ── Sheet 8: GUARDS - LOCATION ────────────────────────────────────────────
-    ws = wb.create_sheet("Guards - Location")
-    type_by_name = {s['name']: s.get('location_type', 'game') for s in loc_sites}
-    loc_guard_by_loc = {}
-    for ls in loc_schedules:
-        loc_name = ls['location_name']
-        loc_type = type_by_name.get(loc_name, ls.get('location_type', 'game'))
-        nb_guards = 4 if loc_type == 'tribal_camp' else 2
-        loc_guard_by_loc.setdefault(loc_name, {'days': 0, 'guards': nb_guards, 'cost': 0, 'type': loc_type})
-        loc_guard_by_loc[loc_name]['days'] += 1
-        loc_guard_by_loc[loc_name]['cost'] += nb_guards * 45
-
-    ws.append(["KLAS 7 - GUARDS LOCATION BUDGET"])
+    # ── Sheet 8: GUARDS (merged Location + Base Camp) ───────────────────────
+    ws = wb.create_sheet("Guards")
+    ws.append(["KLAS 7 - GUARDS BUDGET"])
     ws.cell(row=1, column=1).font = title_font
     ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
     ws.append([])
-    ws.append(["Location", "Type", "Guards/Day", "Man-Days", "Rate/Guard/Day ($)", "Total ($)"])
+
+    # Part A: Location Guards (from guard_location_schedules)
+    guard_loc_data = get_guard_location_schedules(prod_id)
+    type_by_name = {s['name']: s.get('location_type', 'game') for s in loc_sites}
+    loc_guard_by_loc = {}
+    for gls in guard_loc_data:
+        loc_name = gls['location_name']
+        nb = gls.get('nb_guards', 2)
+        loc_type = type_by_name.get(loc_name, 'game')
+        loc_guard_by_loc.setdefault(loc_name, {'days': 0, 'total_guard_days': 0, 'cost': 0, 'type': loc_type})
+        loc_guard_by_loc[loc_name]['days'] += 1
+        loc_guard_by_loc[loc_name]['total_guard_days'] += nb
+        loc_guard_by_loc[loc_name]['cost'] += nb * 45
+
+    ws.append(["LOCATION GUARDS"])
+    ws.cell(row=ws.max_row, column=1).font = subtotal_font
+    ws.append(["Location", "Type", "Active Days", "Guard-Days", "Rate/Guard/Day ($)", "Total ($)"])
     style_header_row(ws, 6)
     gl_grand = 0
     for loc_name, info in sorted(loc_guard_by_loc.items()):
-        man_days = info['days'] * info['guards']
-        ws.append([loc_name, info['type'], info['guards'], man_days, 45, round(info['cost'], 2)])
+        ws.append([loc_name, info['type'], info['days'], info['total_guard_days'], 45, round(info['cost'], 2)])
         gl_grand += info['cost']
     ws.append([])
-    ws.append(["", "", "", "", "GRAND TOTAL", round(gl_grand, 2)])
-    ws.cell(row=ws.max_row, column=6).font = green_font
-    auto_width(ws)
-    summary_data["GUARDS - LOCATION"] = round(gl_grand, 2)
+    ws.append(["", "", "", "", "SUB-TOTAL LOCATION", round(gl_grand, 2)])
+    ws.cell(row=ws.max_row, column=6).font = subtotal_font
+    ws.append([])
 
-    # ── Sheet 9: GUARDS - BASE CAMP ──────────────────────────────────────────
-    ws = wb.create_sheet("Guards - Base Camp")
+    # Part B: Base Camp Guards
     gc_rows = [r for r in get_guard_camp_assignments(prod_id) if r.get("working_days")]
     by_group = OrderedDict()
     for r in gc_rows:
         g = r.get("function_group") or r.get("helper_group") or "GENERAL"
         by_group.setdefault(g, []).append(r)
 
-    ws.append(["KLAS 7 - GUARDS BASE CAMP BUDGET"])
-    ws.cell(row=1, column=1).font = title_font
-    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
-    ws.append([])
+    ws.append(["BASE CAMP GUARDS"])
+    ws.cell(row=ws.max_row, column=1).font = subtotal_font
     ws.append(["Group", "Function", "Guard", "Role", "Contact",
                "Start", "End", "Working Days", "Rate/day",
                "Total Estimate", "Total Actual"])
     style_header_row(ws, 11)
-    grand_est = 0
-    grand_act = 0
+    gc_grand_est = 0
+    gc_grand_act = 0
     for group_name, group_rows in by_group.items():
         group_est = 0
         group_act = 0
@@ -2541,13 +2565,18 @@ def api_export_budget_global(prod_id):
                    round(group_est, 2), round(group_act, 2) if group_act else ""])
         ws.cell(row=ws.max_row, column=10).font = subtotal_font
         ws.append([])
-        grand_est += group_est
-        grand_act += group_act
-    ws.append(["", "", "", "", "", "", "GRAND TOTAL", "", "",
-               round(grand_est, 2), round(grand_act, 2) if grand_act else ""])
+        gc_grand_est += group_est
+        gc_grand_act += group_act
+    ws.append(["", "", "", "", "", "", "SUB-TOTAL BASE CAMP", "", "",
+               round(gc_grand_est, 2), round(gc_grand_act, 2) if gc_grand_act else ""])
+    ws.cell(row=ws.max_row, column=10).font = subtotal_font
+    ws.append([])
+    total_guards = gl_grand + gc_grand_est
+    ws.append(["", "", "", "", "", "", "GRAND TOTAL GUARDS", "", "",
+               round(total_guards, 2), ""])
     ws.cell(row=ws.max_row, column=10).font = green_font
     auto_width(ws)
-    summary_data["GUARDS - BASE CAMP"] = round(grand_est, 2)
+    summary_data["GUARDS"] = round(total_guards, 2)
 
     # ── Sheet 10: FNB ─────────────────────────────────────────────────────────
     ws = wb.create_sheet("FNB")
