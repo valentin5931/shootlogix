@@ -1625,6 +1625,42 @@ const App = (() => {
     return groupColor;
   }
 
+  // ── Scroll preservation helper ──────────────────────────────
+  // Before re-rendering a schedule via innerHTML, save scroll offsets of
+  // scrollable wrappers inside the container, then restore after the update.
+  function _saveScheduleScroll(container) {
+    const saved = {};
+    if (!container) return saved;
+    // Save container's own scroll position
+    saved.container = { left: container.scrollLeft, top: container.scrollTop };
+    const sw = container.querySelector('.schedule-wrap');
+    if (sw) { saved.sw = { left: sw.scrollLeft, top: sw.scrollTop }; }
+    const sl = container.querySelector('.schedule-lock-outer');
+    if (sl) { saved.sl = { left: sl.scrollLeft, top: sl.scrollTop }; }
+    const lw = container.querySelector('.loc-schedule-wrap');
+    if (lw) { saved.lw = { left: lw.scrollLeft, top: lw.scrollTop }; }
+    return saved;
+  }
+  function _restoreScheduleScroll(container, saved) {
+    if (!container || !saved) return;
+    if (saved.container) {
+      container.scrollLeft = saved.container.left;
+      container.scrollTop = saved.container.top;
+    }
+    if (saved.sw) {
+      const sw = container.querySelector('.schedule-wrap');
+      if (sw) { sw.scrollLeft = saved.sw.left; sw.scrollTop = saved.sw.top; }
+    }
+    if (saved.sl) {
+      const sl = container.querySelector('.schedule-lock-outer');
+      if (sl) { sl.scrollLeft = saved.sl.left; sl.scrollTop = saved.sl.top; }
+    }
+    if (saved.lw) {
+      const lw = container.querySelector('.loc-schedule-wrap');
+      if (lw) { lw.scrollLeft = saved.lw.left; lw.scrollTop = saved.lw.top; }
+    }
+  }
+
   function renderSchedule() {
     const container = $('schedule-container');
     const days = [];
@@ -1739,6 +1775,7 @@ const App = (() => {
       </td>`;
     }).join('');
 
+    const _scrollSaved = _saveScheduleScroll(container);
     container.innerHTML = `
       <div class="schedule-wrap"><table class="schedule-table">
         <thead>
@@ -1757,6 +1794,7 @@ const App = (() => {
     const _sw = container.querySelector('.schedule-wrap');
     const _sl = container.querySelector('.schedule-lock-outer');
     _sw.addEventListener('scroll', () => { _sl.scrollLeft = _sw.scrollLeft; });
+    _restoreScheduleScroll(container, _scrollSaved);
   }
 
   // ── Schedule cell interactions ─────────────────────────────
@@ -2626,6 +2664,7 @@ const App = (() => {
           title="${isLocked ? 'Unlock' : 'Lock this day'}">
       </td>`;
     }).join('');
+    const _scrollSaved = _saveScheduleScroll(container);
     container.innerHTML = `
       <div class="schedule-wrap"><table class="schedule-table">
         <thead><tr>${monthRow}</tr><tr>${dayRow}</tr></thead>
@@ -2638,6 +2677,7 @@ const App = (() => {
     const _sw = container.querySelector('.schedule-wrap');
     const _sl = container.querySelector('.schedule-lock-outer');
     _sw.addEventListener('scroll', () => { _sl.scrollLeft = _sw.scrollLeft; });
+    _restoreScheduleScroll(container, _scrollSaved);
   }
 
   async function pbOnDateCellClick(event, funcId, assignmentId, date) {
@@ -3390,6 +3430,7 @@ const App = (() => {
           title="${isLocked ? 'Unlock' : 'Lock this day'}">
       </td>`;
     }).join('');
+    const _scrollSaved = _saveScheduleScroll(container);
     container.innerHTML = `
       <div class="schedule-wrap"><table class="schedule-table">
         <thead><tr>${monthRow}</tr><tr>${dayRow}</tr></thead>
@@ -3401,6 +3442,7 @@ const App = (() => {
     const _sw = container.querySelector('.schedule-wrap');
     const _sl = container.querySelector('.schedule-lock-outer');
     if (_sw && _sl) _sw.addEventListener('scroll', () => { _sl.scrollLeft = _sw.scrollLeft; });
+    _restoreScheduleScroll(container, _scrollSaved);
   }
 
   async function tbOnDateCellClick(event, funcId, assignmentId, date) {
@@ -4064,6 +4106,7 @@ const App = (() => {
       </td>`;
     }).join('');
 
+    const _scrollSaved = _saveScheduleScroll(container);
     container.innerHTML = `
       <div class="schedule-wrap">
         <table class="schedule-table">
@@ -4088,6 +4131,7 @@ const App = (() => {
           </tfoot>
         </table>
       </div>`;
+    _restoreScheduleScroll(container, _scrollSaved);
   }
 
   // ── Cell input (debounced save) ────────────────────────────────────────────
@@ -4295,6 +4339,7 @@ const App = (() => {
       </td>`;
     }).join('');
 
+    const _scrollSaved = _saveScheduleScroll(container);
     container.innerHTML = addBtn + `
       <div class="schedule-wrap">
         <table class="schedule-table">
@@ -4319,6 +4364,7 @@ const App = (() => {
           </tfoot>
         </table>
       </div>`;
+    _restoreScheduleScroll(container, _scrollSaved);
   }
 
   // Machinery cell input (debounced) — uses same fuel_entries table with source_type='machinery'
@@ -5212,6 +5258,7 @@ const App = (() => {
           title="${isLocked ? 'Unlock' : 'Lock this day'}">
       </td>`;
     }).join('');
+    const _scrollSaved = _saveScheduleScroll(container);
     container.innerHTML = `
       <div class="schedule-wrap"><table class="schedule-table">
         <thead><tr>${monthRow}</tr><tr>${dayRow}</tr></thead>
@@ -5223,6 +5270,7 @@ const App = (() => {
     const _sw = container.querySelector('.schedule-wrap');
     const _sl = container.querySelector('.schedule-lock-outer');
     if (_sw && _sl) _sw.addEventListener('scroll', () => { _sl.scrollLeft = _sw.scrollLeft; });
+    _restoreScheduleScroll(container, _scrollSaved);
   }
 
   // ── Schedule cell click (toggle day on/off) ──────────────────
@@ -5797,6 +5845,7 @@ const App = (() => {
           title="${isLocked ? 'Unlock' : 'Lock this day'}">
       </td>`;
     }).join('');
+    const _scrollSaved = _saveScheduleScroll(container);
     container.innerHTML = `
       <div class="schedule-wrap"><table class="schedule-table">
         <thead><tr>${monthRow}</tr><tr>${dayRow}</tr></thead>
@@ -5809,6 +5858,7 @@ const App = (() => {
     const _sw = container.querySelector('.schedule-wrap');
     const _sl = container.querySelector('.schedule-lock-outer');
     if (_sw && _sl) _sw.addEventListener('scroll', () => { _sl.scrollLeft = _sw.scrollLeft; });
+    _restoreScheduleScroll(container, _scrollSaved);
   }
 
   // ── Security Boats Schedule cell interactions ───────────────
@@ -6504,7 +6554,9 @@ const App = (() => {
         </table>
       </div>
     </div>`;
+    const _scrollSaved = _saveScheduleScroll(container);
     container.innerHTML = html;
+    _restoreScheduleScroll(container, _scrollSaved);
   }
 
   function renderLocBudget() {
@@ -7088,7 +7140,9 @@ const App = (() => {
     }
 
     html += `</div>`;
+    const _scrollSaved = _saveScheduleScroll(container);
     container.innerHTML = html;
+    _restoreScheduleScroll(container, _scrollSaved);
   }
 
   // Combined budget for all guards (Location + Base Camp)
@@ -7904,6 +7958,7 @@ const App = (() => {
           title="${isLocked ? 'Unlock' : 'Lock this day'}">
       </td>`;
     }).join('');
+    const _scrollSaved = _saveScheduleScroll(container);
     container.innerHTML = `
       <div class="schedule-wrap"><table class="schedule-table">
         <thead><tr>${monthRow}</tr><tr>${dayRow}</tr></thead>
@@ -7915,6 +7970,7 @@ const App = (() => {
     const _sw = container.querySelector('.schedule-wrap');
     const _sl = container.querySelector('.schedule-lock-outer');
     if (_sw && _sl) _sw.addEventListener('scroll', () => { _sl.scrollLeft = _sw.scrollLeft; });
+    _restoreScheduleScroll(container, _scrollSaved);
   }
 
   // ── Schedule cell click ────────────────────────────────────────
@@ -8291,7 +8347,9 @@ const App = (() => {
     }
 
     html += `</div>`;
+    const _scrollSaved = _saveScheduleScroll(container);
     container.innerHTML = html;
+    _restoreScheduleScroll(container, _scrollSaved);
   }
 
   function _fnbRenderGrid(entryType) {
