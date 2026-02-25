@@ -1380,9 +1380,11 @@ def api_export_fuel_budget_csv(prod_id):
                 a.get('function_name') or '?'
             )
 
-    # Group entries by consumer
+    # Group entries by consumer (skip machinery — handled separately below)
     consumers = {}
     for e in entries:
+        if e['source_type'] == 'machinery':
+            continue
         key = (e['source_type'], e['assignment_id'])
         name_info = asgn_map.get(key, (f"#{e['assignment_id']}", '?'))
         consumer_key = f"{e['source_type'].upper()} | {name_info[0]} | {name_info[1]}"
@@ -1403,19 +1405,29 @@ def api_export_fuel_budget_csv(prod_id):
         else:
             consumers[consumer_key]['diesel_l'] += liters
 
-    # Add machinery
-    for m in machinery:
-        consumer_key = f"MACHINERY | {m['name']}"
-        ft = m.get('fuel_type', 'DIESEL')
-        wd = working_days(m.get('start_date'), m.get('end_date'))
-        total_l = round((m.get('liters_per_day') or 0) * wd, 1)
-        price = cur_diesel if ft == 'DIESEL' else cur_petrol
-        consumers[consumer_key] = {
-            'diesel_l': total_l if ft == 'DIESEL' else 0,
-            'petrol_l': total_l if ft == 'PETROL' else 0,
-            'cost_up_to_date': 0,
-            'cost_estimate': total_l * price,
-        }
+    # Machinery — computed from actual fuel_entries (source_type='machinery')
+    # Build a name lookup from machinery records
+    machinery_names = {m['id']: m['name'] for m in machinery}
+    for e in entries:
+        if e['source_type'] != 'machinery':
+            continue
+        m_name = machinery_names.get(e['assignment_id'], f"Machine #{e['assignment_id']}")
+        consumer_key = f"MACHINERY | {m_name}"
+        if consumer_key not in consumers:
+            consumers[consumer_key] = {'diesel_l': 0, 'petrol_l': 0, 'cost_up_to_date': 0, 'cost_estimate': 0}
+        ft = e.get('fuel_type', 'DIESEL')
+        liters = e.get('liters', 0) or 0
+        date = e.get('date', '')
+        if date in locked_prices:
+            price = locked_prices[date]['diesel_price'] if ft == 'DIESEL' else locked_prices[date]['petrol_price']
+            consumers[consumer_key]['cost_up_to_date'] += liters * price
+        else:
+            price = cur_diesel if ft == 'DIESEL' else cur_petrol
+            consumers[consumer_key]['cost_estimate'] += liters * price
+        if ft == 'PETROL':
+            consumers[consumer_key]['petrol_l'] += liters
+        else:
+            consumers[consumer_key]['diesel_l'] += liters
 
     out = io.StringIO()
     w = csv.writer(out)
@@ -1464,18 +1476,18 @@ def api_export_fuel_csv(prod_id):
     w = csv.writer(out)
     w.writerow(["Category", "Name / Function", "Date", "Liters", "Fuel Type"])
     totals = {"DIESEL": 0, "PETROL": 0}
+    # Build machinery name lookup for readable export
+    machinery_names = {m['id']: m['name'] for m in machinery}
     for e in entries:
-        w.writerow([e.get("source_type", ""), e.get("assignment_id", ""),
+        src = e.get("source_type", "")
+        name = e.get("assignment_id", "")
+        # For machinery entries, resolve to readable name
+        if src == "machinery":
+            name = machinery_names.get(e.get("assignment_id"), name)
+        w.writerow([src, name,
                     e.get("date", ""), e.get("liters", 0), e.get("fuel_type", "")])
         ft = e.get("fuel_type", "DIESEL")
         totals[ft] = totals.get(ft, 0) + (e.get("liters") or 0)
-    for m in machinery:
-        wd = working_days(m.get("start_date"), m.get("end_date"))
-        total_l = round((m.get("liters_per_day") or 0) * wd, 1)
-        w.writerow(["MACHINERY", m.get("name", ""), f"{m.get('start_date','')} → {m.get('end_date','')}",
-                    total_l, m.get("fuel_type", "")])
-        ft = m.get("fuel_type", "DIESEL")
-        totals[ft] = totals.get(ft, 0) + total_l
     w.writerow([])
     w.writerow(["GRAND TOTAL DIESEL", "", "", totals.get("DIESEL", 0), "DIESEL"])
     w.writerow(["GRAND TOTAL PETROL", "", "", totals.get("PETROL", 0), "PETROL"])
@@ -2377,6 +2389,8 @@ def api_export_budget_global(prod_id):
 
     consumers = {}
     for e in entries:
+        if e['source_type'] == 'machinery':
+            continue  # handled separately below with proper name resolution
         key = (e['source_type'], e['assignment_id'])
         name_info = asgn_map.get(key, (f"#{e['assignment_id']}", '?'))
         consumer_key = f"{e['source_type'].upper()} | {name_info[0]} | {name_info[1]}"
@@ -2396,18 +2410,29 @@ def api_export_budget_global(prod_id):
         else:
             consumers[consumer_key]['diesel_l'] += liters
 
-    for m in machinery:
-        consumer_key = f"MACHINERY | {m['name']}"
-        ft = m.get('fuel_type', 'DIESEL')
-        wd = working_days(m.get('start_date'), m.get('end_date'))
-        total_l = round((m.get('liters_per_day') or 0) * wd, 1)
-        price = cur_diesel if ft == 'DIESEL' else cur_petrol
-        consumers[consumer_key] = {
-            'diesel_l': total_l if ft == 'DIESEL' else 0,
-            'petrol_l': total_l if ft == 'PETROL' else 0,
-            'cost_up_to_date': 0,
-            'cost_estimate': total_l * price,
-        }
+    # Machinery entries from fuel_entries with source_type='machinery'
+    # Resolve machinery names for consumer keys
+    machinery_names = {m['id']: m['name'] for m in machinery}
+    for e in entries:
+        if e['source_type'] != 'machinery':
+            continue
+        m_name = machinery_names.get(e['assignment_id'], f"Machine #{e['assignment_id']}")
+        consumer_key = f"MACHINERY | {m_name}"
+        if consumer_key not in consumers:
+            consumers[consumer_key] = {'diesel_l': 0, 'petrol_l': 0, 'cost_up_to_date': 0, 'cost_estimate': 0}
+        ft = e.get('fuel_type', 'DIESEL')
+        liters = e.get('liters', 0) or 0
+        date = e.get('date', '')
+        if date in locked_prices:
+            price = locked_prices[date]['diesel_price'] if ft == 'DIESEL' else locked_prices[date]['petrol_price']
+            consumers[consumer_key]['cost_up_to_date'] += liters * price
+        else:
+            price = cur_diesel if ft == 'DIESEL' else cur_petrol
+            consumers[consumer_key]['cost_estimate'] += liters * price
+        if ft == 'PETROL':
+            consumers[consumer_key]['petrol_l'] += liters
+        else:
+            consumers[consumer_key]['diesel_l'] += liters
 
     ws.append(["KLAS 7 - FUEL BUDGET"])
     ws.cell(row=1, column=1).font = title_font

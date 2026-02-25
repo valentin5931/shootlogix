@@ -3901,10 +3901,14 @@ const App = (() => {
 
   function renderFuelTab() {
     const tab = state.fuelTab;
-    const isSchedule = ['boats','picture_boats','security_boats','transport'].includes(tab);
+    const isLinkedSchedule = ['boats','picture_boats','security_boats','transport'].includes(tab);
+    const isSchedule = isLinkedSchedule || tab === 'machinery';
+    // Show toolbar for all schedules; hide auto-fill for machinery (manual only)
     $('fuel-toolbar').classList.toggle('hidden', !isSchedule);
-    if (isSchedule)          renderFuelGrid(tab);
-    else if (tab==='machinery') renderFuelMachinery();
+    const autoFillBtn = $('fuel-toolbar')?.querySelector('[onclick*="fuelAutoFill"]');
+    if (autoFillBtn) autoFillBtn.classList.toggle('hidden', tab === 'machinery');
+    if (isLinkedSchedule)       renderFuelGrid(tab);
+    else if (tab==='machinery') renderFuelMachineryGrid();
     else if (tab==='budget')    renderFuelBudget();
   }
 
@@ -4174,48 +4178,173 @@ const App = (() => {
     try { localStorage.setItem('fuel_locked_days', JSON.stringify(state.fuelLockedDays)); } catch(e) {}
     const tab = state.fuelTab;
     if (['boats','picture_boats','security_boats','transport'].includes(tab)) renderFuelGrid(tab);
+    else if (tab === 'machinery') renderFuelMachineryGrid();
   }
 
-  // ── Machinery ─────────────────────────────────────────────────────────────
+  // ── Machinery (proper day-by-day schedule grid — manual input) ────────────
 
-  function renderFuelMachinery() {
+  function renderFuelMachineryGrid() {
     const container = $('fuel-content');
-    const rows = state.fuelMachinery || [];
-    const addBtn = `<div style="padding:1rem 1rem .5rem"><button class="btn btn-sm btn-primary" onclick="App.showFuelMachineryModal()">+ Add machinery</button></div>`;
-    if (!rows.length) {
-      container.innerHTML = addBtn + `<div style="color:var(--text-4);font-size:.85rem;padding:.5rem 1rem">No machinery rows yet.</div>`;
+    const machines = state.fuelMachinery || [];
+    const addBtn = `<div style="padding:.75rem 1rem .5rem;display:flex;gap:.5rem;align-items:center">
+      <button class="btn btn-sm btn-primary" onclick="App.showFuelMachineryModal()">+ Add machinery</button>
+      <span style="font-size:.7rem;color:var(--text-4)">${machines.length} item${machines.length!==1?'s':''}</span>
+    </div>`;
+    if (!machines.length) {
+      container.innerHTML = addBtn + `<div style="color:var(--text-4);font-size:.85rem;padding:.5rem 1rem">No machinery items yet. Add one to start entering fuel consumption.</div>`;
       return;
     }
-    const tableRows = rows.map((m, i) => {
-      const wd = workingDays(m.start_date, m.end_date);
-      const tot = Math.round((m.liters_per_day||0) * wd);
-      return `<tr style="${i%2?'background:var(--bg-surface)':''}">
-        <td style="font-weight:600;color:var(--text-0)">${esc(m.name)}</td>
-        <td><span style="font-size:.7rem;font-weight:700;padding:.15rem .4rem;border-radius:4px;
-          background:${m.fuel_type==='PETROL'?'rgba(249,115,22,.15)':'rgba(59,130,246,.15)'};
-          color:${m.fuel_type==='PETROL'?'#F97316':'#3B82F6'}">${esc(m.fuel_type)}</span></td>
-        <td style="color:var(--text-3);font-size:.72rem">${fmtDate(m.start_date)}</td>
-        <td style="color:var(--text-3);font-size:.72rem">${fmtDate(m.end_date)}</td>
-        <td style="text-align:right;color:var(--text-2)">${m.liters_per_day||0} L/day</td>
-        <td style="text-align:right;font-weight:700;color:var(--accent)">${tot>0?tot.toLocaleString('fr-FR')+' L':'—'}</td>
-        <td style="color:var(--text-3);font-size:.72rem;max-width:160px">${esc(m.notes||'')}</td>
-        <td style="white-space:nowrap">
-          <button class="btn btn-sm btn-secondary btn-icon" onclick="App.showFuelMachineryModal(${m.id})">✎</button>
-          <button class="btn btn-sm btn-danger btn-icon" onclick="App.deleteFuelMachinery(${m.id})">✕</button>
+
+    // Build fuel_entries map for machinery: key = machineryId:date
+    const entMap = {};
+    (state.fuelEntries || []).filter(e => e.source_type === 'machinery').forEach(e => {
+      entMap[`${e.assignment_id}:${e.date}`] = e;
+    });
+
+    // Date range
+    const allDates = [];
+    { const c = new Date(SCHEDULE_START.getFullYear(), SCHEDULE_START.getMonth(), SCHEDULE_START.getDate());
+      const e = new Date(SCHEDULE_END.getFullYear(),   SCHEDULE_END.getMonth(),   SCHEDULE_END.getDate());
+      while (c <= e) { allDates.push(_localDk(c)); c.setDate(c.getDate()+1); } }
+
+    // Month spans
+    const monthSpans = [];
+    let mCur = null, mN = 0;
+    allDates.forEach(dk => {
+      const m = dk.slice(0,7);
+      if (m !== mCur) { if (mCur) monthSpans.push({m: mCur, n: mN}); mCur = m; mN = 1; } else mN++;
+    });
+    if (mCur) monthSpans.push({m: mCur, n: mN});
+
+    const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const monthHdr = monthSpans.map(s => {
+      const mo = parseInt(s.m.slice(5,7))-1;
+      return `<th colspan="${s.n}" style="text-align:center;font-size:.62rem;color:var(--text-3);padding:.15rem;border-bottom:1px solid var(--border)">${MO[mo]} ${s.m.slice(0,4)}</th>`;
+    }).join('');
+
+    const pdtByDate = {};
+    state.shootingDays.forEach(d => { pdtByDate[d.date] = d; });
+
+    const dayHdr = allDates.map(dk => {
+      const dLocal = new Date(dk+'T00:00:00');
+      const isWe = [0,6].includes(dLocal.getDay());
+      const isLk = !!state.fuelLockedDays[dk];
+      return `<th class="schedule-day-th ${isWe ? 'weekend-col' : ''} ${pdtByDate[dk] ? 'has-pdt' : ''} ${isLk ? 'day-locked' : ''}"
+    data-date="${dk}"
+    onmouseenter="App.showPDTTooltip(event,'${dk}')"
+    onmouseleave="App.hidePDTTooltip()"
+  >${dLocal.getDate()}</th>`;
+    }).join('');
+
+    // Machine rows
+    const rows = machines.map(machine => {
+      const ft = machine.fuel_type || 'DIESEL';
+      let rowTotal = 0;
+
+      const cells = allDates.map(dk => {
+        const isWe = [0,6].includes(new Date(dk+'T00:00:00').getDay());
+        const isLocked = !!state.fuelLockedDays[dk];
+        const entry = entMap[`${machine.id}:${dk}`];
+        if (entry?.liters) rowTotal += entry.liters;
+
+        const weCls = isWe ? ' weekend-col' : '';
+        const val = entry ? entry.liters : '';
+        const eId = entry ? entry.id : 'null';
+        if (isLocked) return `<td class="fuel-data-cell fuel-locked${weCls}"><input type="number" disabled value="${val}"></td>`;
+        return `<td class="fuel-data-cell${weCls}"><input type="number" step="1" min="0" value="${val}"
+          oninput="App.fuelMachineryCellInput(${machine.id},'${dk}',this.value,'${ft}',${eId})"></td>`;
+      }).join('');
+
+      return `<tr>
+        <td class="role-name-cell" style="min-width:170px;max-width:210px">
+          <div style="display:flex;align-items:center;gap:.35rem;margin-bottom:.15rem">
+            <span style="font-weight:600;font-size:.73rem;color:var(--text-0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">${esc(machine.name)}</span>
+            <button class="btn btn-sm btn-secondary btn-icon" style="padding:0 .2rem;font-size:.65rem;line-height:1" onclick="App.showFuelMachineryModal(${machine.id})" title="Edit">&#9998;</button>
+            <button class="btn btn-sm btn-danger btn-icon" style="padding:0 .2rem;font-size:.65rem;line-height:1" onclick="App.deleteFuelMachinery(${machine.id})" title="Delete">&times;</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:.35rem">
+            <span style="font-size:.62rem;font-weight:700;padding:.1rem .3rem;border-radius:3px;
+              background:${ft==='PETROL'?'rgba(249,115,22,.15)':'rgba(59,130,246,.15)'};
+              color:${ft==='PETROL'?'#F97316':'#3B82F6'}">${ft}</span>
+            <select class="fuel-type-sel" style="font-size:.62rem" onchange="App.fuelMachineryRowTypeChange(${machine.id},this.value)">
+              <option value="DIESEL"${ft==='DIESEL'?' selected':''}>DIESEL</option>
+              <option value="PETROL"${ft==='PETROL'?' selected':''}>PETROL</option>
+            </select>
+            ${machine.notes ? `<span style="font-size:.58rem;color:var(--text-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px" title="${esc(machine.notes||'')}">${esc(machine.notes||'')}</span>` : ''}
+          </div>
         </td>
+        ${cells}
+        <td class="role-name-cell" style="text-align:right;font-weight:700;color:var(--accent);font-size:.72rem;padding:.2rem .45rem">${rowTotal>0?Math.round(rowTotal).toLocaleString('fr-FR')+' L':''}</td>
       </tr>`;
     }).join('');
-    container.innerHTML = addBtn + `<div style="padding:0 1rem 1rem">
-      <div class="budget-dept-card">
-        <table class="budget-table">
-          <thead><tr>
-            <th style="text-align:left">Name</th><th>Fuel</th><th>Start</th><th>End</th>
-            <th style="text-align:right">L/day</th><th style="text-align:right">Total L</th>
-            <th style="text-align:left">Notes</th><th></th>
-          </tr></thead>
-          <tbody>${tableRows}</tbody>
+
+    // Total per day row
+    const dayTotals = allDates.map(dk => {
+      const isWe = [0,6].includes(new Date(dk+'T00:00:00').getDay());
+      const tot = machines.reduce((s, m) => s + (entMap[`${m.id}:${dk}`]?.liters || 0), 0);
+      return `<td style="text-align:center;font-size:.65rem;font-weight:700;padding:.1rem;
+        color:${tot>0?'var(--accent)':'var(--border)'};${isWe?'background:rgba(0,0,0,.04)':''}">${tot>0?Math.round(tot):''}</td>`;
+    }).join('');
+
+    // Lock row
+    const lockCells = allDates.map(dk => {
+      const isWe = [0,6].includes(new Date(dk+'T00:00:00').getDay());
+      const isLk = !!state.fuelLockedDays[dk];
+      return `<td class="sch-lock-cell${isWe?' weekend-col':''}">
+        <input type="checkbox" class="day-lock-cb"${isLk?' checked':''} onchange="App.fuelToggleDayLock('${dk}',this.checked)">
+      </td>`;
+    }).join('');
+
+    container.innerHTML = addBtn + `
+      <div class="schedule-wrap">
+        <table class="schedule-table">
+          <thead>
+            <tr><th class="role-name-cell"></th>${monthHdr}<th></th></tr>
+            <tr><th class="role-name-cell"></th>${dayHdr}<th class="role-name-cell" style="font-size:.62rem;color:var(--text-4)">Total</th></tr>
+          </thead>
+          <tbody>
+            ${rows}
+            <tr class="schedule-count-row">
+              <td class="role-name-cell" style="color:var(--text-3);font-size:.65rem">Total L/day</td>
+              ${dayTotals}
+              <td></td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr class="schedule-lock-row fuel-lock-row">
+              <td class="role-name-cell sch-lock-label" title="Lock fuel day (read-only)">&#128274; LOCK</td>
+              ${lockCells}
+              <td class="role-name-cell"></td>
+            </tr>
+          </tfoot>
         </table>
-      </div></div>`;
+      </div>`;
+  }
+
+  // Machinery cell input (debounced) — uses same fuel_entries table with source_type='machinery'
+  function fuelMachineryCellInput(machineId, date, value, ft, existingId) {
+    const key = `machinery:${machineId}:${date}`;
+    clearTimeout(_fuelTimers[key]);
+    _fuelTimers[key] = setTimeout(() => _saveFuelEntry('machinery', machineId, date, value, ft, existingId), 600);
+  }
+
+  // Change fuel type for all entries of a machinery row + update the machinery record itself
+  async function fuelMachineryRowTypeChange(machineId, newType) {
+    // Update all existing fuel entries for this machine
+    const toUpdate = (state.fuelEntries||[]).filter(e => e.source_type==='machinery' && e.assignment_id===machineId);
+    await Promise.all(toUpdate.map(e =>
+      api('POST', `/api/productions/${state.prodId}/fuel-entries`, { ...e, fuel_type: newType })
+    ));
+    state.fuelEntries = (state.fuelEntries||[]).map(e =>
+      (e.source_type==='machinery' && e.assignment_id===machineId) ? { ...e, fuel_type: newType } : e
+    );
+    // Also update the machinery record's fuel_type
+    try {
+      const updated = await api('PUT', `/api/fuel-machinery/${machineId}`, { fuel_type: newType });
+      const idx = (state.fuelMachinery||[]).findIndex(m => m.id === machineId);
+      if (idx >= 0) state.fuelMachinery[idx] = updated;
+    } catch(e) { /* silent */ }
+    renderFuelMachineryGrid();
   }
 
   function showFuelMachineryModal(editId) {
@@ -4267,7 +4396,7 @@ const App = (() => {
         toast('Machinery added');
       }
       closeFuelMachineryModal();
-      renderFuelMachinery();
+      renderFuelMachineryGrid();
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -4275,7 +4404,7 @@ const App = (() => {
     showConfirm('Delete this machinery row?', async () => {
       await api('DELETE', `/api/fuel-machinery/${id}`);
       state.fuelMachinery = (state.fuelMachinery||[]).filter(m => m.id !== id);
-      renderFuelMachinery();
+      renderFuelMachineryGrid();
       toast('Deleted');
     });
   }
@@ -4311,15 +4440,24 @@ const App = (() => {
       catData[cat] = { diesel: Math.round(diesel), petrol: Math.round(petrol), total: Math.round(diesel+petrol), costUtd: Math.round(costUtd), costEst: Math.round(costEst) };
     });
 
-    // Machinery (always estimate since not day-locked)
-    let mD=0, mP=0, mCost=0;
-    (state.fuelMachinery||[]).forEach(m => {
-      const wd = workingDays(m.start_date, m.end_date);
-      const tot = Math.round((m.liters_per_day||0)*wd);
-      if (m.fuel_type==='PETROL') { mP += tot; mCost += tot * pP; }
-      else { mD += tot; mCost += tot * pD; }
-    });
-    catData['machinery'] = { diesel:mD, petrol:mP, total:mD+mP, costUtd:0, costEst:Math.round(mCost) };
+    // Machinery — computed from actual fuel_entries (source_type='machinery'), same as other categories
+    {
+      const es = (state.fuelEntries||[]).filter(e => e.source_type === 'machinery');
+      let diesel = 0, petrol = 0, costUtd = 0, costEst = 0;
+      es.forEach(e => {
+        const l = e.liters || 0;
+        const ft = e.fuel_type || 'DIESEL';
+        const d = e.date || '';
+        if (ft === 'PETROL') petrol += l; else diesel += l;
+        if (state.fuelLockedPrices[d]) {
+          const lp = state.fuelLockedPrices[d];
+          costUtd += l * (ft === 'PETROL' ? (lp.petrol_price||0) : (lp.diesel_price||0));
+        } else {
+          costEst += l * (ft === 'PETROL' ? pP : pD);
+        }
+      });
+      catData['machinery'] = { diesel: Math.round(diesel), petrol: Math.round(petrol), total: Math.round(diesel+petrol), costUtd: Math.round(costUtd), costEst: Math.round(costEst) };
+    }
 
     const allCats = [...cats, 'machinery'];
     const gD = allCats.reduce((s,c) => s+catData[c].diesel, 0);
@@ -8804,6 +8942,7 @@ const App = (() => {
     fuelCellInput, fuelRowTypeChange,
     fuelToggleExport, fuelExportCSV, fuelExportJSON,
     showFuelMachineryModal, closeFuelMachineryModal, confirmFuelMachineryModal, deleteFuelMachinery,
+    fuelMachineryCellInput, fuelMachineryRowTypeChange,
     fuelPriceChange, fuelGlobalPriceChange, fuelBudgetExportCSV,
     // Labour (ex-Helpers)
     lbSetView, lbFilterWorkers, lbOpenWorkerView,
