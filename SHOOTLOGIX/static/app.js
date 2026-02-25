@@ -136,10 +136,51 @@ const App = (() => {
   }
 
   function workingDays(start, end) {
+    // Count actual calendar days (no 6/7 formula).
+    // For backward compatibility this counts all days in the range.
     if (!start || !end) return 0;
     const s = new Date(start + 'T00:00:00'), e = new Date(end + 'T00:00:00');
     const total = Math.round((e - s) / 86400000) + 1;
-    return Math.floor(total - total / 7);
+    return Math.max(0, total);
+  }
+
+  /** Count actual active days for an assignment, respecting day_overrides. */
+  function activeWorkingDays(asgn) {
+    if (!asgn.start_date || !asgn.end_date) return 0;
+    const overrides = JSON.parse(asgn.day_overrides || '{}');
+    const s = new Date(asgn.start_date.slice(0,10) + 'T00:00:00');
+    const e = new Date(asgn.end_date.slice(0,10) + 'T00:00:00');
+    let count = 0;
+    for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+      const dk = d.toISOString().slice(0,10);
+      if (dk in overrides) {
+        if (overrides[dk] && overrides[dk] !== 'empty') count++;
+      } else {
+        count++; // default: day in range is active
+      }
+    }
+    // Add overrides outside range that are explicitly active
+    const sStr = asgn.start_date.slice(0,10), eStr = asgn.end_date.slice(0,10);
+    for (const [dk, status] of Object.entries(overrides)) {
+      if (dk < sStr || dk > eStr) {
+        if (status && status !== 'empty') count++;
+      }
+    }
+    return count;
+  }
+
+  /** Compute working days for an assignment based on pricing_type.
+   *  - standard: count actual active days
+   *  - monthly / 24_7: total calendar days
+   */
+  function computeWd(asgn) {
+    // If the server already computed working_days, use that
+    if (asgn.working_days != null) return asgn.working_days;
+    const pt = (asgn.pricing_type || 'standard').toLowerCase();
+    if (pt === 'monthly' || pt === '24_7') {
+      return workingDays(asgn.start_date, asgn.end_date); // calendar days
+    }
+    return activeWorkingDays(asgn);
   }
 
   // Returns 'on' if this day is active for the assignment, null if empty/excluded.
@@ -1025,7 +1066,7 @@ const App = (() => {
 
     let assignedBodies = asgns.map(asgn => {
       const boatName = asgn.boat_name_override || asgn.boat_name || '?';
-      const wd   = asgn.working_days ?? workingDays(asgn.start_date, asgn.end_date);
+      const wd   = computeWd(asgn);
       const rate = asgn.price_override || asgn.boat_daily_rate_estimate || 0;
       const total = Math.round(wd * rate);
       const wClass = waveClass(asgn.wave_rating || '');
@@ -1037,6 +1078,7 @@ const App = (() => {
               ${asgn.wave_rating ? `<span class="wave-badge ${wClass}">${waveLabel(asgn.wave_rating)}</span>` : ''}
               <span style="font-weight:600;color:var(--text-0);font-size:.82rem">${esc(boatName)}</span>
               ${asgn.captain ? `<span style="color:var(--text-3);font-size:.7rem">· ${esc(asgn.captain)}</span>` : ''}
+              ${asgn.pricing_type && asgn.pricing_type !== 'standard' ? `<span style="font-size:.6rem;background:var(--orange);color:#000;padding:0 .3rem;border-radius:3px;font-weight:700">${asgn.pricing_type === '24_7' ? '24/7' : 'MONTHLY'}</span>` : ''}
             </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:.2rem">
@@ -1179,11 +1221,12 @@ const App = (() => {
     $('am-boat-name').textContent = boat.name + (boat.captain ? ` · ${boat.captain}` : '');
     $('am-notes').value = existingAsgn?.notes || '';
     $('am-price-display').textContent = rate > 0 ? `$${rate.toLocaleString()}/day` : 'Rate not set';
+    $('am-pricing-type').value = existingAsgn?.pricing_type || 'standard';
 
     const datesInfo = $('am-dates-info');
     if (existingAsgn?.start_date) {
-      const wd = workingDays(existingAsgn.start_date, existingAsgn.end_date);
-      datesInfo.textContent = `${fmtDate(existingAsgn.start_date)} → ${fmtDate(existingAsgn.end_date)}  ·  ${wd}j  ·  ${fmtMoney(Math.round(wd * rate))}`;
+      const wd = computeWd(existingAsgn);
+      datesInfo.textContent = `${fmtDate(existingAsgn.start_date)} → ${fmtDate(existingAsgn.end_date)}  ·  ${wd}d  ·  ${fmtMoney(Math.round(wd * rate))}`;
       datesInfo.style.display = '';
     } else {
       datesInfo.style.display = 'none';
@@ -1203,16 +1246,17 @@ const App = (() => {
     const boatId       = parseInt($('am-boat-id').value);
     const assignmentId = $('am-func-id').dataset.assignmentId;
     const notes  = $('am-notes').value;
+    const pricingType = $('am-pricing-type').value || 'standard';
 
     try {
       if (_assignCtx === 'security') {
         if (assignmentId) {
           await api('PUT', `/api/security-boat-assignments/${assignmentId}`, {
-            security_boat_id: boatId, notes,
+            security_boat_id: boatId, notes, pricing_type: pricingType,
           });
         } else {
           await api('POST', `/api/productions/${state.prodId}/security-boat-assignments`, {
-            boat_function_id: funcId, security_boat_id: boatId, notes,
+            boat_function_id: funcId, security_boat_id: boatId, notes, pricing_type: pricingType,
           });
         }
         closeAssignModal();
@@ -1224,11 +1268,11 @@ const App = (() => {
       } else if (_assignCtx === 'picture') {
         if (assignmentId) {
           await api('PUT', `/api/picture-boat-assignments/${assignmentId}`, {
-            picture_boat_id: boatId, notes,
+            picture_boat_id: boatId, notes, pricing_type: pricingType,
           });
         } else {
           await api('POST', `/api/productions/${state.prodId}/picture-boat-assignments`, {
-            boat_function_id: funcId, picture_boat_id: boatId, notes,
+            boat_function_id: funcId, picture_boat_id: boatId, notes, pricing_type: pricingType,
           });
         }
         closeAssignModal();
@@ -1239,10 +1283,10 @@ const App = (() => {
         toast(assignmentId ? 'Assignment updated' : `${boat?.name || 'Boat'} assigned to ${func?.name || 'function'}`);
       } else if (_assignCtx === 'transport') {
         if (assignmentId) {
-          await api('PUT', `/api/transport-assignments/${assignmentId}`, { vehicle_id: boatId, notes });
+          await api('PUT', `/api/transport-assignments/${assignmentId}`, { vehicle_id: boatId, notes, pricing_type: pricingType });
         } else {
           await api('POST', `/api/productions/${state.prodId}/transport-assignments`, {
-            boat_function_id: funcId, vehicle_id: boatId, notes,
+            boat_function_id: funcId, vehicle_id: boatId, notes, pricing_type: pricingType,
           });
         }
         closeAssignModal();
@@ -1253,10 +1297,10 @@ const App = (() => {
         toast(assignmentId ? 'Assignment updated' : `${vehicle?.name || 'Vehicle'} assigned to ${func?.name || 'function'}`);
       } else if (_assignCtx === 'labour') {
         if (assignmentId) {
-          await api('PUT', `/api/helper-assignments/${assignmentId}`, { helper_id: boatId, notes });
+          await api('PUT', `/api/helper-assignments/${assignmentId}`, { helper_id: boatId, notes, pricing_type: pricingType });
         } else {
           await api('POST', `/api/productions/${state.prodId}/helper-assignments`, {
-            boat_function_id: funcId, helper_id: boatId, notes,
+            boat_function_id: funcId, helper_id: boatId, notes, pricing_type: pricingType,
           });
         }
         closeAssignModal();
@@ -1267,10 +1311,10 @@ const App = (() => {
         toast(assignmentId ? 'Assignment updated' : `${worker?.name || 'Worker'} assigned to ${lfunc?.name || 'function'}`);
       } else if (_assignCtx === 'guard_camp') {
         if (assignmentId) {
-          await api('PUT', `/api/guard-camp-assignments/${assignmentId}`, { helper_id: boatId, notes });
+          await api('PUT', `/api/guard-camp-assignments/${assignmentId}`, { helper_id: boatId, notes, pricing_type: pricingType });
         } else {
           await api('POST', `/api/productions/${state.prodId}/guard-camp-assignments`, {
-            boat_function_id: funcId, helper_id: boatId, notes,
+            boat_function_id: funcId, helper_id: boatId, notes, pricing_type: pricingType,
           });
         }
         closeAssignModal();
@@ -1282,11 +1326,11 @@ const App = (() => {
       } else {
         if (assignmentId) {
           await api('PUT', `/api/assignments/${assignmentId}`, {
-            boat_id: boatId, notes,
+            boat_id: boatId, notes, pricing_type: pricingType,
           });
         } else {
           await api('POST', `/api/productions/${state.prodId}/assignments`, {
-            boat_function_id: funcId, boat_id: boatId, notes,
+            boat_function_id: funcId, boat_id: boatId, notes, pricing_type: pricingType,
           });
         }
         closeAssignModal();
@@ -2526,7 +2570,7 @@ const App = (() => {
     const asgns = _pbAssignmentsForFunc(func.id);
     const assignedBodies = asgns.map(asgn => {
       const boatName = asgn.boat_name_override || asgn.boat_name || '?';
-      const wd   = asgn.working_days ?? workingDays(asgn.start_date, asgn.end_date);
+      const wd   = computeWd(asgn);
       const rate = asgn.price_override || asgn.boat_daily_rate_estimate || 0;
       const total = Math.round(wd * rate);
       const wClass = waveClass(asgn.wave_rating || '');
@@ -2811,7 +2855,7 @@ const App = (() => {
     const pbFuncs = state.pictureFunctions;
     const rows = pbAsgns.map(a => {
       const func = pbFuncs.find(f => f.id === a.boat_function_id);
-      const wd   = a.working_days ?? workingDays(a.start_date, a.end_date);
+      const wd   = computeWd(a);
       const rate = a.price_override || a.boat_daily_rate_estimate || 0;
       return { name: func?.name || a.function_name || '—', boat: a.boat_name_override || a.boat_name || '—',
                start: a.start_date, end: a.end_date, wd, rate, total: Math.round(wd * rate) };
@@ -3246,7 +3290,7 @@ const App = (() => {
     const asgns = _tbAssignmentsForFunc(func.id);
     const assignedBodies = asgns.map(asgn => {
       const vehicleName = asgn.vehicle_name_override || asgn.vehicle_name || '?';
-      const wd   = asgn.working_days ?? workingDays(asgn.start_date, asgn.end_date);
+      const wd   = computeWd(asgn);
       const rate = asgn.price_override || asgn.vehicle_daily_rate_estimate || 0;
       const total = Math.round(wd * rate);
       return `<div class="assigned-mini" style="margin-bottom:.35rem">
@@ -3576,7 +3620,7 @@ const App = (() => {
     const funcs = state.transportFunctions;
     const rows = asgns.map(a => {
       const func = funcs.find(f => f.id === a.boat_function_id);
-      const wd   = a.working_days ?? workingDays(a.start_date, a.end_date);
+      const wd   = computeWd(a);
       const rate = a.price_override || a.vehicle_daily_rate_estimate || 0;
       return { name: func?.name || a.function_name || '—',
                vehicle: a.vehicle_name_override || a.vehicle_name || '—',
@@ -4883,7 +4927,7 @@ const App = (() => {
     const asgns = _lbAssignmentsForFunc(func.id);
     const assignedBodies = asgns.map(asgn => {
       const workerName = asgn.helper_name_override || asgn.helper_name || '?';
-      const wd   = asgn.working_days ?? workingDays(asgn.start_date, asgn.end_date);
+      const wd   = computeWd(asgn);
       const rate = asgn.price_override || asgn.helper_daily_rate_estimate || 0;
       const total = Math.round(wd * rate);
       return `<div class="assigned-mini" style="margin-bottom:.35rem">
@@ -5443,7 +5487,7 @@ const App = (() => {
     state.lbGroups.forEach(g => { byGroup[g.name] = { rows: [], total: 0, color: g.color }; });
     asgns.forEach(a => {
       const func = funcs.find(f => f.id === a.boat_function_id);
-      const wd   = a.working_days ?? workingDays(a.start_date, a.end_date);
+      const wd   = computeWd(a);
       const rate = a.price_override || a.helper_daily_rate_estimate || 0;
       const total = Math.round(wd * rate);
       if (wd <= 0) return;
@@ -5703,7 +5747,7 @@ const App = (() => {
     const asgns = _sbAssignmentsForFunc(func.id);
     const assignedBodies = asgns.map(asgn => {
       const boatName = asgn.boat_name_override || asgn.boat_name || '?';
-      const wd   = asgn.working_days ?? workingDays(asgn.start_date, asgn.end_date);
+      const wd   = computeWd(asgn);
       const rate = asgn.price_override || asgn.boat_daily_rate_estimate || 0;
       const total = Math.round(wd * rate);
       const wClass = waveClass(asgn.wave_rating || '');
@@ -6001,7 +6045,7 @@ const App = (() => {
     const sbFuncs = state.securityFunctions;
     const rows = sbAsgns.map(a => {
       const func = sbFuncs.find(f => f.id === a.boat_function_id);
-      const wd   = a.working_days ?? workingDays(a.start_date, a.end_date);
+      const wd   = computeWd(a);
       const rate = a.price_override || a.boat_daily_rate_estimate || 0;
       return { name: func?.name || a.function_name || '--', boat: a.boat_name_override || a.boat_name || '--',
                start: a.start_date, end: a.end_date, wd, rate, total: Math.round(wd * rate) };
@@ -7172,7 +7216,7 @@ const App = (() => {
     const bcRows = [];
     gcAsgns.forEach(a => {
       const func = gcFuncs.find(f => f.id === a.boat_function_id);
-      const wd = a.working_days ?? workingDays(a.start_date, a.end_date);
+      const wd = computeWd(a);
       const rate = a.price_override || a.helper_daily_rate_estimate || 0;
       const total = Math.round(wd * rate);
       if (wd <= 0) return;
@@ -7591,7 +7635,7 @@ const App = (() => {
     const asgns = _gcAssignmentsForFunc(func.id);
     const assignedBodies = asgns.map(asgn => {
       const workerName = asgn.helper_name_override || asgn.helper_name || '?';
-      const wd   = asgn.working_days ?? workingDays(asgn.start_date, asgn.end_date);
+      const wd   = computeWd(asgn);
       const rate = asgn.price_override || asgn.helper_daily_rate_estimate || 0;
       const total = Math.round(wd * rate);
       return `<div class="assigned-mini" style="margin-bottom:.35rem">
@@ -8140,7 +8184,7 @@ const App = (() => {
     state.gcGroups.forEach(g => { byGroup[g.name] = { rows: [], total: 0, color: g.color }; });
     asgns.forEach(a => {
       const func = funcs.find(f => f.id === a.boat_function_id);
-      const wd   = a.working_days ?? workingDays(a.start_date, a.end_date);
+      const wd   = computeWd(a);
       const rate = a.price_override || a.helper_daily_rate_estimate || 0;
       const total = Math.round(wd * rate);
       if (wd <= 0) return;

@@ -593,6 +593,14 @@
       <label class="form-label">Notes</label>
       <input type="text" id="am-notes" class="form-control" placeholder="Optional">
     </div>
+    <div class="form-group">
+      <label class="form-label">Pricing type</label>
+      <select id="am-pricing-type" class="form-control" style="background:var(--bg-2);color:var(--text-1);border:1px solid var(--border)">
+        <option value="standard">Standard (active days only)</option>
+        <option value="monthly">Monthly (all calendar days)</option>
+        <option value="24_7">24/7 (all calendar days)</option>
+      </select>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeAssignModal()">Cancel</button>
       <button class="btn btn-primary" onclick="App.confirmAssignment()">Confirm →</button>

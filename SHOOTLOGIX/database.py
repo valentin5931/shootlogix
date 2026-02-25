@@ -685,11 +685,25 @@ def _migrate_db():
             conn.execute("ALTER TABLE locations ADD COLUMN global_deal REAL")
             print("Migration: added locations pricing columns (price_p, price_f, price_w, global_deal)")
 
+        # pricing_type on all assignment tables (standard / monthly / 24_7)
+        for tbl in ['boat_assignments', 'picture_boat_assignments',
+                     'security_boat_assignments', 'transport_assignments',
+                     'helper_assignments', 'guard_camp_assignments']:
+            try:
+                cols = [r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
+                if 'pricing_type' not in cols:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN pricing_type TEXT DEFAULT 'standard'")
+                    print(f"Migration: added {tbl}.pricing_type")
+            except Exception:
+                pass  # table may not exist yet
+
 
 # ─── Working days ─────────────────────────────────────────────────────────────
 
 def working_days(start_str, end_str):
-    """Excel formula: ROUNDDOWN(total_days - total_days/7, 0)"""
+    """Legacy Excel formula: ROUNDDOWN(total_days - total_days/7, 0).
+    Kept for backward compatibility with the /api/working-days endpoint.
+    """
     if not start_str or not end_str:
         return 0
     try:
@@ -701,45 +715,76 @@ def working_days(start_str, end_str):
         return 0
 
 
+def calendar_days(start_str, end_str):
+    """Total calendar days from start to end (inclusive). Used for monthly/24_7 pricing."""
+    if not start_str or not end_str:
+        return 0
+    try:
+        start = datetime.strptime(start_str[:10], "%Y-%m-%d").date()
+        end   = datetime.strptime(end_str[:10],   "%Y-%m-%d").date()
+        return max(0, (end - start).days + 1)
+    except Exception:
+        return 0
+
+
 def active_working_days(start_str, end_str, day_overrides_json):
-    """Count working days respecting day_overrides exclusions.
+    """Count actual active days by iterating each day in the date range.
 
-    Uses the Excel working_days() formula as a base, then:
-    - Subtracts weekdays explicitly marked 'empty' within the range
-    - Adds weekdays with an explicit active status outside the range (rare)
+    A day is active if:
+    - It is within [start, end] AND not explicitly overridden to 'empty'
+    - OR it is outside [start, end] but explicitly overridden to a non-empty status
 
-    Returns the same value as working_days() when day_overrides is empty ({}).
+    This replaces the old 6/7 formula with an exact day-by-day count.
     """
+    if not start_str or not end_str:
+        return 0
+
     try:
         overrides = json.loads(day_overrides_json or '{}')
     except Exception:
         overrides = {}
 
-    if not overrides:
-        return working_days(start_str, end_str)
+    try:
+        start = datetime.strptime(start_str[:10], "%Y-%m-%d").date()
+        end   = datetime.strptime(end_str[:10],   "%Y-%m-%d").date()
+    except Exception:
+        return 0
 
-    base = working_days(start_str, end_str)
-    s = start_str[:10] if start_str else None
-    e = end_str[:10] if end_str else None
+    # Count days within the range that are not excluded
+    count = 0
+    current = start
+    one_day = timedelta(days=1)
+    while current <= end:
+        dk = current.strftime("%Y-%m-%d")
+        if dk in overrides:
+            if overrides[dk] and overrides[dk] != 'empty':
+                count += 1
+        else:
+            # Default: day within range is active
+            count += 1
+        current += one_day
 
-    delta = 0
+    # Add any override days outside the range that are explicitly active
+    s_str = start_str[:10]
+    e_str = end_str[:10]
     for dk, status in overrides.items():
-        try:
-            d = datetime.strptime(dk, "%Y-%m-%d").date()
-            is_weekday = d.weekday() < 5
-        except Exception:
-            continue
+        if dk < s_str or dk > e_str:
+            if status and status != 'empty':
+                count += 1
 
-        in_range = bool(s and e and s <= dk <= e)
+    return count
 
-        if status == 'empty':
-            if in_range and is_weekday:
-                delta -= 1  # excluded a working day
-        else:  # active override
-            if not in_range and is_weekday:
-                delta += 1  # added a working day outside base range
 
-    return max(0, base + delta)
+def compute_working_days(d):
+    """Compute working days for an assignment dict based on its pricing_type.
+
+    - 'standard' (default): count actual active days (respects day_overrides)
+    - 'monthly' or '24_7': total calendar days from start to end
+    """
+    pt = (d.get("pricing_type") or "standard").lower()
+    if pt in ("monthly", "24_7"):
+        return calendar_days(d.get("start_date"), d.get("end_date"))
+    return active_working_days(d.get("start_date"), d.get("end_date"), d.get("day_overrides", "{}"))
 
 
 # ─── Productions ──────────────────────────────────────────────────────────────
@@ -1053,7 +1098,7 @@ def get_boat_assignments(prod_id, context=None):
             d = dict(r)
             rate_est = d.get("price_override") or d.get("boat_daily_rate_estimate") or 0
             rate_act = d.get("boat_daily_rate_actual") or 0
-            wd = active_working_days(d["start_date"], d["end_date"], d.get("day_overrides", "{}"))
+            wd = compute_working_days(d)
             d["working_days"]      = wd
             d["amount_estimate"]   = round(wd * rate_est, 2)
             d["amount_actual"]     = round(wd * rate_act, 2) if rate_act else None
@@ -1068,13 +1113,14 @@ def create_boat_assignment(data):
         cur = conn.execute(
             """INSERT INTO boat_assignments
                (boat_function_id, boat_id, boat_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("boat_id"), data.get("boat_name_override"),
              data.get("start_date"), data.get("end_date"),
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
-             data.get("day_overrides", "{}"))
+             data.get("day_overrides", "{}"),
+             data.get("pricing_type", "standard"))
         )
         new_id = cur.lastrowid
 
@@ -1091,7 +1137,8 @@ def create_boat_assignment(data):
 def update_boat_assignment(assignment_id, data):
     """Update an existing assignment (dates, status, notes, boat, price)."""
     allowed = ["start_date", "end_date", "price_override", "notes",
-               "assignment_status", "day_overrides", "boat_id", "boat_name_override"]
+               "assignment_status", "day_overrides", "boat_id", "boat_name_override",
+               "pricing_type"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1208,7 +1255,7 @@ def get_picture_boat_assignments(prod_id):
             d = dict(r)
             rate_est = d.get("price_override") or d.get("boat_daily_rate_estimate") or 0
             rate_act = d.get("boat_daily_rate_actual") or 0
-            wd = active_working_days(d["start_date"], d["end_date"], d.get("day_overrides", "{}"))
+            wd = compute_working_days(d)
             d["working_days"]    = wd
             d["amount_estimate"] = round(wd * rate_est, 2)
             d["amount_actual"]   = round(wd * rate_act, 2) if rate_act else None
@@ -1222,20 +1269,22 @@ def create_picture_boat_assignment(data):
         cur = conn.execute(
             """INSERT INTO picture_boat_assignments
                (boat_function_id, picture_boat_id, boat_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("picture_boat_id"), data.get("boat_name_override"),
              data.get("start_date"), data.get("end_date"),
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
-             data.get("day_overrides", "{}"))
+             data.get("day_overrides", "{}"),
+             data.get("pricing_type", "standard"))
         )
         return cur.lastrowid
 
 
 def update_picture_boat_assignment(assignment_id, data):
     allowed = ["start_date", "end_date", "price_override", "notes",
-               "assignment_status", "day_overrides", "picture_boat_id", "boat_name_override"]
+               "assignment_status", "day_overrides", "picture_boat_id", "boat_name_override",
+               "pricing_type"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1333,7 +1382,7 @@ def get_transport_assignments(prod_id):
             d = dict(r)
             rate_est = d.get("price_override") or d.get("vehicle_daily_rate_estimate") or 0
             rate_act = d.get("vehicle_daily_rate_actual") or 0
-            wd = active_working_days(d["start_date"], d["end_date"], d.get("day_overrides", "{}"))
+            wd = compute_working_days(d)
             d["working_days"]    = wd
             d["amount_estimate"] = round(wd * rate_est, 2)
             d["amount_actual"]   = round(wd * rate_act, 2) if rate_act else None
@@ -1347,20 +1396,22 @@ def create_transport_assignment(data):
         cur = conn.execute(
             """INSERT INTO transport_assignments
                (boat_function_id, vehicle_id, vehicle_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("vehicle_id"), data.get("vehicle_name_override"),
              data.get("start_date"), data.get("end_date"),
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
-             data.get("day_overrides", "{}"))
+             data.get("day_overrides", "{}"),
+             data.get("pricing_type", "standard"))
         )
         return cur.lastrowid
 
 
 def update_transport_assignment(assignment_id, data):
     allowed = ["start_date", "end_date", "price_override", "notes",
-               "assignment_status", "day_overrides", "vehicle_id", "vehicle_name_override"]
+               "assignment_status", "day_overrides", "vehicle_id", "vehicle_name_override",
+               "pricing_type"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1562,7 +1613,7 @@ def get_helper_assignments(prod_id):
             d = dict(r)
             rate_est = d.get("price_override") or d.get("helper_daily_rate_estimate") or 0
             rate_act = d.get("helper_daily_rate_actual") or 0
-            wd = active_working_days(d["start_date"], d["end_date"], d.get("day_overrides", "{}"))
+            wd = compute_working_days(d)
             d["working_days"]    = wd
             d["amount_estimate"] = round(wd * rate_est, 2)
             d["amount_actual"]   = round(wd * rate_act, 2) if rate_act else None
@@ -1576,20 +1627,22 @@ def create_helper_assignment(data):
         cur = conn.execute(
             """INSERT INTO helper_assignments
                (boat_function_id, helper_id, helper_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("helper_id"), data.get("helper_name_override"),
              data.get("start_date"), data.get("end_date"),
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
-             data.get("day_overrides", "{}"))
+             data.get("day_overrides", "{}"),
+             data.get("pricing_type", "standard"))
         )
         return cur.lastrowid
 
 
 def update_helper_assignment(assignment_id, data):
     allowed = ["start_date", "end_date", "price_override", "notes",
-               "assignment_status", "day_overrides", "helper_id", "helper_name_override"]
+               "assignment_status", "day_overrides", "helper_id", "helper_name_override",
+               "pricing_type"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1698,11 +1751,12 @@ def get_guard_camp_assignments(prod_id):
         result = []
         for r in rows:
             d = dict(r)
-            # Compute working_days
+            # Compute working_days based on pricing_type
             if d.get("start_date") and d.get("end_date"):
-                d["working_days"] = working_days(d["start_date"], d["end_date"])
+                wd = compute_working_days(d)
+                d["working_days"] = wd
                 rate = d.get("price_override") or d.get("helper_daily_rate_estimate") or 0
-                d["amount_estimate"] = round(d["working_days"] * rate)
+                d["amount_estimate"] = round(wd * rate)
             else:
                 d["working_days"] = 0
                 d["amount_estimate"] = 0
@@ -1716,13 +1770,14 @@ def create_guard_camp_assignment(data):
         cur = conn.execute(
             """INSERT INTO guard_camp_assignments
                (boat_function_id, helper_id, helper_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("helper_id"), data.get("helper_name_override"),
              data.get("start_date"), data.get("end_date"),
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
-             data.get("day_overrides", "{}"))
+             data.get("day_overrides", "{}"),
+             data.get("pricing_type", "standard"))
         )
         return cur.lastrowid
 
@@ -1730,7 +1785,7 @@ def create_guard_camp_assignment(data):
 def update_guard_camp_assignment(assignment_id, data):
     allowed = ["boat_function_id", "helper_id", "helper_name_override",
                "start_date", "end_date", "price_override", "notes",
-               "assignment_status", "day_overrides"]
+               "assignment_status", "day_overrides", "pricing_type"]
     set_parts = []
     vals = []
     for k in allowed:
@@ -1828,7 +1883,7 @@ def get_security_boat_assignments(prod_id):
             d = dict(r)
             rate_est = d.get("price_override") or d.get("boat_daily_rate_estimate") or 0
             rate_act = d.get("boat_daily_rate_actual") or 0
-            wd = active_working_days(d["start_date"], d["end_date"], d.get("day_overrides", "{}"))
+            wd = compute_working_days(d)
             d["working_days"]    = wd
             d["amount_estimate"] = round(wd * rate_est, 2)
             d["amount_actual"]   = round(wd * rate_act, 2) if rate_act else None
@@ -1842,20 +1897,22 @@ def create_security_boat_assignment(data):
         cur = conn.execute(
             """INSERT INTO security_boat_assignments
                (boat_function_id, security_boat_id, boat_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("security_boat_id"), data.get("boat_name_override"),
              data.get("start_date"), data.get("end_date"),
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
-             data.get("day_overrides", "{}"))
+             data.get("day_overrides", "{}"),
+             data.get("pricing_type", "standard"))
         )
         return cur.lastrowid
 
 
 def update_security_boat_assignment(assignment_id, data):
     allowed = ["start_date", "end_date", "price_override", "notes",
-               "assignment_status", "day_overrides", "security_boat_id", "boat_name_override"]
+               "assignment_status", "day_overrides", "security_boat_id", "boat_name_override",
+               "pricing_type"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
