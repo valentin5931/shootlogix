@@ -53,7 +53,6 @@
       <span class="dot" style="background:#22C55E"></span>BUDGET
     </button>
     <div style="flex:1"></div>
-    <div id="fuel-price-bar" style="display:flex;align-items:center;gap:.6rem;padding:0 .5rem"></div>
   </nav>
 
   <!-- ── Main panels ─────────────────────────────────────────────────────── -->
@@ -266,6 +265,9 @@
         <div class="fuel-sub-sep"></div>
         <button id="fsn-budget"         class="fuel-sub-btn"        onclick="App.fuelSetTab('budget')">BUDGET</button>
       </div>
+
+      <!-- Fuel price inputs (Diesel / Petrol $/L) — only visible inside FUEL tab -->
+      <div id="fuel-price-bar" style="display:flex;align-items:center;gap:1rem;padding:.5rem .75rem;background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;margin:.5rem .75rem 0"></div>
 
       <!-- Toolbar (visible only for schedule sub-tabs) -->
       <div id="fuel-toolbar" class="fuel-toolbar-bar hidden">

@@ -3837,24 +3837,25 @@ const App = (() => {
     } catch(e) { console.warn('Could not load fuel globals from DB:', e); }
   }
 
-  // Render the persistent fuel price bar in the topbar area
+  // Render fuel price inputs inside the FUEL tab (not in global topbar)
   function _renderFuelPriceBar() {
     const bar = $('fuel-price-bar');
     if (!bar) return;
     const pD = state.fuelPricePerL.DIESEL || 0;
     const pP = state.fuelPricePerL.PETROL || 0;
     bar.innerHTML = `
-      <label style="display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:#3B82F6;font-weight:600">
-        <span style="width:6px;height:6px;border-radius:50%;background:#3B82F6"></span>DIESEL
+      <span style="font-size:.75rem;color:var(--text-2);font-weight:600;letter-spacing:.03em">FUEL PRICES</span>
+      <label style="display:flex;align-items:center;gap:.3rem;font-size:.75rem;color:#3B82F6;font-weight:600">
+        <span style="width:8px;height:8px;border-radius:50%;background:#3B82F6"></span>DIESEL
         <input type="number" step="0.01" min="0" value="${pD||''}" placeholder="0.00"
           id="fp-diesel" onchange="App.fuelGlobalPriceChange('DIESEL',this.value)"
-          style="width:56px;font-size:.68rem;padding:.12rem .25rem;background:var(--bg-surface);border:1px solid var(--border);border-radius:4px;color:var(--text-0);text-align:right"> $/L
+          style="width:64px;font-size:.75rem;padding:.2rem .3rem;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-0);text-align:right"> $/L
       </label>
-      <label style="display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:#F97316;font-weight:600">
-        <span style="width:6px;height:6px;border-radius:50%;background:#F97316"></span>PETROL
+      <label style="display:flex;align-items:center;gap:.3rem;font-size:.75rem;color:#F97316;font-weight:600">
+        <span style="width:8px;height:8px;border-radius:50%;background:#F97316"></span>PETROL
         <input type="number" step="0.01" min="0" value="${pP||''}" placeholder="0.00"
           id="fp-petrol" onchange="App.fuelGlobalPriceChange('PETROL',this.value)"
-          style="width:56px;font-size:.68rem;padding:.12rem .25rem;background:var(--bg-surface);border:1px solid var(--border);border-radius:4px;color:var(--text-0);text-align:right"> $/L
+          style="width:64px;font-size:.75rem;padding:.2rem .3rem;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-0);text-align:right"> $/L
       </label>`;
   }
 
