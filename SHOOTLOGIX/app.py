@@ -1450,11 +1450,28 @@ def api_export_fuel_budget_csv(prod_id):
     w.writerow([])
     grand_total_l = grand_diesel + grand_petrol
     grand_total_cost = grand_cost_utd + grand_cost_est
-    avg_price = grand_total_cost / grand_total_l if grand_total_l > 0 else 0
+    # Compute average price per fuel type (cost / litres for each type separately)
+    diesel_cost_total = 0
+    petrol_cost_total = 0
+    for e in entries:
+        ft = e.get('fuel_type', 'DIESEL')
+        liters = e.get('liters', 0) or 0
+        date = e.get('date', '')
+        if date in locked_prices:
+            price = locked_prices[date]['diesel_price'] if ft == 'DIESEL' else locked_prices[date]['petrol_price']
+        else:
+            price = cur_diesel if ft == 'DIESEL' else cur_petrol
+        if ft == 'PETROL':
+            petrol_cost_total += liters * price
+        else:
+            diesel_cost_total += liters * price
+    avg_diesel = diesel_cost_total / grand_diesel if grand_diesel > 0 else 0
+    avg_petrol = petrol_cost_total / grand_petrol if grand_petrol > 0 else 0
     w.writerow(["GRAND TOTAL", round(grand_diesel, 1), round(grand_petrol, 1),
                 round(grand_total_l, 1), round(grand_cost_utd, 2),
                 round(grand_cost_est, 2), round(grand_total_cost, 2)])
-    w.writerow(["AVERAGE PRICE PER LITRE", "", "", "", "", "", round(avg_price, 4)])
+    w.writerow(["AVG PRICE PER LITRE — DIESEL", "", "", "", "", "", round(avg_diesel, 4)])
+    w.writerow(["AVG PRICE PER LITRE — PETROL", "", "", "", "", "", round(avg_petrol, 4)])
     w.writerow([])
     w.writerow([f"Current Diesel price: ${cur_diesel}/L"])
     w.writerow([f"Current Petrol price: ${cur_petrol}/L"])

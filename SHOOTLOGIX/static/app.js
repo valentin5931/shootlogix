@@ -4467,6 +4467,25 @@ const App = (() => {
     const gEst = allCats.reduce((s,c) => s+catData[c].costEst, 0);
     const gTotal = gUtd + gEst;
 
+    // Compute average price per fuel type across all entries
+    let dieselCostTotal = 0, petrolCostTotal = 0;
+    (state.fuelEntries||[]).forEach(e => {
+      const l = e.liters || 0;
+      const ft = e.fuel_type || 'DIESEL';
+      const d = e.date || '';
+      let price;
+      if (state.fuelLockedPrices[d]) {
+        const lp = state.fuelLockedPrices[d];
+        price = ft === 'PETROL' ? (lp.petrol_price||0) : (lp.diesel_price||0);
+      } else {
+        price = ft === 'PETROL' ? pP : pD;
+      }
+      if (ft === 'PETROL') petrolCostTotal += l * price;
+      else dieselCostTotal += l * price;
+    });
+    const avgDiesel = gD > 0 ? dieselCostTotal / gD : 0;
+    const avgPetrol = gP > 0 ? petrolCostTotal / gP : 0;
+
     const fmtL = l => l > 0 ? l.toLocaleString('fr-FR')+' L' : '---';
     const fmtC = c => c > 0 ? '$'+c.toLocaleString('fr-FR') : '---';
 
@@ -4552,6 +4571,14 @@ const App = (() => {
               <td style="text-align:right;color:#10B981;font-weight:700">${fmtC(gUtd)}</td>
               <td style="text-align:right;color:#F59E0B;font-weight:700">${fmtC(gEst)}</td>
               <td style="text-align:right;color:var(--green);font-weight:700;font-size:1.05rem">${fmtC(gTotal)}</td>
+            </tr>
+            <tr style="border-top:1px solid var(--border)">
+              <td colspan="6" style="text-align:right;font-size:.75rem;color:#3B82F6;font-weight:600">AVG DIESEL PRICE / L</td>
+              <td style="text-align:right;font-size:.75rem;color:#3B82F6;font-weight:600">${avgDiesel > 0 ? '$'+avgDiesel.toFixed(4) : '---'}</td>
+            </tr>
+            <tr>
+              <td colspan="6" style="text-align:right;font-size:.75rem;color:#F97316;font-weight:600">AVG PETROL PRICE / L</td>
+              <td style="text-align:right;font-size:.75rem;color:#F97316;font-weight:600">${avgPetrol > 0 ? '$'+avgPetrol.toFixed(4) : '---'}</td>
             </tr>
           </tbody>
         </table>
