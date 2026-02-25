@@ -2990,6 +2990,13 @@ const App = (() => {
       const totalEstimate = totalGlobal - totalFige;
 
       const html = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+          <div style="font-size:.75rem;color:var(--text-4)">Global budget overview across all departments</div>
+          <button class="btn btn-sm btn-primary" onclick="App.budgetExportXlsx()" style="display:flex;align-items:center;gap:.35rem">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export XLSX
+          </button>
+        </div>
         <div class="stat-grid" style="margin-bottom:.75rem">
           <div class="stat-card" style="border:1px solid var(--border)">
             <div class="stat-val" style="font-size:1.75rem">${fmtMoney(totalGlobal)}</div>
@@ -3047,6 +3054,12 @@ const App = (() => {
     } catch (e) {
       container.innerHTML = `<div style="color:var(--red);padding:2rem">Error: ${esc(e.message)}</div>`;
     }
+  }
+
+  // ── Global Budget Export (KLAS7_BUDGET_YYMMDD.xlsx) ──────────────────────
+
+  function budgetExportXlsx() {
+    window.location.href = `/api/productions/${state.prodId}/export/budget-global`;
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -8383,7 +8396,7 @@ const App = (() => {
     // Boat view popup + detail / edit
     openBoatView, closeBoatView,
     openBoatDetail, closeBoatDetail, saveBoatEdit, triggerPhotoUpload, uploadBoatPhoto,
-    undoBoat, toggleExport, exportCSV, exportJSON,
+    undoBoat, toggleExport, exportCSV, exportJSON, budgetExportXlsx,
     showConfirm, cancelConfirm,
     // Picture Boats
     pbSetBoatView, pbFilterBoats, pbOpenBoatView,

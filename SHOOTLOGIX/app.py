@@ -2086,6 +2086,530 @@ def api_fnb_budget(prod_id):
     return jsonify(get_fnb_budget_data(prod_id))
 
 
+# ─── Global Budget Export (multi-sheet Excel) ────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/export/budget-global")
+def api_export_budget_global(prod_id):
+    """Export full budget as a multi-sheet Excel file (.xlsx).
+    One sheet per category, plus a Summary sheet.
+    Filename: KLAS7_BUDGET_YYMMDD.xlsx
+    """
+    from datetime import datetime as dt
+    from collections import OrderedDict
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    prod_or_404(prod_id)
+
+    wb = Workbook()
+
+    # -- Style constants --
+    header_font = Font(bold=True, color="FFFFFF", size=10)
+    header_fill = PatternFill(start_color="2D2D2D", end_color="2D2D2D", fill_type="solid")
+    title_font = Font(bold=True, size=12)
+    subtotal_font = Font(bold=True, size=10)
+    money_fmt = '#,##0'
+    money_fmt_dec = '#,##0.00'
+    green_font = Font(bold=True, color="22C55E")
+    thin_border = Border(
+        bottom=Side(style='thin', color='CCCCCC')
+    )
+
+    def style_header_row(ws, num_cols):
+        for col in range(1, num_cols + 1):
+            cell = ws.cell(row=ws.max_row, column=col)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center')
+
+    def auto_width(ws):
+        for col in ws.columns:
+            max_len = 0
+            col_letter = get_column_letter(col[0].column)
+            for cell in col:
+                try:
+                    if cell.value:
+                        max_len = max(max_len, len(str(cell.value)))
+                except:
+                    pass
+            ws.column_dimensions[col_letter].width = min(max(max_len + 2, 8), 40)
+
+    # Collect category totals for summary
+    summary_data = OrderedDict()
+
+    # ── Sheet 1: LOCATIONS ────────────────────────────────────────────────────
+    ws = wb.active
+    ws.title = "Locations"
+    loc_schedules = get_location_schedules(prod_id)
+    loc_sites = get_location_sites(prod_id)
+    site_pricing = {}
+    for s in loc_sites:
+        site_pricing[s['name']] = {
+            'price_p': s.get('price_p') or 0,
+            'price_f': s.get('price_f') or 0,
+            'price_w': s.get('price_w') or 0,
+            'global_deal': s.get('global_deal'),
+        }
+
+    loc_day_counts = {}
+    for ls in loc_schedules:
+        loc_name = ls['location_name']
+        loc_day_counts.setdefault(loc_name, {'P': 0, 'F': 0, 'W': 0})
+        if ls['status'] in ('P', 'F', 'W'):
+            loc_day_counts[loc_name][ls['status']] += 1
+
+    ws.append(["KLAS 7 - LOCATIONS BUDGET"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Location", "Type", "P Days", "F Days", "W Days", "Total Days",
+               "$/P", "$/F", "$/W", "Global Deal", "Total ($)"])
+    style_header_row(ws, 11)
+
+    loc_grand = 0
+    for loc_name, counts in sorted(loc_day_counts.items()):
+        pricing = site_pricing.get(loc_name, {'price_p': 0, 'price_f': 0, 'price_w': 0, 'global_deal': None})
+        site_info = next((s for s in loc_sites if s['name'] == loc_name), {})
+        loc_type = site_info.get('location_type', '')
+        if pricing['global_deal'] and pricing['global_deal'] > 0:
+            total = pricing['global_deal']
+        else:
+            total = (counts['P'] * pricing['price_p'] +
+                     counts['F'] * pricing['price_f'] +
+                     counts['W'] * pricing['price_w'])
+        loc_grand += total
+        ws.append([loc_name, loc_type, counts['P'], counts['F'], counts['W'],
+                   counts['P'] + counts['F'] + counts['W'],
+                   pricing['price_p'], pricing['price_f'], pricing['price_w'],
+                   pricing['global_deal'] or "", round(total, 2)])
+    ws.append([])
+    ws.append(["", "", "", "", "", "", "", "", "", "GRAND TOTAL", round(loc_grand, 2)])
+    ws.cell(row=ws.max_row, column=11).font = green_font
+    auto_width(ws)
+    summary_data["LOCATIONS"] = round(loc_grand, 2)
+
+    # ── Sheet 2: BOATS ────────────────────────────────────────────────────────
+    ws = wb.create_sheet("Boats")
+    budget = get_budget(prod_id)
+    boat_rows = [r for r in get_boat_assignments(prod_id, context='boats') if r.get("working_days")]
+    ws.append(["KLAS 7 - BOATS BUDGET"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Department", "Function", "Boat", "Vendor", "Start", "End",
+               "Working Days", "Rate/day", "Total Estimate", "Total Actual"])
+    style_header_row(ws, 10)
+    grand_est = 0
+    grand_act = 0
+    for r in boat_rows:
+        est = r.get("amount_estimate") or 0
+        act = r.get("amount_actual") or 0
+        grand_est += est
+        grand_act += act
+        ws.append([
+            r.get("department") or "BOATS",
+            r.get("function_name") or r.get("name") or "",
+            r.get("boat_name_override") or r.get("boat_name") or "",
+            r.get("vendor") or "",
+            r.get("start_date") or "", r.get("end_date") or "",
+            r.get("working_days") or "",
+            r.get("price_override") or r.get("boat_daily_rate_estimate") or "",
+            est, act if act else "",
+        ])
+    ws.append([])
+    ws.append(["", "", "", "", "", "", "GRAND TOTAL", "", round(grand_est, 2), round(grand_act, 2)])
+    ws.cell(row=ws.max_row, column=9).font = green_font
+    auto_width(ws)
+    summary_data["BOATS"] = round(grand_est, 2)
+
+    # ── Sheet 3: PICTURE BOATS ────────────────────────────────────────────────
+    ws = wb.create_sheet("Picture Boats")
+    pb_rows = [r for r in get_picture_boat_assignments(prod_id) if r.get("working_days")]
+    ws.append(["KLAS 7 - PICTURE BOATS BUDGET"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Function", "Group", "Boat", "Captain", "Vendor",
+               "Start", "End", "Working Days", "Rate/day (est.)",
+               "Total Estimate", "Total Actual"])
+    style_header_row(ws, 11)
+    grand_est = 0
+    grand_act = 0
+    for r in pb_rows:
+        est = r.get("amount_estimate") or 0
+        act = r.get("amount_actual") or 0
+        grand_est += est
+        grand_act += act
+        ws.append([
+            r.get("function_name") or "",
+            r.get("function_group") or "",
+            r.get("boat_name_override") or r.get("boat_name") or "",
+            r.get("captain") or "",
+            r.get("vendor") or "",
+            r.get("start_date") or "", r.get("end_date") or "",
+            r.get("working_days") or "",
+            r.get("price_override") or r.get("boat_daily_rate_estimate") or "",
+            est, act if act else "",
+        ])
+    ws.append([])
+    ws.append(["", "", "", "", "", "", "GRAND TOTAL", "", "", round(grand_est, 2), round(grand_act, 2)])
+    ws.cell(row=ws.max_row, column=10).font = green_font
+    auto_width(ws)
+    summary_data["PICTURE BOATS"] = round(grand_est, 2)
+
+    # ── Sheet 4: SECURITY BOATS ───────────────────────────────────────────────
+    ws = wb.create_sheet("Security Boats")
+    sb_rows = [r for r in get_security_boat_assignments(prod_id) if r.get("working_days")]
+    ws.append(["KLAS 7 - SECURITY BOATS BUDGET"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Function", "Group", "Boat", "Captain", "Vendor",
+               "Start", "End", "Working Days", "Rate/day (est.)",
+               "Total Estimate", "Total Actual"])
+    style_header_row(ws, 11)
+    grand_est = 0
+    grand_act = 0
+    for r in sb_rows:
+        est = r.get("amount_estimate") or 0
+        act = r.get("amount_actual") or 0
+        grand_est += est
+        grand_act += act
+        ws.append([
+            r.get("function_name") or "",
+            r.get("function_group") or "",
+            r.get("boat_name_override") or r.get("boat_name") or "",
+            r.get("captain") or "",
+            r.get("vendor") or "",
+            r.get("start_date") or "", r.get("end_date") or "",
+            r.get("working_days") or "",
+            r.get("price_override") or r.get("boat_daily_rate_estimate") or "",
+            est, act if act else "",
+        ])
+    ws.append([])
+    ws.append(["", "", "", "", "", "", "GRAND TOTAL", "", "", round(grand_est, 2), round(grand_act, 2)])
+    ws.cell(row=ws.max_row, column=10).font = green_font
+    auto_width(ws)
+    summary_data["SECURITY BOATS"] = round(grand_est, 2)
+
+    # ── Sheet 5: TRANSPORT ────────────────────────────────────────────────────
+    ws = wb.create_sheet("Transport")
+    tr_rows = [r for r in get_transport_assignments(prod_id) if r.get("working_days")]
+    ws.append(["KLAS 7 - TRANSPORT BUDGET"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Function", "Group", "Vehicle", "Type", "Driver", "Vendor",
+               "Start", "End", "Working Days", "Rate/day (est.)",
+               "Total Estimate", "Total Actual"])
+    style_header_row(ws, 12)
+    grand_est = 0
+    grand_act = 0
+    for r in tr_rows:
+        est = r.get("amount_estimate") or 0
+        act = r.get("amount_actual") or 0
+        grand_est += est
+        grand_act += act
+        ws.append([
+            r.get("function_name") or "",
+            r.get("function_group") or "",
+            r.get("vehicle_name_override") or r.get("vehicle_name") or "",
+            r.get("vehicle_type") or "",
+            r.get("driver") or "",
+            r.get("vendor") or "",
+            r.get("start_date") or "", r.get("end_date") or "",
+            r.get("working_days") or "",
+            r.get("price_override") or r.get("vehicle_daily_rate_estimate") or "",
+            est, act if act else "",
+        ])
+    ws.append([])
+    ws.append(["", "", "", "", "", "", "GRAND TOTAL", "", "", "", round(grand_est, 2), round(grand_act, 2)])
+    ws.cell(row=ws.max_row, column=11).font = green_font
+    auto_width(ws)
+    summary_data["TRANSPORT"] = round(grand_est, 2)
+
+    # ── Sheet 6: FUEL ─────────────────────────────────────────────────────────
+    ws = wb.create_sheet("Fuel")
+    entries = get_fuel_entries(prod_id)
+    machinery = get_fuel_machinery(prod_id)
+    locked_prices = get_fuel_locked_prices()
+    cur_diesel = float(get_setting("fuel_price_diesel", "0"))
+    cur_petrol = float(get_setting("fuel_price_petrol", "0"))
+
+    # Build consumer breakdown (same logic as fuel-budget CSV export)
+    asgn_map = {}
+    for ctx, fetcher in [
+        ('boats', lambda: get_boat_assignments(prod_id, context='boats')),
+        ('picture_boats', lambda: get_picture_boat_assignments(prod_id)),
+        ('security_boats', lambda: get_security_boat_assignments(prod_id)),
+        ('transport', lambda: get_transport_assignments(prod_id)),
+    ]:
+        for a in fetcher():
+            asgn_map[(ctx, a['id'])] = (
+                a.get('boat_name_override') or a.get('boat_name') or
+                a.get('vehicle_name_override') or a.get('vehicle_name') or '?',
+                a.get('function_name') or '?'
+            )
+
+    consumers = {}
+    for e in entries:
+        key = (e['source_type'], e['assignment_id'])
+        name_info = asgn_map.get(key, (f"#{e['assignment_id']}", '?'))
+        consumer_key = f"{e['source_type'].upper()} | {name_info[0]} | {name_info[1]}"
+        if consumer_key not in consumers:
+            consumers[consumer_key] = {'diesel_l': 0, 'petrol_l': 0, 'cost_up_to_date': 0, 'cost_estimate': 0}
+        ft = e.get('fuel_type', 'DIESEL')
+        liters = e.get('liters', 0) or 0
+        date = e.get('date', '')
+        if date in locked_prices:
+            price = locked_prices[date]['diesel_price'] if ft == 'DIESEL' else locked_prices[date]['petrol_price']
+            consumers[consumer_key]['cost_up_to_date'] += liters * price
+        else:
+            price = cur_diesel if ft == 'DIESEL' else cur_petrol
+            consumers[consumer_key]['cost_estimate'] += liters * price
+        if ft == 'PETROL':
+            consumers[consumer_key]['petrol_l'] += liters
+        else:
+            consumers[consumer_key]['diesel_l'] += liters
+
+    for m in machinery:
+        consumer_key = f"MACHINERY | {m['name']}"
+        ft = m.get('fuel_type', 'DIESEL')
+        wd = working_days(m.get('start_date'), m.get('end_date'))
+        total_l = round((m.get('liters_per_day') or 0) * wd, 1)
+        price = cur_diesel if ft == 'DIESEL' else cur_petrol
+        consumers[consumer_key] = {
+            'diesel_l': total_l if ft == 'DIESEL' else 0,
+            'petrol_l': total_l if ft == 'PETROL' else 0,
+            'cost_up_to_date': 0,
+            'cost_estimate': total_l * price,
+        }
+
+    ws.append(["KLAS 7 - FUEL BUDGET"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Consumer", "Diesel (L)", "Petrol (L)", "Total (L)",
+               "Cost Up to Date ($)", "Cost Estimate ($)", "Total Cost ($)"])
+    style_header_row(ws, 7)
+    fuel_grand_diesel = 0
+    fuel_grand_petrol = 0
+    fuel_grand_utd = 0
+    fuel_grand_est = 0
+    for name, data in sorted(consumers.items()):
+        total_l = data['diesel_l'] + data['petrol_l']
+        total_cost = data['cost_up_to_date'] + data['cost_estimate']
+        ws.append([name, round(data['diesel_l'], 1), round(data['petrol_l'], 1),
+                   round(total_l, 1), round(data['cost_up_to_date'], 2),
+                   round(data['cost_estimate'], 2), round(total_cost, 2)])
+        fuel_grand_diesel += data['diesel_l']
+        fuel_grand_petrol += data['petrol_l']
+        fuel_grand_utd += data['cost_up_to_date']
+        fuel_grand_est += data['cost_estimate']
+    ws.append([])
+    fuel_total_l = fuel_grand_diesel + fuel_grand_petrol
+    fuel_total_cost = fuel_grand_utd + fuel_grand_est
+    avg_price = fuel_total_cost / fuel_total_l if fuel_total_l > 0 else 0
+    ws.append(["GRAND TOTAL", round(fuel_grand_diesel, 1), round(fuel_grand_petrol, 1),
+               round(fuel_total_l, 1), round(fuel_grand_utd, 2),
+               round(fuel_grand_est, 2), round(fuel_total_cost, 2)])
+    ws.cell(row=ws.max_row, column=7).font = green_font
+    ws.append(["AVERAGE PRICE PER LITRE", "", "", "", "", "", round(avg_price, 4)])
+    ws.append([])
+    ws.append([f"Current Diesel price: ${cur_diesel}/L"])
+    ws.append([f"Current Petrol price: ${cur_petrol}/L"])
+    auto_width(ws)
+    summary_data["FUEL"] = round(fuel_total_cost, 2)
+
+    # ── Sheet 7: LABOUR ───────────────────────────────────────────────────────
+    ws = wb.create_sheet("Labour")
+    lb_rows = [r for r in get_helper_assignments(prod_id) if r.get("working_days")]
+    by_group = OrderedDict()
+    for r in lb_rows:
+        g = r.get("function_group") or r.get("helper_group") or "GENERAL"
+        by_group.setdefault(g, []).append(r)
+
+    ws.append(["KLAS 7 - LABOUR BUDGET"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Group", "Function", "Worker", "Role", "Contact",
+               "Start", "End", "Working Days", "Rate/day",
+               "Total Estimate", "Total Actual"])
+    style_header_row(ws, 11)
+    grand_est = 0
+    grand_act = 0
+    for group_name, group_rows in by_group.items():
+        group_est = 0
+        group_act = 0
+        for r in group_rows:
+            est = r.get("amount_estimate") or 0
+            act = r.get("amount_actual") or 0
+            group_est += est
+            group_act += act
+            ws.append([
+                group_name,
+                r.get("function_name") or "",
+                r.get("helper_name_override") or r.get("helper_name") or "",
+                r.get("helper_role") or "",
+                r.get("helper_contact") or "",
+                r.get("start_date") or "", r.get("end_date") or "",
+                r.get("working_days") or "",
+                r.get("price_override") or r.get("helper_daily_rate_estimate") or "",
+                est, act if act else "",
+            ])
+        ws.append(["", "", "", "", "", "", f"SUB-TOTAL {group_name}", "", "",
+                   round(group_est, 2), round(group_act, 2) if group_act else ""])
+        ws.cell(row=ws.max_row, column=10).font = subtotal_font
+        ws.append([])
+        grand_est += group_est
+        grand_act += group_act
+    ws.append(["", "", "", "", "", "", "GRAND TOTAL", "", "",
+               round(grand_est, 2), round(grand_act, 2) if grand_act else ""])
+    ws.cell(row=ws.max_row, column=10).font = green_font
+    auto_width(ws)
+    summary_data["LABOUR"] = round(grand_est, 2)
+
+    # ── Sheet 8: GUARDS - LOCATION ────────────────────────────────────────────
+    ws = wb.create_sheet("Guards - Location")
+    type_by_name = {s['name']: s.get('location_type', 'game') for s in loc_sites}
+    loc_guard_by_loc = {}
+    for ls in loc_schedules:
+        loc_name = ls['location_name']
+        loc_type = type_by_name.get(loc_name, ls.get('location_type', 'game'))
+        nb_guards = 4 if loc_type == 'tribal_camp' else 2
+        loc_guard_by_loc.setdefault(loc_name, {'days': 0, 'guards': nb_guards, 'cost': 0, 'type': loc_type})
+        loc_guard_by_loc[loc_name]['days'] += 1
+        loc_guard_by_loc[loc_name]['cost'] += nb_guards * 45
+
+    ws.append(["KLAS 7 - GUARDS LOCATION BUDGET"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Location", "Type", "Guards/Day", "Man-Days", "Rate/Guard/Day ($)", "Total ($)"])
+    style_header_row(ws, 6)
+    gl_grand = 0
+    for loc_name, info in sorted(loc_guard_by_loc.items()):
+        man_days = info['days'] * info['guards']
+        ws.append([loc_name, info['type'], info['guards'], man_days, 45, round(info['cost'], 2)])
+        gl_grand += info['cost']
+    ws.append([])
+    ws.append(["", "", "", "", "GRAND TOTAL", round(gl_grand, 2)])
+    ws.cell(row=ws.max_row, column=6).font = green_font
+    auto_width(ws)
+    summary_data["GUARDS - LOCATION"] = round(gl_grand, 2)
+
+    # ── Sheet 9: GUARDS - BASE CAMP ──────────────────────────────────────────
+    ws = wb.create_sheet("Guards - Base Camp")
+    gc_rows = [r for r in get_guard_camp_assignments(prod_id) if r.get("working_days")]
+    by_group = OrderedDict()
+    for r in gc_rows:
+        g = r.get("function_group") or r.get("helper_group") or "GENERAL"
+        by_group.setdefault(g, []).append(r)
+
+    ws.append(["KLAS 7 - GUARDS BASE CAMP BUDGET"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Group", "Function", "Guard", "Role", "Contact",
+               "Start", "End", "Working Days", "Rate/day",
+               "Total Estimate", "Total Actual"])
+    style_header_row(ws, 11)
+    grand_est = 0
+    grand_act = 0
+    for group_name, group_rows in by_group.items():
+        group_est = 0
+        group_act = 0
+        for r in group_rows:
+            est = r.get("amount_estimate") or 0
+            act = r.get("amount_actual") or 0
+            group_est += est
+            group_act += act
+            ws.append([
+                group_name,
+                r.get("function_name") or "",
+                r.get("helper_name_override") or r.get("helper_name") or "",
+                r.get("helper_role") or "",
+                r.get("helper_contact") or "",
+                r.get("start_date") or "", r.get("end_date") or "",
+                r.get("working_days") or "",
+                r.get("price_override") or r.get("helper_daily_rate_estimate") or "",
+                est, act if act else "",
+            ])
+        ws.append(["", "", "", "", "", "", f"SUB-TOTAL {group_name}", "", "",
+                   round(group_est, 2), round(group_act, 2) if group_act else ""])
+        ws.cell(row=ws.max_row, column=10).font = subtotal_font
+        ws.append([])
+        grand_est += group_est
+        grand_act += group_act
+    ws.append(["", "", "", "", "", "", "GRAND TOTAL", "", "",
+               round(grand_est, 2), round(grand_act, 2) if grand_act else ""])
+    ws.cell(row=ws.max_row, column=10).font = green_font
+    auto_width(ws)
+    summary_data["GUARDS - BASE CAMP"] = round(grand_est, 2)
+
+    # ── Sheet 10: FNB ─────────────────────────────────────────────────────────
+    ws = wb.create_sheet("FNB")
+    fnb_budget = get_fnb_budget_data(prod_id)
+    ws.append(["KLAS 7 - FNB BUDGET"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Category", "Up to Date ($)", "Estimate ($)", "Total ($)"])
+    style_header_row(ws, 4)
+    fnb_grand_utd = 0
+    fnb_grand_est = 0
+    for cat in fnb_budget.get('categories', []):
+        utd = round(cat.get('consumption_total', 0), 2)
+        est = round(cat.get('purchase_total', 0), 2)
+        total = round(utd + est, 2)
+        ws.append([cat['name'], utd, est, total])
+        fnb_grand_utd += utd
+        fnb_grand_est += est
+    ws.append([])
+    fnb_total = round(fnb_grand_utd + fnb_grand_est, 2)
+    ws.append(["GRAND TOTAL", round(fnb_grand_utd, 2), round(fnb_grand_est, 2), fnb_total])
+    ws.cell(row=ws.max_row, column=4).font = green_font
+    ws.append([])
+    balance = round(fnb_grand_est - fnb_grand_utd, 2)
+    ws.append([f"Balance (Estimate - Up to Date): ${balance}"])
+    auto_width(ws)
+    summary_data["FNB"] = round(fnb_grand_est, 2)  # Use purchase (estimate) as budget total
+
+    # ── Insert Summary sheet at position 0 ────────────────────────────────────
+    ws_summary = wb.create_sheet("Summary", 0)
+    ws_summary.append(["KLAS 7 - GLOBAL BUDGET SUMMARY"])
+    ws_summary.cell(row=1, column=1).font = Font(bold=True, size=14)
+    ws_summary.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws_summary.append([])
+    ws_summary.append(["Category", "Total Estimate ($)"])
+    style_header_row(ws_summary, 2)
+    overall_total = 0
+    for dept, total in summary_data.items():
+        ws_summary.append([dept, total])
+        ws_summary.cell(row=ws_summary.max_row, column=2).number_format = money_fmt_dec
+        overall_total += total
+    ws_summary.append([])
+    ws_summary.append(["GRAND TOTAL", round(overall_total, 2)])
+    ws_summary.cell(row=ws_summary.max_row, column=1).font = Font(bold=True, size=12)
+    ws_summary.cell(row=ws_summary.max_row, column=2).font = Font(bold=True, size=12, color="22C55E")
+    ws_summary.cell(row=ws_summary.max_row, column=2).number_format = money_fmt_dec
+    auto_width(ws_summary)
+
+    # Save to bytes
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    fname = f"KLAS7_BUDGET_{dt.now().strftime('%y%m%d')}.xlsx"
+    return Response(
+        output.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
+    )
+
+
 # ─── Bootstrap ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
