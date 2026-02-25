@@ -6153,6 +6153,23 @@ const App = (() => {
       } catch(e) { state.locationSchedules = []; }
     }
     if (!state.locSubTab) state.locSubTab = 'all';
+    if (!state.locView) state.locView = 'schedule';
+
+    if (state.locView === 'budget') {
+      renderLocBudget();
+    } else {
+      renderLocSchedule();
+    }
+  }
+
+  function locSetView(view) {
+    state.locView = view;
+    renderLocations();
+  }
+
+  function renderLocSchedule() {
+    const container = $('view-locations');
+    if (!container) return;
 
     const sites = state.locationSites || [];
     const schedules = state.locationSchedules || [];
@@ -6180,6 +6197,10 @@ const App = (() => {
       <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
         <span class="section-title" style="margin:0">Filming Locations</span>
         <span style="font-size:.75rem;color:var(--text-3)">${sites.length} sites</span>
+        <div class="view-toggle" style="margin-left:1rem">
+          <button class="${state.locView === 'schedule' ? 'active' : ''}" onclick="App.locSetView('schedule')">Schedule</button>
+          <button class="${state.locView === 'budget' ? 'active' : ''}" onclick="App.locSetView('budget')">Budget</button>
+        </div>
         <div style="margin-left:auto;display:flex;gap:.3rem">
           <button class="btn btn-sm btn-primary" onclick="App.showAddLocationModal()">+ Add Location</button>
           <button class="btn btn-sm btn-secondary" onclick="App.locAutoFill()">Auto-fill from PDT</button>
@@ -6255,6 +6276,163 @@ const App = (() => {
                   ${isLocked ? '<span style="color:#22C55E">&#x1F512;</span>' : '<span style="color:var(--text-4)">&#x1F513;</span>'}
                 </td>`;
               }).join('')}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+    container.innerHTML = html;
+  }
+
+  function renderLocBudget() {
+    const container = $('view-locations');
+    if (!container) return;
+
+    const sites = state.locationSites || [];
+    const schedules = state.locationSchedules || [];
+
+    // Count P/F/W per location
+    const byLoc = {};
+    schedules.forEach(s => {
+      if (!byLoc[s.location_name]) byLoc[s.location_name] = { P: 0, F: 0, W: 0 };
+      if (s.status === 'P' || s.status === 'F' || s.status === 'W') {
+        byLoc[s.location_name][s.status]++;
+      }
+    });
+
+    // Build budget rows per location
+    const rows = sites.map(site => {
+      const counts = byLoc[site.name] || { P: 0, F: 0, W: 0 };
+      const priceP = site.price_p || 0;
+      const priceF = site.price_f || 0;
+      const priceW = site.price_w || 0;
+      const globalDeal = site.global_deal || 0;
+      const hasGlobalDeal = globalDeal > 0;
+      const totalDays = counts.P + counts.F + counts.W;
+
+      let total;
+      if (hasGlobalDeal) {
+        total = globalDeal;
+      } else {
+        total = counts.P * priceP + counts.F * priceF + counts.W * priceW;
+      }
+
+      const sType = site.location_type || 'game';
+      const typeColor = sType === 'tribal_camp' ? '#EAB308' : sType === 'game' ? '#22C55E' : '#3B82F6';
+      const typeLabel = sType === 'tribal_camp' ? 'TRIBAL CAMP' : sType === 'game' ? 'GAME' : 'REWARD';
+
+      return {
+        name: site.name, sType, typeColor, typeLabel,
+        pDays: counts.P, fDays: counts.F, wDays: counts.W,
+        totalDays, priceP, priceF, priceW,
+        hasGlobalDeal, globalDeal, total
+      };
+    }).filter(r => r.totalDays > 0 || r.hasGlobalDeal);
+
+    // Sort by total descending
+    rows.sort((a, b) => b.total - a.total);
+
+    const grandTotal = rows.reduce((s, r) => s + r.total, 0);
+    const totalSites = rows.length;
+    const totalDaysAll = rows.reduce((s, r) => s + r.totalDays, 0);
+    const globalDealCount = rows.filter(r => r.hasGlobalDeal).length;
+
+    // Locked days: count how many location-schedule cells are locked
+    const lockedDates = new Set();
+    schedules.forEach(s => { if (s.locked) lockedDates.add(s.date); });
+
+    // Compute locked vs estimate portions per location
+    let totalLocked = 0;
+    rows.forEach(r => {
+      if (r.hasGlobalDeal) {
+        // For global deals: if ANY day for this location is locked, count proportionally
+        const locSchedules = schedules.filter(s => s.location_name === r.name);
+        const locDays = locSchedules.length;
+        const locLockedDays = locSchedules.filter(s => lockedDates.has(s.date)).length;
+        r.lockedAmount = locDays > 0 ? Math.round(r.total * locLockedDays / locDays) : 0;
+      } else {
+        // Per-day pricing: sum locked days at their respective rates
+        const locSchedules = schedules.filter(s => s.location_name === r.name && lockedDates.has(s.date));
+        r.lockedAmount = locSchedules.reduce((sum, s) => {
+          if (s.status === 'P') return sum + r.priceP;
+          if (s.status === 'F') return sum + r.priceF;
+          if (s.status === 'W') return sum + r.priceW;
+          return sum;
+        }, 0);
+      }
+      totalLocked += r.lockedAmount;
+    });
+    const totalEstimate = grandTotal - totalLocked;
+
+    let html = `<div style="padding:1rem">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
+        <span class="section-title" style="margin:0">Filming Locations</span>
+        <span style="font-size:.75rem;color:var(--text-3)">${sites.length} sites</span>
+        <div class="view-toggle" style="margin-left:1rem">
+          <button class="${state.locView === 'schedule' ? 'active' : ''}" onclick="App.locSetView('schedule')">Schedule</button>
+          <button class="${state.locView === 'budget' ? 'active' : ''}" onclick="App.locSetView('budget')">Budget</button>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:.3rem">
+          <button class="btn btn-sm btn-primary" onclick="App.showAddLocationModal()">+ Add Location</button>
+          <button class="btn btn-sm btn-secondary" onclick="App.locExportCSV()">Export CSV</button>
+        </div>
+      </div>
+      <div class="stat-grid" style="margin-bottom:.75rem">
+        <div class="stat-card" style="border:1px solid var(--border)">
+          <div class="stat-val" style="font-size:1.5rem">${fmtMoney(grandTotal)}</div>
+          <div class="stat-lbl">TOTAL LOCATIONS</div>
+        </div>
+        <div class="stat-card" style="border:1px solid var(--green);background:rgba(34,197,94,.07)">
+          <div class="stat-val" style="font-size:1.5rem;color:var(--green)">${fmtMoney(totalLocked)}</div>
+          <div class="stat-lbl">UP TO DATE <span style="font-size:.6rem;opacity:.55">(frozen)</span></div>
+        </div>
+        <div class="stat-card" style="border:1px solid #F59E0B;background:rgba(245,158,11,.07)">
+          <div class="stat-val" style="font-size:1.5rem;color:#F59E0B">${fmtMoney(totalEstimate)}</div>
+          <div class="stat-lbl">ESTIMATE</div>
+        </div>
+        <div class="stat-card" style="border-left:3px solid var(--cyan)">
+          <div class="stat-val" style="font-size:1.3rem;color:var(--cyan)">${totalSites}</div>
+          <div class="stat-lbl">ACTIVE SITES</div>
+        </div>
+      </div>
+      <div class="budget-dept-card">
+        <table class="budget-table">
+          <thead>
+            <tr>
+              <th>Location</th>
+              <th>Type</th>
+              <th style="text-align:center">P days</th>
+              <th style="text-align:center">F days</th>
+              <th style="text-align:center">W days</th>
+              <th style="text-align:right">$/P</th>
+              <th style="text-align:right">$/F</th>
+              <th style="text-align:right">$/W</th>
+              <th style="text-align:right">Global Deal</th>
+              <th style="text-align:right">Total $</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((r, i) => `<tr style="${i % 2 ? 'background:var(--bg-surface)' : ''}">
+              <td style="color:var(--text-1)">
+                <div style="display:flex;align-items:center;gap:.3rem">
+                  <span style="width:8px;height:8px;border-radius:2px;background:${r.typeColor};flex-shrink:0"></span>
+                  ${esc(r.name)}
+                </div>
+              </td>
+              <td style="font-size:.7rem;color:var(--text-3)">${esc(r.typeLabel)}</td>
+              <td style="text-align:center;color:#EAB308;font-weight:${r.pDays ? '600' : '400'}">${r.pDays || '-'}</td>
+              <td style="text-align:center;color:#22C55E;font-weight:${r.fDays ? '600' : '400'}">${r.fDays || '-'}</td>
+              <td style="text-align:center;color:#3B82F6;font-weight:${r.wDays ? '600' : '400'}">${r.wDays || '-'}</td>
+              <td style="text-align:right;font-size:.72rem;color:var(--text-3)">${r.hasGlobalDeal ? '-' : (r.priceP ? fmtMoney(r.priceP) : '-')}</td>
+              <td style="text-align:right;font-size:.72rem;color:var(--text-3)">${r.hasGlobalDeal ? '-' : (r.priceF ? fmtMoney(r.priceF) : '-')}</td>
+              <td style="text-align:right;font-size:.72rem;color:var(--text-3)">${r.hasGlobalDeal ? '-' : (r.priceW ? fmtMoney(r.priceW) : '-')}</td>
+              <td style="text-align:right;font-size:.72rem;color:${r.hasGlobalDeal ? 'var(--cyan)' : 'var(--text-4)'};font-weight:${r.hasGlobalDeal ? '600' : '400'}">${r.hasGlobalDeal ? fmtMoney(r.globalDeal) : '-'}</td>
+              <td style="text-align:right;font-weight:700;color:var(--green)">${fmtMoney(r.total)}</td>
+            </tr>`).join('')}
+            ${rows.length === 0 ? `<tr><td colspan="10" style="text-align:center;color:var(--text-4);padding:2rem">No location data yet. Add locations and set their schedule to see budget.</td></tr>` : ''}
+            <tr class="budget-total-row">
+              <td colspan="9" style="text-align:right;color:var(--text-1)">TOTAL LOCATIONS</td>
+              <td style="text-align:right;color:var(--green);font-size:1.05rem">${fmtMoney(grandTotal)}</td>
             </tr>
           </tbody>
         </table>
@@ -8646,7 +8824,7 @@ const App = (() => {
     showAddSecurityBoatModal, closeAddSecurityBoatModal, saveSecurityBoat,
     deleteSecurityBoatFromModal, openSecurityBoatDetail, deleteSecurityBoat,
     // Locations
-    locSetSubTab, locCellClick, locToggleLock, locAutoFill, locExportCSV,
+    locSetView, locSetSubTab, locCellClick, locToggleLock, locAutoFill, locExportCSV,
     showAddLocationModal, closeAddLocationModal, editLocationSite,
     saveLocationSite, deleteLocationSite,
     // Guards — sub-tab navigation
