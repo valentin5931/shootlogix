@@ -1532,37 +1532,232 @@ def api_export_fuel_json(prod_id):
     )
 
 
-# ─── Migrate boat photos from BATEAUX project ────────────────────────────────
+# ─── Boat photos: auto-match from static folder + BATEAUX migration ──────────
+
+def _normalize_name(name):
+    """Normalize a boat name for fuzzy matching: lowercase, strip accents,
+    remove special chars, collapse whitespace."""
+    import re, unicodedata
+    if not name:
+        return ''
+    # NFD decompose then strip combining marks (accents)
+    s = unicodedata.normalize('NFD', name)
+    s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+    s = s.lower()
+    s = re.sub(r'[^a-z0-9]', '', s)
+    return s
+
+
+def _ensure_boat_images_symlink():
+    """Create a symlink from SHOOTLOGIX/static/boat_images -> BATEAUX/static/boat_images
+    so that existing image_path values (static/boat_images/...) resolve correctly."""
+    import os
+    src = os.path.join(os.path.dirname(__file__), '..', 'BATEAUX', 'static', 'boat_images')
+    dst = os.path.join(os.path.dirname(__file__), 'static', 'boat_images')
+    if os.path.isdir(src) and not os.path.exists(dst):
+        try:
+            os.symlink(os.path.abspath(src), dst)
+        except OSError:
+            pass  # symlink may fail on some systems; images will still be served from uploads
+
+
+def _auto_match_boat_photos():
+    """Scan available image files and update boats/picture_boats/security_boats
+    that are missing a valid image_path.
+
+    Priority order for each boat:
+    1. Already-uploaded photo in static/uploads/boats/boat_{id}.{ext}
+    2. BATEAUX source image matched by boat_nr (BOAT__{nr}__*.jpg pattern)
+    3. BATEAUX source image matched by fuzzy boat name
+    4. SVG placeholder matched by fuzzy boat name
+    """
+    import os, re, shutil
+
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    bateaux_src = os.path.join(app_dir, '..', 'BATEAUX', 'static', 'boat_images')
+    uploads_boats = os.path.join(app_dir, 'static', 'uploads', 'boats')
+    uploads_pb = os.path.join(app_dir, 'static', 'uploads', 'picture-boats')
+    uploads_sb = os.path.join(app_dir, 'static', 'uploads', 'security-boats')
+    os.makedirs(uploads_boats, exist_ok=True)
+    os.makedirs(uploads_pb, exist_ok=True)
+    os.makedirs(uploads_sb, exist_ok=True)
+
+    # Build index of BATEAUX source images
+    bateaux_by_nr = {}    # boat_nr -> filename (JPG only, from BOAT__{nr}__ pattern)
+    bateaux_by_name = {}  # normalized_name -> filename (all files)
+    if os.path.isdir(bateaux_src):
+        for fname in os.listdir(bateaux_src):
+            fpath = os.path.join(bateaux_src, fname)
+            if not os.path.isfile(fpath):
+                continue
+            ext = os.path.splitext(fname)[1].lower()
+            if ext not in ('.jpg', '.jpeg', '.png', '.webp', '.svg'):
+                continue
+            # Try boat_nr pattern: BOAT__{nr}__*.jpg
+            m = re.match(r'BOAT_+(\d+)_+', fname)
+            if m and ext in ('.jpg', '.jpeg', '.png', '.webp'):
+                bateaux_by_nr[int(m.group(1))] = fname
+            # Name-based: strip extension, normalize
+            base = os.path.splitext(fname)[0]
+            # Remove BOAT__{nr}__ prefix for name matching
+            base_clean = re.sub(r'^BOAT_+\d+_+', '', base)
+            norm = _normalize_name(base_clean)
+            if norm:
+                # Prefer JPG over SVG
+                existing = bateaux_by_name.get(norm)
+                if existing is None:
+                    bateaux_by_name[norm] = fname
+                elif ext in ('.jpg', '.jpeg', '.png', '.webp') and existing.lower().endswith('.svg'):
+                    bateaux_by_name[norm] = fname  # upgrade SVG to real photo
+
+    # Build index of already-uploaded files
+    def _uploaded_files(directory):
+        result = {}
+        if os.path.isdir(directory):
+            for f in os.listdir(directory):
+                ext = os.path.splitext(f)[1].lower()
+                if ext in ('.jpg', '.jpeg', '.png', '.webp'):
+                    # Extract ID from filename: boat_123.jpg or pb_5.png etc
+                    m2 = re.match(r'(?:boat|pb|sb)_(\d+)', f)
+                    if m2:
+                        result[int(m2.group(1))] = f
+        return result
+
+    uploaded_boats = _uploaded_files(uploads_boats)
+    uploaded_pbs = _uploaded_files(uploads_pb)
+    uploaded_sbs = _uploaded_files(uploads_sb)
+
+    matched = 0
+
+    with get_db() as conn:
+        # --- BOATS ---
+        boats = conn.execute("SELECT id, name, boat_nr, image_path FROM boats").fetchall()
+        for b in boats:
+            bid = b['id']
+            current = b['image_path'] or ''
+
+            # Priority 1: uploaded photo always wins (even over symlinked BATEAUX images)
+            if bid in uploaded_boats:
+                rel = f"static/uploads/boats/{uploaded_boats[bid]}"
+                if current != rel:
+                    conn.execute("UPDATE boats SET image_path=? WHERE id=?", (rel, bid))
+                    matched += 1
+                continue
+
+            # Check if current image_path actually resolves to a file
+            if current:
+                full = os.path.join(app_dir, current)
+                if os.path.isfile(full):
+                    continue  # already valid, skip
+
+            # Priority 2: BATEAUX by boat_nr
+            nr = b['boat_nr']
+            if nr and nr in bateaux_by_nr:
+                src_file = bateaux_by_nr[nr]
+                ext = os.path.splitext(src_file)[1].lower()
+                dst_name = f"boat_{bid}{ext}"
+                shutil.copy2(os.path.join(bateaux_src, src_file),
+                             os.path.join(uploads_boats, dst_name))
+                rel = f"static/uploads/boats/{dst_name}"
+                conn.execute("UPDATE boats SET image_path=? WHERE id=?", (rel, bid))
+                uploaded_boats[bid] = dst_name
+                matched += 1
+                continue
+
+            # Priority 3: BATEAUX by fuzzy name (prefer real photo over SVG)
+            norm = _normalize_name(b['name'])
+            if norm and norm in bateaux_by_name:
+                src_file = bateaux_by_name[norm]
+                ext = os.path.splitext(src_file)[1].lower()
+                if ext in ('.jpg', '.jpeg', '.png', '.webp'):
+                    dst_name = f"boat_{bid}{ext}"
+                    shutil.copy2(os.path.join(bateaux_src, src_file),
+                                 os.path.join(uploads_boats, dst_name))
+                    rel = f"static/uploads/boats/{dst_name}"
+                else:
+                    # SVG: reference via boat_images symlink
+                    rel = f"static/boat_images/{src_file}"
+                conn.execute("UPDATE boats SET image_path=? WHERE id=?", (rel, bid))
+                matched += 1
+                continue
+
+        # --- PICTURE BOATS ---
+        pbs = conn.execute("SELECT id, name, image_path FROM picture_boats").fetchall()
+        for pb in pbs:
+            pid = pb['id']
+            current = pb['image_path'] or ''
+            # Uploaded photo always wins
+            if pid in uploaded_pbs:
+                rel = f"static/uploads/picture-boats/{uploaded_pbs[pid]}"
+                if current != rel:
+                    conn.execute("UPDATE picture_boats SET image_path=? WHERE id=?", (rel, pid))
+                    matched += 1
+                continue
+            if current:
+                full = os.path.join(app_dir, current)
+                if os.path.isfile(full):
+                    continue
+            # Try fuzzy name match against BATEAUX images
+            norm = _normalize_name(pb['name'])
+            if norm and norm in bateaux_by_name:
+                src_file = bateaux_by_name[norm]
+                ext = os.path.splitext(src_file)[1].lower()
+                if ext in ('.jpg', '.jpeg', '.png', '.webp'):
+                    dst_name = f"pb_{pid}{ext}"
+                    shutil.copy2(os.path.join(bateaux_src, src_file),
+                                 os.path.join(uploads_pb, dst_name))
+                    rel = f"static/uploads/picture-boats/{dst_name}"
+                else:
+                    rel = f"static/boat_images/{src_file}"
+                conn.execute("UPDATE picture_boats SET image_path=? WHERE id=?", (rel, pid))
+                matched += 1
+
+        # --- SECURITY BOATS ---
+        sbs = conn.execute("SELECT id, name, image_path FROM security_boats").fetchall()
+        for sb in sbs:
+            sid = sb['id']
+            current = sb['image_path'] or ''
+            # Uploaded photo always wins
+            if sid in uploaded_sbs:
+                rel = f"static/uploads/security-boats/{uploaded_sbs[sid]}"
+                if current != rel:
+                    conn.execute("UPDATE security_boats SET image_path=? WHERE id=?", (rel, sid))
+                    matched += 1
+                continue
+            if current:
+                full = os.path.join(app_dir, current)
+                if os.path.isfile(full):
+                    continue
+            norm = _normalize_name(sb['name'])
+            if norm and norm in bateaux_by_name:
+                src_file = bateaux_by_name[norm]
+                ext = os.path.splitext(src_file)[1].lower()
+                if ext in ('.jpg', '.jpeg', '.png', '.webp'):
+                    dst_name = f"sb_{sid}{ext}"
+                    shutil.copy2(os.path.join(bateaux_src, src_file),
+                                 os.path.join(uploads_sb, dst_name))
+                    rel = f"static/uploads/security-boats/{dst_name}"
+                else:
+                    rel = f"static/boat_images/{src_file}"
+                conn.execute("UPDATE security_boats SET image_path=? WHERE id=?", (rel, sid))
+                matched += 1
+
+    return matched
+
 
 @app.route("/api/migrate-boat-photos", methods=["POST"])
 def api_migrate_boat_photos():
-    import os, re, shutil
-    SRC = os.path.join(os.path.dirname(__file__), '..', 'BATEAUX', 'static', 'boat_images')
-    DST = os.path.join(os.path.dirname(__file__), 'static', 'uploads', 'boats')
-    if not os.path.isdir(SRC):
-        return jsonify({"error": f"Source directory not found: {SRC}"}), 404
-    os.makedirs(DST, exist_ok=True)
-    with get_db() as conn:
-        boats = conn.execute("SELECT id, boat_nr FROM boats").fetchall()
-        nr_map = {b['boat_nr']: b['id'] for b in boats if b['boat_nr']}
-        done, skipped = [], []
-        for f in sorted(os.listdir(SRC)):
-            m = re.match(r'BOAT_+(\d+)_+', f)
-            if not m or not f.lower().endswith('.jpg'):
-                skipped.append(f)
-                continue
-            nr = int(m.group(1))
-            if nr not in nr_map:
-                skipped.append(f"{f} (boat_nr {nr} not in DB)")
-                continue
-            boat_id = nr_map[nr]
-            ext = os.path.splitext(f)[1].lower() or '.jpg'
-            dst_name = f"boat_{boat_id}{ext}"
-            shutil.copy2(os.path.join(SRC, f), os.path.join(DST, dst_name))
-            rel = f"static/uploads/boats/{dst_name}"
-            conn.execute("UPDATE boats SET image_path=? WHERE id=?", (rel, boat_id))
-            done.append(dst_name)
-    return jsonify({"migrated": len(done), "skipped": len(skipped), "files": done})
+    """Re-run the auto-match logic and return how many boats were updated."""
+    matched = _auto_match_boat_photos()
+    return jsonify({"matched": matched})
+
+
+@app.route("/api/auto-match-photos", methods=["POST"])
+def api_auto_match_photos():
+    """Scan static folders and auto-match photos to boats, picture boats,
+    and security boats by name/number. Returns count of newly matched."""
+    matched = _auto_match_boat_photos()
+    return jsonify({"matched": matched})
 
 
 # ─── Data reload ──────────────────────────────────────────────────────────────
@@ -2689,4 +2884,9 @@ if __name__ == "__main__":
     init_db()
     from data_loader import bootstrap
     bootstrap()
+    # Auto-match boat photos from BATEAUX source images and uploads folder
+    _ensure_boat_images_symlink()
+    n = _auto_match_boat_photos()
+    if n:
+        print(f"Auto-matched {n} boat photo(s)")
     app.run(host="0.0.0.0", port=5002, debug=True)
