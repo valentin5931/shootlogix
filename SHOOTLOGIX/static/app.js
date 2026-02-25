@@ -532,7 +532,7 @@ const App = (() => {
             <div class="dm-ev-grid-3">
               <div class="dm-ev-row">
                 <label>Departure</label>
-                <input type="text" data-field="heure_depart" value="${esc(ev.heure_depart || '')}" placeholder="Dep. Cdts" oninput="App._updateDayEventField(${idx},'heure_depart',this.value)">
+                <input type="text" data-field="heure_depart" value="${esc(ev.heure_depart || '')}" placeholder="Dep." oninput="App._updateDayEventField(${idx},'heure_depart',this.value)">
               </div>
               <div class="dm-ev-row">
                 <label>Arrival</label>
@@ -795,7 +795,7 @@ const App = (() => {
     // BUG 4 FIX: conseil_soir strictly derived from events
     data.conseil_soir = state.editingDayEvents.some(e => e.event_type === 'council') ? 1 : 0;
 
-    // Auto-set status to 'modifié' when editing an existing day (protects from PDF merge overwrite)
+    // Auto-set status to 'modifié' when editing an existing day (prevents PDF merge from overwriting)
     if (state.editingDayId && data.status === 'brouillon') {
       data.status = 'modifié';
       $('dm-status').value = 'modifié';
@@ -1617,9 +1617,9 @@ const App = (() => {
   // ── Schedule ───────────────────────────────────────────────
   // Returns background color string for a schedule cell based on effective status
   function _scheduleCellBg(status, groupColor, isWeekend) {
-    // Couleur pleine — weekend légèrement assombri via un mix avec du noir
+    // Solid color — weekend slightly darkened by mixing with black
     if (isWeekend) {
-      // Superposer rgba(0,0,0,0.18) sur la couleur du groupe via gradient CSS
+      // Overlay rgba(0,0,0,0.18) on the group color via CSS gradient
       return `linear-gradient(rgba(0,0,0,0.18),rgba(0,0,0,0.18)), ${groupColor}`;
     }
     return groupColor;
@@ -1767,7 +1767,7 @@ const App = (() => {
     closeSchedulePopover();
     const isLocked = !!state.lockedDays[date];
     if (isLocked) {
-      toast(`Journée ${fmtDateLong(date)} is locked — uncheck to modify`, 'info');
+      toast(`Day ${fmtDateLong(date)} is locked — uncheck to modify`, 'info');
       return;
     }
     if (!assignmentId) await _fillDay(funcId, date);
@@ -1799,7 +1799,7 @@ const App = (() => {
               onclick="App.removeAssignmentById(${a.id})" title="Remove">✕</button>
           </div>`;
         }).join('')
-      : `<div style="color:var(--text-4);font-size:.75rem;padding:.25rem 0">Aucun bateau assigné</div>`;
+      : `<div style="color:var(--text-4);font-size:.75rem;padding:.25rem 0">No boat assigned</div>`;
 
     $('sch-pop-content').innerHTML = `
       <div class="sch-pop-header">
@@ -1808,7 +1808,7 @@ const App = (() => {
       </div>
       ${asgnRows}
       <div class="sch-pop-actions" style="margin-top:.4rem">
-        <button onclick="App.assignFromDate(${funcId},null)">+ Assigner un bateau</button>
+        <button onclick="App.assignFromDate(${funcId},null)">+ Assign a boat</button>
       </div>`;
 
     const rect = event.target.getBoundingClientRect();
@@ -1926,7 +1926,7 @@ const App = (() => {
     } else {
       state.pendingFuncId = funcId;
       state.pendingDate   = date;
-      toast('Cliquez un bateau dans la sidebar pour l\'assigner', 'info');
+      toast('Click a boat in the sidebar to assign it', 'info');
     }
   }
 
@@ -2086,7 +2086,7 @@ const App = (() => {
         if (idx >= 0) state.boats[idx] = { ...state.boats[idx], ...updated };
         closeBoatDetail();
         renderBoatList();
-        toast('Bateau mis à jour');
+        toast('Boat updated');
       }
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -2309,7 +2309,7 @@ const App = (() => {
           </div>
           <div class="stat-card" style="border:1px solid var(--green);background:rgba(34,197,94,.07)">
             <div class="stat-val" style="color:var(--green)">${fmtMoney(totalFige)}</div>
-            <div class="stat-lbl">UP TO DATE <span style="font-size:.6rem;opacity:.55">(figé)</span></div>
+            <div class="stat-lbl">UP TO DATE <span style="font-size:.6rem;opacity:.55">(frozen)</span></div>
           </div>
           <div class="stat-card" style="border:1px solid #F59E0B;background:rgba(245,158,11,.07)">
             <div class="stat-val" style="color:#F59E0B">${fmtMoney(totalEstimate)}</div>
@@ -2645,7 +2645,7 @@ const App = (() => {
     closeSchedulePopover();
     const isLocked = !!state.pbLockedDays[date];
     if (isLocked) {
-      toast(`Journée ${fmtDateLong(date)} is locked — uncheck to modify`, 'info');
+      toast(`Day ${fmtDateLong(date)} is locked — uncheck to modify`, 'info');
       return;
     }
     if (!assignmentId) await _pbFillDay(funcId, date);
@@ -2737,7 +2737,7 @@ const App = (() => {
               onclick="App.pbRemoveAssignmentById(${a.id})" title="Remove">✕</button>
           </div>`;
         }).join('')
-      : `<div style="color:var(--text-4);font-size:.75rem;padding:.25rem 0">Aucun bateau assigné</div>`;
+      : `<div style="color:var(--text-4);font-size:.75rem;padding:.25rem 0">No boat assigned</div>`;
     $('sch-pop-content').innerHTML = `
       <div class="sch-pop-header">
         <strong>${esc(func?.name || '')}</strong>
@@ -2745,7 +2745,7 @@ const App = (() => {
       </div>
       ${asgnRows}
       <div class="sch-pop-actions" style="margin-top:.4rem">
-        <button onclick="App.pbAssignFromDate(${funcId},null)">+ Assigner un bateau</button>
+        <button onclick="App.pbAssignFromDate(${funcId},null)">+ Assign a boat</button>
       </div>`;
     const rect = event.target.getBoundingClientRect();
     el.style.left = (rect.right + 4) + 'px';
@@ -2762,7 +2762,7 @@ const App = (() => {
     } else {
       state.pbPendingFuncId = funcId;
       state.pbPendingDate   = date;
-      toast('Cliquez un bateau dans la sidebar pour l\'assigner', 'info');
+      toast('Click a boat in the sidebar to assign it', 'info');
     }
   }
 
@@ -2802,7 +2802,7 @@ const App = (() => {
         </div>
         <div class="stat-card" style="border:1px solid var(--green);background:rgba(34,197,94,.07)">
           <div class="stat-val" style="color:var(--green)">${fmtMoney(totalFige)}</div>
-          <div class="stat-lbl">UP TO DATE <span style="font-size:.6rem;opacity:.55">(figé)</span></div>
+          <div class="stat-lbl">UP TO DATE <span style="font-size:.6rem;opacity:.55">(frozen)</span></div>
         </div>
         <div class="stat-card" style="border:1px solid #F59E0B;background:rgba(245,158,11,.07)">
           <div class="stat-val" style="color:#F59E0B">${fmtMoney(totalEstimate)}</div>
@@ -3004,7 +3004,7 @@ const App = (() => {
           </div>
           <div class="stat-card" style="border:1px solid var(--green);background:rgba(34,197,94,.07)">
             <div class="stat-val" style="font-size:1.75rem;color:var(--green)">${fmtMoney(totalFige)}</div>
-            <div class="stat-lbl">UP TO DATE <span style="font-size:.6rem;opacity:.55">(figé)</span></div>
+            <div class="stat-lbl">UP TO DATE <span style="font-size:.6rem;opacity:.55">(frozen)</span></div>
           </div>
           <div class="stat-card" style="border:1px solid #F59E0B;background:rgba(245,158,11,.07)">
             <div class="stat-val" style="font-size:1.75rem;color:#F59E0B">${fmtMoney(totalEstimate)}</div>
@@ -3566,7 +3566,7 @@ const App = (() => {
         </div>
         <div class="stat-card" style="border:1px solid var(--green);background:rgba(34,197,94,.07)">
           <div class="stat-val" style="color:var(--green)">${fmtMoney(totalFige)}</div>
-          <div class="stat-lbl">UP TO DATE <span style="font-size:.6rem;opacity:.55">(figé)</span></div>
+          <div class="stat-lbl">UP TO DATE <span style="font-size:.6rem;opacity:.55">(frozen)</span></div>
         </div>
         <div class="stat-card" style="border:1px solid #F59E0B;background:rgba(245,158,11,.07)">
           <div class="stat-val" style="color:#F59E0B">${fmtMoney(totalEstimate)}</div>
@@ -3739,7 +3739,7 @@ const App = (() => {
     // Show delete button
     $('bd-delete-btn').classList.remove('hidden');
     $('bd-delete-btn').onclick = () => {
-      showConfirm(`Supprimer le véhicule "${v.name}" ?`, async () => {
+      showConfirm(`Delete vehicle "${v.name}"?`, async () => {
         await api('DELETE', `/api/transport-vehicles/${vehicleId}`);
         state.transportVehicles = state.transportVehicles.filter(x => x.id !== vehicleId);
         closeBoatDetail();
@@ -3810,7 +3810,7 @@ const App = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════
-  //  FUEL — reconstruction isolée
+  //  FUEL — isolated rebuild
   // ═══════════════════════════════════════════════════════════
 
   const FUEL_DEFAULTS = { boats: 100, picture_boats: 40, security_boats: 40, transport: 20 };
@@ -8328,16 +8328,16 @@ const App = (() => {
       <div style="display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border-radius:6px;background:var(--bg-surface)">
         <span style="width:14px;height:14px;border-radius:3px;background:${g.color};flex-shrink:0"></span>
         <span style="flex:1;font-size:.82rem;color:var(--text-0)">${esc(g.name)}</span>
-        <button class="btn btn-sm btn-danger btn-icon" onclick="App.removeGroup('${ctx}',${i})" title="Supprimer">✕</button>
-      </div>`).join('') || '<div style="color:var(--text-4);font-size:.8rem">Aucun groupe</div>';
+        <button class="btn btn-sm btn-danger btn-icon" onclick="App.removeGroup('${ctx}',${i})" title="Delete">✕</button>
+      </div>`).join('') || '<div style="color:var(--text-4);font-size:.8rem">No groups</div>';
   }
 
   function addGroup() {
     const ctx  = $('groups-modal-overlay').dataset.ctx;
     const name = $('ng-name').value.trim();
-    if (!name) { toast('Nom requis', 'error'); return; }
+    if (!name) { toast('Name required', 'error'); return; }
     const groups = ctx === 'security' ? state.sbGroups : ctx === 'labour' ? state.lbGroups : ctx === 'guard_camp' ? state.gcGroups : ctx === 'picture' ? state.pbGroups : ctx === 'transport' ? state.tbGroups : state.boatGroups;
-    if (groups.find(g => g.name === name)) { toast('Ce groupe existe déjà', 'error'); return; }
+    if (groups.find(g => g.name === name)) { toast('This group already exists', 'error'); return; }
     groups.push({ name, color: $('ng-color').value });
     _saveGroups(ctx);
     _renderGroupsList(ctx);

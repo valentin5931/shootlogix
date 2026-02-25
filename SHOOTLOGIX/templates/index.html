@@ -122,7 +122,7 @@
               <button id="btab-budget"               onclick="App.setBoatView('budget')">Budget</button>
             </div>
             <button class="btn btn-sm btn-secondary" onclick="App.showAddFunctionModal()">+ Function</button>
-            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('boats')">Groupes</button>
+            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('boats')">Groups</button>
             <div style="margin-left:auto;display:flex;gap:.4rem">
               <button class="btn btn-sm btn-secondary" onclick="App.undoBoat()" title="Ctrl+Z">↩ Undo</button>
               <div id="export-wrap" style="position:relative">
@@ -174,7 +174,7 @@
               <button id="pb-btab-budget"               onclick="App.pbSetBoatView('budget')">Budget</button>
             </div>
             <button class="btn btn-sm btn-secondary" onclick="App.pbShowAddFunctionModal()">+ Function</button>
-            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('picture')">Groupes</button>
+            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('picture')">Groups</button>
             <div style="margin-left:auto;display:flex;gap:.4rem">
               <button class="btn btn-sm btn-secondary" onclick="App.pbUndoBoat()" title="Ctrl+Z">↩ Undo</button>
               <div id="pb-export-wrap" style="position:relative">
@@ -224,7 +224,7 @@
               <button id="sb-btab-budget"               onclick="App.sbSetView('budget')">Budget</button>
             </div>
             <button class="btn btn-sm btn-secondary" onclick="App.sbShowAddFunctionModal()">+ Function</button>
-            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('security')">Groupes</button>
+            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('security')">Groups</button>
             <div style="margin-left:auto;display:flex;gap:.4rem">
               <button class="btn btn-sm btn-secondary" onclick="App.sbUndoBoat()" title="Ctrl+Z">&#8617; Undo</button>
               <div id="sb-export-wrap" style="position:relative">
@@ -309,7 +309,7 @@
               <button id="tb-btab-budget"               onclick="App.tbSetBoatView('budget')">Budget</button>
             </div>
             <button class="btn btn-sm btn-secondary" onclick="App.tbShowAddFunctionModal()">+ Function</button>
-            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('transport')">Groupes</button>
+            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('transport')">Groups</button>
             <div style="margin-left:auto;display:flex;gap:.4rem">
               <button class="btn btn-sm btn-secondary" onclick="App.tbUndoVehicle()" title="Ctrl+Z">↩ Undo</button>
               <div id="tb-export-wrap" style="position:relative">
@@ -475,7 +475,7 @@
       </div>
       <div class="form-group">
         <label class="form-label">Game / Activity</label>
-        <input type="text" id="dm-game" class="form-control" placeholder="e.g. POIDS PARTAGÉS">
+        <input type="text" id="dm-game" class="form-control" placeholder="e.g. SHARED WEIGHT">
       </div>
     </div>
     <div class="form-row-3">
@@ -526,7 +526,7 @@
     </div>
     <div class="form-group">
       <label class="form-label">Reward</label>
-      <input type="text" id="dm-recompense" class="form-control" placeholder="Île des Récompenses">
+      <input type="text" id="dm-recompense" class="form-control" placeholder="Reward Island">
     </div>
     <div class="form-group">
       <label class="form-label">Status</label>
@@ -1038,13 +1038,13 @@
 <!-- ── Groups modal ────────────────────────────────────────────────────────── -->
 <div id="groups-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeGroupsModal()">
   <div class="modal-box" style="max-width:420px">
-    <div class="modal-title">Gérer les groupes</div>
+    <div class="modal-title">Manage Groups</div>
     <div id="groups-list" style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.75rem"></div>
     <div style="border-top:1px solid var(--border);padding-top:.75rem">
-      <div style="font-size:.72rem;color:var(--text-3);margin-bottom:.4rem">Nouveau groupe</div>
+      <div style="font-size:.72rem;color:var(--text-3);margin-bottom:.4rem">New group</div>
       <div class="form-row">
         <div class="form-group" style="flex:1">
-          <input type="text" id="ng-name" class="form-control" placeholder="Nom du groupe">
+          <input type="text" id="ng-name" class="form-control" placeholder="Group name">
         </div>
         <div class="form-group" style="flex:0">
           <input type="color" id="ng-color" class="form-control" value="#6b7280" style="height:40px;padding:4px;width:52px">
@@ -1052,8 +1052,8 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="App.closeGroupsModal()">Fermer</button>
-      <button class="btn btn-primary" onclick="App.addGroup()">+ Ajouter</button>
+      <button class="btn btn-secondary" onclick="App.closeGroupsModal()">Close</button>
+      <button class="btn btn-primary" onclick="App.addGroup()">+ Add</button>
     </div>
   </div>
 </div>
@@ -1090,8 +1090,8 @@
         <div id="bv-assignments"></div>
       </div>
       <div class="bv-footer">
-        <button class="btn btn-secondary" onclick="App.closeBoatView()">Fermer</button>
-        <button class="btn btn-primary" id="bv-edit-btn" onclick="App.closeBoatView();App.openBoatDetail(0)">✎ Modifier</button>
+        <button class="btn btn-secondary" onclick="App.closeBoatView()">Close</button>
+        <button class="btn btn-primary" id="bv-edit-btn" onclick="App.closeBoatView();App.openBoatDetail(0)">✎ Edit</button>
       </div>
     </div>
   </div>
