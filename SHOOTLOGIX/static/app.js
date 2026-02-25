@@ -4737,9 +4737,10 @@ const App = (() => {
       const isAssigned = assignedIds.has(w.id);
       const wAsgns = state.labourAssignments.filter(a => a.helper_id === w.id);
       const groupColor = _groupColor('labour', w.group_name || 'GENERAL');
-      const rate = w.daily_rate_estimate > 0
-        ? `<div style="font-size:.65rem;color:var(--green);margin-top:.1rem">$${Math.round(w.daily_rate_estimate).toLocaleString('en-US')}/d</div>`
-        : '';
+      const rateVal = w.daily_rate_estimate || 0;
+      const rate = `<div class="lb-rate-display" style="font-size:.65rem;color:${rateVal > 0 ? 'var(--green)' : 'var(--text-4)'};margin-top:.1rem;cursor:pointer;display:inline-flex;align-items:center;gap:.2rem"
+        onclick="event.stopPropagation();App.lbStartInlineRateEdit(${w.id},this)"
+        title="Click to edit rate">${rateVal > 0 ? '$' + Math.round(rateVal).toLocaleString('en-US') + '/d' : '+ set rate'}<span style="font-size:.55rem;opacity:.5">&#x270E;</span></div>`;
       return `<div class="boat-card ${isAssigned ? 'assigned' : ''}"
         id="lb-worker-card-${w.id}"
         draggable="true"
@@ -4764,6 +4765,43 @@ const App = (() => {
           onclick="event.stopPropagation();App.openWorkerDetail(${w.id})">&#x270E;</button>
       </div>`;
     }).join('');
+  }
+
+  // ── Inline rate editing (Labour) ──────────────────────────────
+  function lbStartInlineRateEdit(workerId, el) {
+    const worker = state.labourWorkers.find(w => w.id === workerId);
+    if (!worker) return;
+    const curRate = worker.daily_rate_estimate || 0;
+    el.innerHTML = `<input type="number" step="1" min="0" value="${curRate}"
+      style="width:70px;font-size:.7rem;padding:.15rem .3rem;background:var(--bg-input);color:var(--text-0);border:1px solid var(--accent);border-radius:4px;outline:none"
+      onclick="event.stopPropagation()"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();App.lbSaveWorkerRate(${workerId},this.value);}if(event.key==='Escape'){App.renderLbWorkerList();}"
+      onblur="App.lbSaveWorkerRate(${workerId},this.value)">`;
+    const input = el.querySelector('input');
+    if (input) { input.focus(); input.select(); }
+  }
+
+  async function lbSaveWorkerRate(workerId, rawValue) {
+    const newRate = parseFloat(rawValue) || 0;
+    const worker = state.labourWorkers.find(w => w.id === workerId);
+    if (!worker) return;
+    if (newRate === (worker.daily_rate_estimate || 0)) {
+      renderLbWorkerList();
+      return;
+    }
+    try {
+      const updated = await api('PUT', `/api/helpers/${workerId}`, {
+        name: worker.name,
+        daily_rate_estimate: newRate,
+      });
+      const idx = state.labourWorkers.findIndex(w => w.id === workerId);
+      if (idx >= 0) state.labourWorkers[idx] = { ...state.labourWorkers[idx], ...updated };
+      toast(`Rate updated: $${Math.round(newRate)}/day`);
+      renderLabour();
+    } catch (e) {
+      toast('Error saving rate: ' + e.message, 'error');
+      renderLbWorkerList();
+    }
   }
 
   // ── Role / function cards (Labour) ─────────────────────────────
@@ -4923,12 +4961,19 @@ const App = (() => {
     const fields = [
       worker.role                    ? ['Role',     worker.role]     : null,
       worker.contact                 ? ['Contact',  worker.contact]  : null,
-      worker.daily_rate_estimate > 0 ? ['Rate est.', `$${Math.round(worker.daily_rate_estimate).toLocaleString('en-US')}/day`] : null,
       worker.notes                   ? ['Notes',     worker.notes]   : null,
     ].filter(Boolean);
+    const rateEditHTML = `<span class="bv-field-label">Rate $/day</span><span class="bv-field-value" style="display:flex;align-items:center;gap:.3rem">
+      <input type="number" step="1" min="0" value="${worker.daily_rate_estimate || 0}" id="bv-lb-rate-input"
+        style="width:80px;font-size:.78rem;padding:.2rem .4rem;background:var(--bg-input);color:var(--text-0);border:1px solid var(--border-lt);border-radius:4px;outline:none"
+        onfocus="this.style.borderColor='var(--accent)'"
+        onblur="this.style.borderColor='var(--border-lt)';App.lbSaveWorkerRate(${worker.id},this.value)"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
+      <span style="font-size:.65rem;color:var(--text-4)">/day</span>
+    </span>`;
     $('bv-fields').innerHTML = fields.map(([label, value]) =>
       `<span class="bv-field-label">${esc(label)}</span><span class="bv-field-value">${esc(value)}</span>`
-    ).join('');
+    ).join('') + rateEditHTML;
     const asgns = state.labourAssignments.filter(a => a.helper_id === worker.id);
     $('bv-assignments').innerHTML = asgns.length
       ? asgns.map(a => `<div class="bd-asgn-row">
@@ -5121,10 +5166,13 @@ const App = (() => {
       const wAsgn = funcAsgns.find(a => a.helper_id || a.helper_name_override || a.helper_name);
       const wLabel = wAsgn ? (wAsgn.helper_name_override || wAsgn.helper_name || null) : null;
       const multiSuffix = funcAsgns.length > 1 ? ` +${funcAsgns.length - 1}` : '';
+      const wWorker = wAsgn && wAsgn.helper_id ? state.labourWorkers.find(w => w.id === wAsgn.helper_id) : null;
+      const wRate = wWorker ? (wWorker.daily_rate_estimate || 0) : 0;
+      const rateHint = wLabel && wRate > 0 ? `<span style="font-size:.55rem;color:var(--green);margin-left:.25rem">$${Math.round(wRate)}</span>` : '';
       let cells = `<td class="role-name-cell sch-func-cell" style="border-top:2px solid ${color}"
-        title="${esc(func.name)}" onclick="App.lbOnFuncCellClick(event,${func.id})">
+        title="${esc(func.name)}${wRate > 0 ? ' - $' + Math.round(wRate) + '/day (click to edit)' : ''}" onclick="App.lbOnFuncCellClick(event,${func.id})">
         <div class="rn-group" style="color:${color}">${esc(func.function_group || 'GENERAL')}</div>
-        <div class="${wLabel ? 'rn-boat' : 'rn-empty'}">${esc(wLabel ? wLabel + multiSuffix : func.name)}</div>
+        <div class="${wLabel ? 'rn-boat' : 'rn-empty'}" style="display:flex;align-items:baseline;gap:0">${esc(wLabel ? wLabel + multiSuffix : func.name)}${rateHint}</div>
       </td>`;
       days.forEach(day => {
         const dk = _localDk(day);
@@ -5265,13 +5313,23 @@ const App = (() => {
     const asgnRows = asgns.length
       ? asgns.map(a => {
           const wName = a.helper_name_override || a.helper_name || '---';
-          return `<div class="sch-pop-asgn-row">
+          const worker = a.helper_id ? state.labourWorkers.find(w => w.id === a.helper_id) : null;
+          const curRate = worker ? (worker.daily_rate_estimate || 0) : (a.helper_daily_rate_estimate || 0);
+          return `<div class="sch-pop-asgn-row" style="flex-wrap:wrap">
             <span style="flex:1;font-size:.75rem;overflow:hidden;text-overflow:ellipsis;color:var(--text-0)">${esc(wName)}</span>
             <button class="btn btn-sm btn-icon btn-secondary"
               onclick="App.lbEditAssignmentById(${a.id});App.closeSchedulePopover()" title="Edit">&#x270E;</button>
             <button class="btn btn-sm btn-icon btn-danger"
               onclick="App.lbRemoveAssignmentById(${a.id})" title="Remove">&times;</button>
-          </div>`;
+          </div>
+          ${a.helper_id ? `<div style="display:flex;align-items:center;gap:.3rem;margin-top:.15rem;margin-bottom:.3rem;padding-left:.1rem;width:100%">
+            <span style="font-size:.65rem;color:var(--text-3)">$/day:</span>
+            <input type="number" step="1" min="0" value="${curRate}"
+              style="width:65px;font-size:.7rem;padding:.15rem .3rem;background:var(--bg-input);color:var(--text-0);border:1px solid var(--border-lt);border-radius:4px;outline:none"
+              onfocus="this.style.borderColor='var(--accent)'"
+              onblur="this.style.borderColor='var(--border-lt)';App.lbSaveWorkerRate(${a.helper_id},this.value)"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
+          </div>` : ''}`;
         }).join('')
       : `<div style="color:var(--text-4);font-size:.75rem;padding:.25rem 0">No worker assigned</div>`;
     $('sch-pop-content').innerHTML = `
@@ -8979,7 +9037,7 @@ const App = (() => {
     lbOnDateCellClick, lbOnFuncCellClick, lbAssignFromDate,
     lbToggleDayLock, lbToggleExport, lbExportCSV,
     showAddWorkerModal, closeAddWorkerModal, createWorker,
-    openWorkerDetail,
+    openWorkerDetail, lbStartInlineRateEdit, lbSaveWorkerRate, renderLbWorkerList,
     // Security Boats
     sbSetView, sbFilterBoats, sbOpenBoatView,
     sbOnBoatDragStart, sbOnBoatDragEnd, sbOnDragOver, sbOnDragLeave, sbOnDrop,
