@@ -334,6 +334,61 @@
 
     <!-- GUARDS ── -->
     <div id="view-guards" class="view-panel">
+      <!-- Sub-tab navigation -->
+      <div id="gd-subtab-bar" style="display:flex;gap:.3rem;padding:.6rem 1rem 0;border-bottom:1px solid var(--border)">
+        <button class="filter-pill active" id="gd-subtab-location" onclick="App.gdSetSubTab('location')">Location Guards</button>
+        <button class="filter-pill" id="gd-subtab-basecamp" onclick="App.gdSetSubTab('basecamp')">Base Camp</button>
+      </div>
+
+      <!-- Sub-tab A: Location Guards (read-only, auto from Locations) -->
+      <div id="gd-location-panel"></div>
+
+      <!-- Sub-tab B: Base Camp (manual, like Labour) -->
+      <div id="gd-basecamp-panel" class="hidden">
+        <div id="gc-layout">
+          <div id="gc-sidebar">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+              <span class="section-title" style="margin:0">Guards</span>
+              <button class="btn btn-sm btn-secondary" onclick="App.gcShowAddWorkerModal()">+ Add</button>
+            </div>
+            <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.4rem">
+              <button class="filter-pill active" id="gc-filter-all"       onclick="App.gcFilterWorkers('all')">All</button>
+              <button class="filter-pill"        id="gc-filter-available" onclick="App.gcFilterWorkers('available')">Available</button>
+              <button class="filter-pill"        id="gc-filter-assigned"  onclick="App.gcFilterWorkers('assigned')">Assigned</button>
+            </div>
+            <div id="gc-worker-list"></div>
+          </div>
+          <div id="gc-main">
+            <div class="boats-toolbar">
+              <div class="view-toggle">
+                <button id="gc-btab-cards"    class="active" onclick="App.gcSetView('cards')">Cards</button>
+                <button id="gc-btab-schedule"             onclick="App.gcSetView('schedule')">Schedule</button>
+                <button id="gc-btab-budget"               onclick="App.gcSetView('budget')">Budget</button>
+              </div>
+              <button class="btn btn-sm btn-secondary" onclick="App.gcShowAddFunctionModal()">+ Function</button>
+              <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('guard_camp')">Groups</button>
+              <div style="margin-left:auto;display:flex;gap:.4rem">
+                <button class="btn btn-sm btn-secondary" onclick="App.gcUndo()" title="Ctrl+Z">&#x21A9; Undo</button>
+                <div id="gc-export-wrap" style="position:relative">
+                  <button class="btn btn-sm btn-secondary" onclick="App.gcToggleExport()">Export &#x25BE;</button>
+                  <div id="gc-export-menu" class="hidden" style="position:absolute;right:0;top:calc(100%+4px);background:var(--bg-card);border:1px solid var(--border-lt);border-radius:8px;overflow:hidden;z-index:50;min-width:120px">
+                    <button class="btn btn-secondary" style="width:100%;border-radius:0;border:none;justify-content:flex-start" onclick="App.gcExportCSV()">CSV</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="gc-view-cards">
+              <div id="gc-role-groups"></div>
+            </div>
+            <div id="gc-view-schedule" class="hidden">
+              <div id="gc-schedule-container"></div>
+            </div>
+            <div id="gc-view-budget" class="hidden">
+              <div id="gc-budget-content"></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- LABOUR ── -->
@@ -820,6 +875,43 @@
       <button class="btn btn-secondary" onclick="App.closeAddGuardModal()">Cancel</button>
       <button class="btn btn-danger hidden" id="ngp-delete-btn" onclick="App.deleteGuardPost()" style="margin-right:auto">Delete</button>
       <button class="btn btn-primary" id="ngp-confirm-btn" onclick="App.saveGuardPost()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add base camp guard modal ────────────────────────────────────────── -->
+<div id="add-gc-worker-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.gcCloseAddWorkerModal()">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-title">Add Base Camp Guard</div>
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input type="text" id="gcw-name" class="form-control" placeholder="Guard name">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Rate / day ($)</label>
+        <input type="number" id="gcw-price" class="form-control" placeholder="45" value="45" min="0" step="1">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Group</label>
+        <select id="gcw-group" class="form-control"></select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Role / Position</label>
+      <input type="text" id="gcw-role" class="form-control" placeholder="e.g. Night Guard">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Contact</label>
+      <input type="text" id="gcw-contact" class="form-control" placeholder="Phone / email">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea id="gcw-notes" class="form-control" rows="2" placeholder="Notes..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.gcCloseAddWorkerModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.gcCreateWorker()">Create</button>
     </div>
   </div>
 </div>

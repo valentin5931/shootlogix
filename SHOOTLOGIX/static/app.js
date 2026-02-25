@@ -91,11 +91,11 @@ const App = (() => {
 
   // ── Group helpers (dynamic) ────────────────────────────────
   function _groupColor(ctx, groupName) {
-    const groups = ctx === 'security' ? state.sbGroups : ctx === 'labour' ? state.lbGroups : ctx === 'picture' ? state.pbGroups : ctx === 'transport' ? state.tbGroups : state.boatGroups;
+    const groups = ctx === 'security' ? state.sbGroups : ctx === 'labour' ? state.lbGroups : ctx === 'guard_camp' ? state.gcGroups : ctx === 'picture' ? state.pbGroups : ctx === 'transport' ? state.tbGroups : state.boatGroups;
     return groups.find(g => g.name === groupName)?.color || '#6b7280';
   }
   function _groupOrder(ctx) {
-    const groups = ctx === 'security' ? state.sbGroups : ctx === 'labour' ? state.lbGroups : ctx === 'picture' ? state.pbGroups : ctx === 'transport' ? state.tbGroups : state.boatGroups;
+    const groups = ctx === 'security' ? state.sbGroups : ctx === 'labour' ? state.lbGroups : ctx === 'guard_camp' ? state.gcGroups : ctx === 'picture' ? state.pbGroups : ctx === 'transport' ? state.tbGroups : state.boatGroups;
     return groups.map(g => g.name);
   }
 
@@ -247,7 +247,7 @@ const App = (() => {
     if (tab === 'labour')          { _tabCtx = 'labour'; _loadAndRenderLabour(); }
     if (tab === 'security-boats')  _loadAndRenderSecurityBoats();
     if (tab === 'locations')       { state.locationSchedules = null; renderLocations(); }
-    if (tab === 'guards')          { state.guardSchedules = null; renderGuards(); }
+    if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
   }
 
@@ -1156,9 +1156,11 @@ const App = (() => {
         ? [...state.transportFunctions, ...state.functions, ...state.pictureFunctions]
         : _tabCtx === 'labour'
           ? [...state.labourFunctions, ...state.functions, ...state.pictureFunctions]
-          : _tabCtx === 'picture'
-            ? [...state.pictureFunctions, ...state.functions]
-            : [...state.functions, ...state.pictureFunctions];
+          : _tabCtx === 'guard_camp'
+            ? [...state.gcFunctions, ...state.functions, ...state.pictureFunctions]
+            : _tabCtx === 'picture'
+              ? [...state.pictureFunctions, ...state.functions]
+              : [...state.functions, ...state.pictureFunctions];
     const func = allFunctions.find(f => f.id === funcId);
     if (!func || !boat) return;
     const rate = boat.daily_rate_estimate || 0;
@@ -1169,6 +1171,7 @@ const App = (() => {
     $('am-func-id').dataset.assignmentId = existingAsgn?.id || '';
     $('assign-modal-title').textContent = existingAsgn ? 'Edit assignment'
       : _tabCtx === 'labour' ? 'Assign worker'
+      : _tabCtx === 'guard_camp' ? 'Assign guard'
       : _tabCtx === 'transport' ? 'Assign vehicle'
       : 'Assign boat';
     $('am-func-name').textContent = func.name;
@@ -1261,6 +1264,20 @@ const App = (() => {
         const lfunc = state.labourFunctions.find(f => f.id === funcId);
         const worker = state.labourWorkers.find(w => w.id === boatId);
         toast(assignmentId ? 'Assignment updated' : `${worker?.name || 'Worker'} assigned to ${lfunc?.name || 'function'}`);
+      } else if (_assignCtx === 'guard_camp') {
+        if (assignmentId) {
+          await api('PUT', `/api/guard-camp-assignments/${assignmentId}`, { helper_id: boatId, notes });
+        } else {
+          await api('POST', `/api/productions/${state.prodId}/guard-camp-assignments`, {
+            boat_function_id: funcId, helper_id: boatId, notes,
+          });
+        }
+        closeAssignModal();
+        state.gcAssignments = await api('GET', `/api/productions/${state.prodId}/guard-camp-assignments`);
+        renderGuardCamp();
+        const gcfunc = state.gcFunctions.find(f => f.id === funcId);
+        const guard = state.gcWorkers.find(w => w.id === boatId);
+        toast(assignmentId ? 'Assignment updated' : `${guard?.name || 'Guard'} assigned to ${gcfunc?.name || 'function'}`);
       } else {
         if (assignmentId) {
           await api('PUT', `/api/assignments/${assignmentId}`, {
@@ -1423,6 +1440,7 @@ const App = (() => {
   let _detailIsPicture = false;
   let _detailIsTransport = false;
   let _detailIsLabour = false;
+  let _detailIsGuardCamp = false;
   let _detailIsSecurityBoat = false;
 
   function openPictureBoatDetail(pbId) {
@@ -1531,7 +1549,7 @@ const App = (() => {
         default_start:  $('nf-start').value || null,
         default_end:    $('nf-end').value   || null,
         specs:          $('nf-specs').value.trim() || null,
-        sort_order:     ctx === 'picture' ? state.pictureFunctions.length : ctx === 'labour' ? state.labourFunctions.length : state.functions.length,
+        sort_order:     ctx === 'picture' ? state.pictureFunctions.length : ctx === 'labour' ? state.labourFunctions.length : ctx === 'guard_camp' ? state.gcFunctions.length : state.functions.length,
         context:        ctx,
       });
       if (ctx === 'picture') {
@@ -1550,6 +1568,10 @@ const App = (() => {
         state.labourFunctions.push(func);
         closeAddFunctionModal();
         renderLbRoleCards();
+      } else if (ctx === 'guard_camp') {
+        state.gcFunctions.push(func);
+        closeAddFunctionModal();
+        renderGcRoleCards();
       } else {
         state.functions.push(func);
         closeAddFunctionModal();
@@ -2018,6 +2040,21 @@ const App = (() => {
         closeBoatDetail();
         renderLabour();
         toast('Worker updated');
+      } else if (_detailIsGuardCamp) {
+        const gcdata = {
+          name:                $('bd-name').value.trim(),
+          role:                $('bd-captain').value.trim() || null,
+          contact:             $('bd-vendor').value.trim()  || null,
+          daily_rate_estimate: parseFloat($('bd-rate-est').value) || 0,
+          daily_rate_actual:   parseFloat($('bd-rate-act').value) || null,
+          notes:               $('bd-notes').value.trim() || null,
+        };
+        const updated = await api('PUT', `/api/guard-camp-workers/${_detailBoatId}`, gcdata);
+        const idx = state.gcWorkers.findIndex(w => w.id === _detailBoatId);
+        if (idx >= 0) state.gcWorkers[idx] = { ...state.gcWorkers[idx], ...updated };
+        closeBoatDetail();
+        renderGuardCamp();
+        toast('Guard updated');
       } else if (_detailIsTransport) {
         const tdata = {
           name:                $('bd-name').value.trim(),
@@ -2065,6 +2102,7 @@ const App = (() => {
     _detailIsTransport     = false;
     _detailIsSecurityBoat  = false;
     _detailIsLabour        = false;
+    _detailIsGuardCamp     = false;
     $('bd-photo-input').value = '';
   }
 
@@ -2160,11 +2198,13 @@ const App = (() => {
       ? `/api/security-boats/${_detailBoatId}/upload-image`
       : _detailIsLabour
         ? `/api/helpers/${_detailBoatId}/upload-image`
-        : _detailIsTransport
-          ? `/api/transport-vehicles/${_detailBoatId}/upload-image`
-          : _detailIsPicture
-          ? `/api/picture-boats/${_detailBoatId}/upload-image`
-          : `/api/boats/${_detailBoatId}/upload-image`;
+        : _detailIsGuardCamp
+          ? `/api/guard-camp-workers/${_detailBoatId}/upload-image`
+          : _detailIsTransport
+            ? `/api/transport-vehicles/${_detailBoatId}/upload-image`
+            : _detailIsPicture
+            ? `/api/picture-boats/${_detailBoatId}/upload-image`
+            : `/api/boats/${_detailBoatId}/upload-image`;
     try {
       const res = await fetch(endpoint, {
         method: 'POST', body: formData,
@@ -2185,6 +2225,17 @@ const App = (() => {
       if (_detailIsLabour) {
         const idx = state.labourWorkers.findIndex(w => w.id === _detailBoatId);
         if (idx >= 0) state.labourWorkers[idx] = { ...state.labourWorkers[idx], ...boat };
+        if (boat.image_path) {
+          $('bd-photo').src = '/' + boat.image_path + '?t=' + Date.now();
+          $('bd-photo').style.display = 'block';
+          $('bd-photo-placeholder').style.display = 'none';
+        }
+        toast('Photo uploaded');
+        return;
+      }
+      if (_detailIsGuardCamp) {
+        const idx = state.gcWorkers.findIndex(w => w.id === _detailBoatId);
+        if (idx >= 0) state.gcWorkers[idx] = { ...state.gcWorkers[idx], ...boat };
         if (boat.image_path) {
           $('bd-photo').src = '/' + boat.image_path + '?t=' + Date.now();
           $('bd-photo').style.display = 'block';
@@ -6223,69 +6274,117 @@ const App = (() => {
 
 
   // ═══════════════════════════════════════════════════════════
-  //  GUARDS MODULE (P/F/W Schedule)
+  //  GUARDS MODULE — Split into Location Guards + Base Camp
   // ═══════════════════════════════════════════════════════════
 
-  // Guard posts are now loaded from API into state.guardPosts
+  // ── Sub-tab state ──────────────────────────────────────────
+  if (!state.guardSubTab) state.guardSubTab = 'location';
+  if (!state.guardView)   state.guardView   = 'schedule';
+
+  function gdSetSubTab(tab) {
+    state.guardSubTab = tab;
+    ['location', 'basecamp'].forEach(t => {
+      $(`gd-subtab-${t}`)?.classList.toggle('active', t === tab);
+    });
+    $('gd-location-panel')?.classList.toggle('hidden', tab !== 'location');
+    $('gd-basecamp-panel')?.classList.toggle('hidden', tab !== 'basecamp');
+    if (tab === 'location') renderGuardLocation();
+    else renderGuardCamp();
+  }
 
   async function renderGuards() {
-    const container = $('view-guards');
+    // Entry point when GUARDS tab is opened
+    if (state.guardSubTab === 'basecamp') {
+      $('gd-location-panel')?.classList.add('hidden');
+      $('gd-basecamp-panel')?.classList.remove('hidden');
+      $('gd-subtab-location')?.classList.remove('active');
+      $('gd-subtab-basecamp')?.classList.add('active');
+      await _loadAndRenderGuardCamp();
+    } else {
+      $('gd-location-panel')?.classList.remove('hidden');
+      $('gd-basecamp-panel')?.classList.add('hidden');
+      $('gd-subtab-location')?.classList.add('active');
+      $('gd-subtab-basecamp')?.classList.remove('active');
+      await renderGuardLocation();
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  SUB-TAB A: LOCATION GUARDS (read-only, auto from Locations)
+  // ═══════════════════════════════════════════════════════════
+
+  const GUARD_RATE_LOCATION = 45; // Fixed $45/guard/day
+
+  async function renderGuardLocation() {
+    const container = $('gd-location-panel');
     if (!container) return;
-    if (!state.guardView) state.guardView = 'schedule';
 
-    // Load guard posts from API
-    if (!state.guardPosts) {
-      try {
-        state.guardPosts = await api('GET', `/api/productions/${state.prodId}/guard-posts`);
-      } catch(e) { state.guardPosts = []; }
+    // Load location sites
+    if (!state.locationSites) {
+      try { state.locationSites = await api('GET', `/api/productions/${state.prodId}/locations`); }
+      catch(e) { state.locationSites = []; }
+    }
+    // Load location schedules
+    if (!state.locationSchedules) {
+      try { state.locationSchedules = await api('GET', `/api/productions/${state.prodId}/location-schedules`); }
+      catch(e) { state.locationSchedules = []; }
     }
 
-    // Load guard schedules from API
-    if (!state.guardSchedules) {
-      try {
-        state.guardSchedules = await api('GET', `/api/productions/${state.prodId}/guard-schedules`);
-      } catch(e) { state.guardSchedules = []; }
-    }
+    const sites = state.locationSites || [];
+    const schedules = state.locationSchedules || [];
+    const dates = _locDates();
 
-    const posts = state.guardPosts || [];
-    const schedules = state.guardSchedules || [];
-    const dates = _locDates(); // Same date range as BOATS (SCHEDULE_START -> SCHEDULE_END)
+    // Build lookup: location_name -> location_type
+    const typeByName = {};
+    sites.forEach(s => { typeByName[s.name] = s.location_type || 'game'; });
 
-    // Build rate lookup by post name
-    const rateByPost = {};
-    posts.forEach(p => { rateByPost[p.name] = p.daily_rate || 45; });
-
-    // Build lookup
+    // Build schedule lookup
     const lookup = {};
+    schedules.forEach(s => { lookup[`${s.location_name}|${s.date}`] = s; });
+
+    // Compute guard counts per location x date
+    // Rule: tribal_camp -> 4, everything else -> 2
+    const guardData = []; // { location_name, location_type, date, status, nb_guards }
+    const byLoc = {};
     schedules.forEach(s => {
-      lookup[`${s.location_name}|${s.date}`] = s;
+      const locType = typeByName[s.location_name] || s.location_type || 'game';
+      const nbGuards = locType === 'tribal_camp' ? 4 : 2;
+      guardData.push({ location_name: s.location_name, location_type: locType, date: s.date, status: s.status, nb_guards: nbGuards });
+      if (!byLoc[s.location_name]) byLoc[s.location_name] = { type: locType, days: 0, totalGuardDays: 0, cost: 0 };
+      byLoc[s.location_name].days++;
+      byLoc[s.location_name].totalGuardDays += nbGuards;
+      byLoc[s.location_name].cost += nbGuards * GUARD_RATE_LOCATION;
     });
 
-    // Locked dates
-    const lockedDates = new Set();
-    schedules.forEach(s => { if (s.locked) lockedDates.add(s.date); });
+    const totalGuardDays = Object.values(byLoc).reduce((s, v) => s + v.totalGuardDays, 0);
+    const totalBudget = totalGuardDays * GUARD_RATE_LOCATION;
 
-    // Budget calc (dynamic per-post rate)
-    let totalBudget = 0;
-    let totalDays = 0;
-    schedules.forEach(s => {
-      const rate = rateByPost[s.location_name] || 45;
-      totalBudget += (s.nb_guards || 1) * rate;
-      totalDays++;
+    // Get unique location names that have schedule entries
+    const activeLocNames = [...new Set(schedules.map(s => s.location_name))];
+    // Sort: tribal camps first, then alphabetically
+    activeLocNames.sort((a, b) => {
+      const ta = typeByName[a] || 'game', tb = typeByName[b] || 'game';
+      if (ta === 'tribal_camp' && tb !== 'tribal_camp') return -1;
+      if (tb === 'tribal_camp' && ta !== 'tribal_camp') return 1;
+      return a.localeCompare(b);
     });
+
+    // Guard data lookup
+    const gdLookup = {};
+    guardData.forEach(g => { gdLookup[`${g.location_name}|${g.date}`] = g; });
 
     const viewBtns = ['schedule', 'budget'].map(v =>
-      `<button class="${state.guardView === v ? 'active' : ''}" id="gd-btab-${v}" onclick="App.gdSetView('${v}')">${v.charAt(0).toUpperCase() + v.slice(1)}</button>`
+      `<button class="${state.guardView === v ? 'active' : ''}" id="gdl-btab-${v}" onclick="App.gdSetView('${v}')">${v.charAt(0).toUpperCase() + v.slice(1)}</button>`
     ).join('');
 
     let html = `<div style="padding:1rem">
       <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
-        <span class="section-title" style="margin:0">Guards Security</span>
-        <span style="font-size:.75rem;color:var(--text-3)">${posts.length} posts</span>
+        <span class="section-title" style="margin:0">Location Guards</span>
+        <span style="font-size:.72rem;color:var(--text-4);padding:.15rem .5rem;background:var(--bg-surface);border-radius:4px">READ-ONLY &mdash; auto-generated from Locations schedule</span>
         <div class="view-toggle">${viewBtns}</div>
         <div style="margin-left:auto;display:flex;gap:.3rem">
-          <button class="btn btn-sm btn-primary" onclick="App.showAddGuardModal()">+ Add Post</button>
-          <button class="btn btn-sm btn-secondary" onclick="App.gdExportCSV()">Export CSV</button>
+          <button class="btn btn-sm btn-secondary" onclick="App.gdlRefresh()">Refresh</button>
+          <button class="btn btn-sm btn-secondary" onclick="App.gdlExportCSV()">Export CSV</button>
         </div>
       </div>`;
 
@@ -6293,29 +6392,31 @@ const App = (() => {
       html += `
       <div class="stat-grid" style="margin-bottom:.75rem">
         <div class="stat-card" style="border-left:3px solid #06B6D4">
-          <div class="stat-val" style="font-size:1.3rem;color:#06B6D4">${totalDays}</div>
+          <div class="stat-val" style="font-size:1.3rem;color:#06B6D4">${totalGuardDays}</div>
           <div class="stat-lbl">GUARD-DAYS</div>
         </div>
         <div class="stat-card" style="border-left:3px solid #22C55E">
           <div class="stat-val" style="font-size:1.3rem;color:#22C55E">${fmtMoney(totalBudget)}</div>
-          <div class="stat-lbl">DYNAMIC BUDGET</div>
+          <div class="stat-lbl">TOTAL BUDGET ($${GUARD_RATE_LOCATION}/guard/day)</div>
         </div>
         <div class="stat-card" style="border:1px solid var(--border)">
-          <div class="stat-val" style="font-size:1.3rem">${posts.length} posts</div>
-          <div class="stat-lbl">GUARD POSTS</div>
+          <div class="stat-val" style="font-size:1.3rem">${activeLocNames.length}</div>
+          <div class="stat-lbl">ACTIVE LOCATIONS</div>
         </div>
+      </div>
+      <div style="font-size:.72rem;color:var(--text-3);margin-bottom:.5rem">
+        Guard counts: <strong>TRIBAL CAMP = 4 guards</strong> &middot; All others = 2 guards &middot; Fixed rate: $${GUARD_RATE_LOCATION}/guard/day
       </div>
       <div class="loc-schedule-wrap" style="overflow-x:auto">
         <table class="loc-schedule-table">
           <thead>
             <tr>
-              <th class="loc-th-name" style="position:sticky;left:0;z-index:3;background:var(--bg-surface);min-width:160px">Guard Post</th>
+              <th class="loc-th-name" style="position:sticky;left:0;z-index:3;background:var(--bg-surface);min-width:160px">Location</th>
               ${dates.map(d => {
                 const dt = new Date(d + 'T00:00:00');
                 const day = dt.getDate();
                 const wd = dt.toLocaleDateString('en-US', { weekday: 'short' }).slice(0,2);
-                const isLocked = lockedDates.has(d);
-                return `<th class="loc-th-date ${isLocked ? 'loc-locked' : ''}" style="min-width:32px;text-align:center">
+                return `<th class="loc-th-date" style="min-width:32px;text-align:center">
                   <div style="font-size:.6rem;color:var(--text-4)">${wd}</div>
                   <div style="font-size:.7rem">${day}</div>
                 </th>`;
@@ -6323,75 +6424,59 @@ const App = (() => {
             </tr>
           </thead>
           <tbody>
-            ${posts.map(post => {
-              const postRate = post.daily_rate || 45;
+            ${activeLocNames.map(locName => {
+              const locType = typeByName[locName] || 'game';
+              const typeColor = locType === 'tribal_camp' ? '#EAB308' : locType === 'game' ? '#22C55E' : '#3B82F6';
+              const guardCount = locType === 'tribal_camp' ? 4 : 2;
               return `<tr>
-              <td class="loc-td-name" style="position:sticky;left:0;z-index:2;background:var(--bg-card);border-right:1px solid var(--border);cursor:pointer"
-                  onclick="App.editGuardPost(${post.id})">
+              <td class="loc-td-name" style="position:sticky;left:0;z-index:2;background:var(--bg-card);border-right:1px solid var(--border)">
                 <div style="display:flex;align-items:center;gap:.3rem">
-                  <span style="width:8px;height:8px;border-radius:2px;background:#06B6D4;flex-shrink:0"></span>
-                  <span style="font-size:.72rem;font-weight:600;white-space:nowrap">${esc(post.name)}</span>
-                  <span style="font-size:.6rem;color:var(--text-4)">$${postRate}</span>
+                  <span style="width:8px;height:8px;border-radius:2px;background:${typeColor};flex-shrink:0"></span>
+                  <span style="font-size:.72rem;font-weight:600;white-space:nowrap">${esc(locName)}</span>
+                  <span style="font-size:.6rem;color:var(--text-4);font-weight:400">${guardCount}g</span>
                 </div>
               </td>
               ${dates.map(d => {
-                const key = `${post.name}|${d}`;
-                const cell = lookup[key];
-                const status = cell ? cell.status : '';
-                const nbGuards = cell ? (cell.nb_guards || 1) : 0;
-                const isLocked = cell ? cell.locked : false;
-                const cellClass = status ? `loc-cell-${status}` : 'loc-cell-empty';
-                const lockedClass = isLocked ? ' loc-locked-cell' : '';
-                const label = status ? (nbGuards > 1 ? `${status}${nbGuards}` : status) : '';
-                return `<td class="${cellClass}${lockedClass}" style="text-align:center;cursor:${isLocked ? 'not-allowed' : 'pointer'};min-width:32px;height:28px"
-                  onclick="App.gdCellClick('${esc(post.name)}','${d}',${isLocked ? 'true' : 'false'})"
-                  oncontextmenu="event.preventDefault();App.gdCellRightClick('${esc(post.name)}','${d}',${isLocked ? 'true' : 'false'})"
-                  title="${status ? status + ' (' + nbGuards + ' guard' + (nbGuards > 1 ? 's' : '') + ')' : 'Empty'}">${label}</td>`;
+                const gd = gdLookup[`${locName}|${d}`];
+                if (!gd) return `<td class="loc-cell-empty" style="text-align:center;min-width:32px;height:28px;cursor:default"></td>`;
+                const cellClass = `loc-cell-${gd.status}`;
+                return `<td class="${cellClass}" style="text-align:center;min-width:32px;height:28px;cursor:default;font-size:.7rem;font-weight:600"
+                  title="${gd.status} - ${gd.nb_guards} guard${gd.nb_guards > 1 ? 's' : ''}">${gd.nb_guards}</td>`;
               }).join('')}
             </tr>`;
             }).join('')}
-            <tr class="loc-lock-row">
-              <td style="position:sticky;left:0;z-index:2;background:var(--bg-surface);font-size:.65rem;font-weight:700;color:var(--text-4);border-right:1px solid var(--border)">LOCK</td>
-              ${dates.map(d => {
-                const isLocked = lockedDates.has(d);
-                return `<td style="text-align:center;cursor:pointer;font-size:.7rem" onclick="App.gdToggleLock('${d}')">
-                  ${isLocked ? '<span style="color:#22C55E">&#x1F512;</span>' : '<span style="color:var(--text-4)">&#x1F513;</span>'}
-                </td>`;
-              }).join('')}
-            </tr>
+            ${!activeLocNames.length ? '<tr><td colspan="99" style="text-align:center;color:var(--text-4);padding:2rem">No locations with P/F/W schedules yet. Add schedule data in the LOCATIONS tab first.</td></tr>' : ''}
           </tbody>
         </table>
       </div>`;
     } else {
-      // Budget view with dynamic per-post rates
-      const byLoc = {};
-      schedules.forEach(s => {
-        const loc = s.location_name;
-        const rate = rateByPost[loc] || 45;
-        if (!byLoc[loc]) byLoc[loc] = { days: 0, guards: 0, cost: 0, rate };
-        const nb = s.nb_guards || 1;
-        byLoc[loc].days++;
-        byLoc[loc].guards = Math.max(byLoc[loc].guards, nb);
-        byLoc[loc].cost += nb * rate;
-      });
+      // Budget view
       html += `
       <div class="budget-dept-card">
         <div class="budget-dept-header">
-          <span style="font-weight:700;font-size:.82rem;color:var(--text-0)">GUARDS BUDGET</span>
+          <span style="font-weight:700;font-size:.82rem;color:var(--text-0)">LOCATION GUARDS BUDGET</span>
           <span style="font-weight:700;color:var(--green)">${fmtMoney(totalBudget)}</span>
         </div>
         <table class="budget-table"><thead><tr>
-          <th>Post</th><th>Active Days</th><th>Max Guards</th><th>Rate/day</th><th style="text-align:right">Total</th>
+          <th>Location</th><th>Type</th><th>Active Days</th><th>Guards/day</th><th>Total Guard-Days</th><th>Rate</th><th style="text-align:right">Total</th>
         </tr></thead><tbody>
-          ${Object.entries(byLoc).map(([loc, info]) => `<tr>
-            <td style="font-weight:600">${esc(loc)}</td>
-            <td>${info.days}</td>
-            <td>${info.guards}</td>
-            <td>$${info.rate}</td>
-            <td style="text-align:right;font-weight:600;color:var(--green)">${fmtMoney(info.cost)}</td>
-          </tr>`).join('') || '<tr><td colspan="5" style="color:var(--text-4)">No guard schedules yet</td></tr>'}
+          ${activeLocNames.map(loc => {
+            const info = byLoc[loc];
+            const guardCount = info.type === 'tribal_camp' ? 4 : 2;
+            return `<tr>
+              <td style="font-weight:600">${esc(loc)}</td>
+              <td style="font-size:.72rem;color:var(--text-3)">${info.type === 'tribal_camp' ? 'Tribal Camp' : info.type === 'game' ? 'Game' : 'Reward'}</td>
+              <td>${info.days}</td>
+              <td>${guardCount}</td>
+              <td>${info.totalGuardDays}</td>
+              <td>$${GUARD_RATE_LOCATION}</td>
+              <td style="text-align:right;font-weight:600;color:var(--green)">${fmtMoney(info.cost)}</td>
+            </tr>`;
+          }).join('') || '<tr><td colspan="7" style="color:var(--text-4)">No location guard data yet</td></tr>'}
           <tr style="border-top:2px solid var(--border)">
             <td colspan="4" style="font-weight:700;text-align:right">TOTAL</td>
+            <td style="font-weight:700">${totalGuardDays}</td>
+            <td></td>
             <td style="text-align:right;font-weight:700;color:var(--green)">${fmtMoney(totalBudget)}</td>
           </tr>
         </tbody></table>
@@ -6404,86 +6489,58 @@ const App = (() => {
 
   function gdSetView(view) {
     state.guardView = view;
-    renderGuards();
+    if (state.guardSubTab === 'location') renderGuardLocation();
+    else renderGuardCamp();
   }
 
-  async function gdCellClick(locName, date, isLocked) {
-    if (isLocked) { toast('This date is locked', 'info'); return; }
-    const schedules = state.guardSchedules || [];
-    const existing = schedules.find(s => s.location_name === locName && s.date === date);
-    const statusCycle = ['P', 'F', 'W'];
-
-    if (!existing) {
-      const result = await api('POST', `/api/productions/${state.prodId}/guard-schedules`, {
-        location_name: locName, date, status: 'P', nb_guards: 1
-      });
-      if (result) state.guardSchedules.push(result);
-    } else {
-      const idx = statusCycle.indexOf(existing.status);
-      if (idx < statusCycle.length - 1) {
-        const newStatus = statusCycle[idx + 1];
-        const result = await api('POST', `/api/productions/${state.prodId}/guard-schedules`, {
-          location_name: locName, date, status: newStatus, nb_guards: existing.nb_guards || 1
-        });
-        if (result) {
-          const i = state.guardSchedules.findIndex(s => s.location_name === locName && s.date === date);
-          if (i >= 0) state.guardSchedules[i] = result;
-        }
-      } else {
-        await api('POST', `/api/productions/${state.prodId}/guard-schedules/delete`, {
-          location_name: locName, date
-        });
-        state.guardSchedules = state.guardSchedules.filter(s => !(s.location_name === locName && s.date === date));
-      }
-    }
-    renderGuards();
+  async function gdlRefresh() {
+    state.locationSites = null;
+    state.locationSchedules = null;
+    await renderGuardLocation();
+    toast('Location guards refreshed');
   }
 
-  async function gdCellRightClick(locName, date, isLocked) {
-    if (isLocked) return;
-    const schedules = state.guardSchedules || [];
-    const existing = schedules.find(s => s.location_name === locName && s.date === date);
-    if (!existing) return;
-    // Right-click cycles nb_guards: 1 -> 2 -> 3 -> 1
-    const nb = ((existing.nb_guards || 1) % 3) + 1;
-    const result = await api('POST', `/api/productions/${state.prodId}/guard-schedules`, {
-      location_name: locName, date, status: existing.status, nb_guards: nb
-    });
-    if (result) {
-      const i = state.guardSchedules.findIndex(s => s.location_name === locName && s.date === date);
-      if (i >= 0) state.guardSchedules[i] = result;
-    }
-    renderGuards();
-  }
+  function gdlExportCSV() {
+    // Build guard data from location schedules
+    const sites = state.locationSites || [];
+    const schedules = state.locationSchedules || [];
+    if (!schedules.length) { toast('No location guard data to export', 'info'); return; }
+    const typeByName = {};
+    sites.forEach(s => { typeByName[s.name] = s.location_type || 'game'; });
 
-  async function gdToggleLock(date) {
-    const schedules = state.guardSchedules || [];
-    const isCurrentlyLocked = schedules.some(s => s.date === date && s.locked);
-    await api('PUT', `/api/productions/${state.prodId}/guard-schedules/lock`, {
-      dates: [date], locked: !isCurrentlyLocked
-    });
-    state.guardSchedules = await api('GET', `/api/productions/${state.prodId}/guard-schedules`);
-    renderGuards();
-  }
+    const now = new Date();
+    const fname = `KLAS7_GUARDS-LOCATION_${String(now.getFullYear()).slice(2)}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.csv`;
 
-  function gdExportCSV() {
-    const schedules = state.guardSchedules || [];
-    if (!schedules.length) { toast('No guard data to export', 'info'); return; }
-    let csv = 'Post,Date,Status,Guards,Rate,Locked\n';
-    const posts = state.guardPosts || [];
-    const rateByName = {};
-    posts.forEach(p => { rateByName[p.name] = p.daily_rate || 45; });
+    let csv = 'Location,Type,Date,Status,Guards,Rate,Cost\n';
+    const byLoc = {};
     schedules.forEach(s => {
-      csv += `"${s.location_name}","${s.date}","${s.status}",${s.nb_guards || 1},${rateByName[s.location_name] || 45},"${s.locked ? 'Yes' : 'No'}"\n`;
+      const locType = typeByName[s.location_name] || s.location_type || 'game';
+      const nb = locType === 'tribal_camp' ? 4 : 2;
+      const cost = nb * GUARD_RATE_LOCATION;
+      csv += `"${s.location_name}","${locType}","${s.date}","${s.status}",${nb},${GUARD_RATE_LOCATION},${cost}\n`;
+      if (!byLoc[s.location_name]) byLoc[s.location_name] = { type: locType, days: 0, totalGuards: 0, totalCost: 0 };
+      byLoc[s.location_name].days++;
+      byLoc[s.location_name].totalGuards += nb;
+      byLoc[s.location_name].totalCost += cost;
     });
+    csv += '\n';
+    csv += 'SUMMARY\n';
+    csv += 'Location,Type,Days,Total Guard-Days,Total Cost\n';
+    let grandTotal = 0;
+    Object.entries(byLoc).forEach(([loc, info]) => {
+      csv += `"${loc}","${info.type}",${info.days},${info.totalGuards},${info.totalCost}\n`;
+      grandTotal += info.totalCost;
+    });
+    csv += `,,,,${grandTotal}\n`;
+
     const blob = new Blob([csv], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'shootlogix_guards.csv';
+    a.download = fname;
     a.click();
   }
 
-  // ── Guard post CRUD modals ─────────────────────────────────
+  // Keep old guard post CRUD for legacy compatibility (still used in guard_location_schedules)
   function showAddGuardModal() {
     $('ngp-name').value = '';
     $('ngp-rate').value = '45';
@@ -6549,6 +6606,776 @@ const App = (() => {
       closeAddGuardModal();
       renderGuards();
     } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  SUB-TAB B: BASE CAMP GUARDS (manual, like Labour)
+  // ═══════════════════════════════════════════════════════════
+
+  const DEFAULT_GC_GROUPS = [
+    { name: 'BASECAMP',   color: '#22C55E' },
+    { name: 'PERIMETER',  color: '#EF4444' },
+    { name: 'NIGHT',      color: '#8B5CF6' },
+    { name: 'ROAMING',    color: '#3B82F6' },
+    { name: 'GENERAL',    color: '#94A3B8' },
+  ];
+
+  // Guard Camp state
+  Object.assign(state, {
+    gcWorkers:     [],
+    gcFunctions:   [],
+    gcAssignments: [],
+    gcView:        'cards',
+    gcWorkerFilter:'all',
+    gcSelectedWorker: null,
+    gcDragWorker:     null,
+    gcPendingFuncId:  null,
+    gcPendingDate:    null,
+    gcLockedDays:     {},
+    gcGroups:         DEFAULT_GC_GROUPS,
+  });
+
+  // Load saved groups & locked days from localStorage
+  try {
+    const savedGcGroups = localStorage.getItem('guard_camp_groups');
+    if (savedGcGroups) state.gcGroups = JSON.parse(savedGcGroups);
+  } catch(e) {}
+  try {
+    const savedGcLocks = localStorage.getItem('guard_camp_locked_days');
+    if (savedGcLocks) state.gcLockedDays = JSON.parse(savedGcLocks);
+  } catch(e) {}
+
+  async function _loadAndRenderGuardCamp() {
+    try {
+      const [workers, functions, assignments] = await Promise.all([
+        api('GET', `/api/productions/${state.prodId}/guard-camp-workers`),
+        api('GET', `/api/productions/${state.prodId}/boat-functions?context=guard_camp`),
+        api('GET', `/api/productions/${state.prodId}/guard-camp-assignments`),
+      ]);
+      state.gcWorkers     = workers;
+      state.gcFunctions   = functions;
+      state.gcAssignments = assignments;
+    } catch(e) { toast('Error loading base camp guards: ' + e.message, 'error'); }
+    renderGuardCamp();
+  }
+
+  function renderGuardCamp() {
+    renderGcWorkerList();
+    if (state.gcView === 'cards')         renderGcRoleCards();
+    else if (state.gcView === 'schedule') renderGcSchedule();
+    else if (state.gcView === 'budget')   renderGcBudget();
+  }
+
+  function gcSetView(view) {
+    state.gcView = view;
+    closeSchedulePopover();
+    ['cards','schedule','budget'].forEach(v => {
+      $(`gc-view-${v}`)?.classList.toggle('hidden', v !== view);
+      $(`gc-btab-${v}`)?.classList.toggle('active', v === view);
+    });
+    renderGuardCamp();
+  }
+
+  // ── Worker sidebar ───────────────────────────────────────────
+  function gcFilterWorkers(f) {
+    state.gcWorkerFilter = f;
+    ['all','available','assigned'].forEach(id => {
+      $(`gc-filter-${id}`)?.classList.toggle('active', id === f);
+    });
+    renderGcWorkerList();
+  }
+
+  function _gcFilteredWorkers() {
+    const assignedIds = new Set(state.gcAssignments.filter(a => a.helper_id).map(a => a.helper_id));
+    let workers = [...state.gcWorkers];
+    if      (state.gcWorkerFilter === 'available') workers = workers.filter(w => !assignedIds.has(w.id));
+    else if (state.gcWorkerFilter === 'assigned')  workers = workers.filter(w => assignedIds.has(w.id));
+    workers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    return workers;
+  }
+
+  function _gcAssignmentsForFunc(funcId) {
+    return state.gcAssignments.filter(a => a.boat_function_id === funcId);
+  }
+
+  function renderGcWorkerList() {
+    const workers = _gcFilteredWorkers();
+    const assignedIds = new Set(state.gcAssignments.filter(a => a.helper_id).map(a => a.helper_id));
+    const container = $('gc-worker-list');
+    if (!container) return;
+    if (!workers.length) {
+      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No guards</div>';
+      return;
+    }
+    container.innerHTML = workers.map(w => {
+      const isAssigned = assignedIds.has(w.id);
+      const wAsgns = state.gcAssignments.filter(a => a.helper_id === w.id);
+      const groupColor = _groupColor('guard_camp', w.group_name || 'GENERAL');
+      const rate = w.daily_rate_estimate > 0
+        ? `<div style="font-size:.65rem;color:var(--green);margin-top:.1rem">$${Math.round(w.daily_rate_estimate).toLocaleString('en-US')}/d</div>`
+        : '';
+      return `<div class="boat-card ${isAssigned ? 'assigned' : ''}"
+        id="gc-worker-card-${w.id}"
+        draggable="true"
+        ondragstart="App.gcOnWorkerDragStart(event,${w.id})"
+        ondragend="App.gcOnWorkerDragEnd()"
+        onclick="App.gcOpenWorkerView(${w.id})">
+        <div class="boat-thumb-wrap">
+          <div class="boat-thumb-placeholder" style="background:${groupColor}22;color:${groupColor};font-size:.6rem">${esc((w.name || '?').slice(0, 2).toUpperCase())}</div>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:baseline;gap:.3rem;margin-bottom:.2rem;flex-wrap:wrap">
+            <span style="font-weight:700;font-size:.82rem;color:var(--text-0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(w.name)}</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:.2rem;align-items:center;margin-bottom:.1rem">
+            <span style="font-size:.6rem;font-weight:700;padding:.15rem .4rem;border-radius:4px;background:${groupColor}22;color:${groupColor};text-transform:uppercase;letter-spacing:.04em">${esc(w.group_name || 'GENERAL')}</span>
+          </div>
+          ${w.role ? `<div style="font-size:.65rem;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(w.role)}</div>` : ''}
+          ${rate}
+          ${isAssigned && wAsgns.length ? `<div style="font-size:.6rem;color:var(--accent);margin-top:.1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">&rarr; ${wAsgns.map(a => esc(a.function_name || '')).join(', ')}</div>` : ''}
+        </div>
+        <button class="boat-edit-btn" title="Edit guard"
+          onclick="event.stopPropagation();App.gcOpenWorkerDetail(${w.id})">&#x270E;</button>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Role / function cards (Guard Camp) ─────────────────────────
+  function renderGcRoleCards() {
+    const container = $('gc-role-groups');
+    if (!container) return;
+    const grouped = {};
+    _groupOrder('guard_camp').forEach(g => { grouped[g] = []; });
+    state.gcFunctions.forEach(f => {
+      const g = f.function_group || 'GENERAL';
+      if (!grouped[g]) grouped[g] = [];
+      grouped[g].push(f);
+    });
+    let html = '';
+    _groupOrder('guard_camp').forEach(group => {
+      const funcs = grouped[group];
+      if (!funcs.length) return;
+      const color = _groupColor('guard_camp', group);
+      html += `
+        <div class="role-group-header" style="background:${color}18;border-left:3px solid ${color}">
+          <span style="color:${color}">&bull;</span>
+          <span style="color:${color}">${esc(group)}</span>
+          <span style="color:var(--text-4);font-weight:400;font-size:.65rem;text-transform:none;letter-spacing:0">${funcs.length} function${funcs.length > 1 ? 's' : ''}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.5rem;margin-bottom:.75rem">
+          ${funcs.map(f => renderGcRoleCard(f, color)).join('')}
+        </div>`;
+    });
+    container.innerHTML = html || '<div style="color:var(--text-4);text-align:center;padding:3rem">No functions. Click + Function to add one.</div>';
+  }
+
+  function renderGcRoleCard(func, color) {
+    const asgns = _gcAssignmentsForFunc(func.id);
+    const assignedBodies = asgns.map(asgn => {
+      const workerName = asgn.helper_name_override || asgn.helper_name || '?';
+      const wd   = asgn.working_days ?? workingDays(asgn.start_date, asgn.end_date);
+      const rate = asgn.price_override || asgn.helper_daily_rate_estimate || 0;
+      const total = Math.round(wd * rate);
+      return `<div class="assigned-mini" style="margin-bottom:.35rem">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:.2rem">
+              <span style="font-weight:600;color:var(--text-0);font-size:.82rem">${esc(workerName)}</span>
+              ${asgn.helper_role ? `<span style="color:var(--text-3);font-size:.7rem">&middot; ${esc(asgn.helper_role)}</span>` : ''}
+            </div>
+            <div style="font-size:.7rem;color:var(--text-3)">${fmtDate(asgn.start_date)} &rarr; ${fmtDate(asgn.end_date)} &middot; ${wd}d &middot; ${fmtMoney(total)}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:.2rem">
+            <button class="btn btn-sm btn-secondary btn-icon" onclick="App.gcEditAssignmentById(${asgn.id})" title="Edit">&#x270E;</button>
+            <button class="btn btn-sm btn-danger btn-icon" onclick="App.gcRemoveAssignmentById(${asgn.id})" title="Remove">&times;</button>
+          </div>
+        </div>
+      </div>`;
+    });
+    const dropZone = `<div class="drop-zone" id="gc-drop-${func.id}"
+      ondragover="App.gcOnDragOver(event,${func.id})"
+      ondragleave="App.gcOnDragLeave(event,${func.id})"
+      ondrop="App.gcOnDrop(event,${func.id})"
+      onclick="App.gcOnDropZoneClick(${func.id})"
+      style="${asgns.length ? 'margin-top:.3rem;padding:.35rem;font-size:.7rem' : ''}">
+      ${state.gcSelectedWorker
+        ? `<span style="color:var(--accent)">Click to assign <strong>${esc(state.gcSelectedWorker.name)}</strong></span>`
+        : (asgns.length ? '<span>+ Add another assignment</span>' : '<span>Drop or click a guard to assign</span>')}
+    </div>`;
+    return `<div class="role-card" id="gc-role-card-${func.id}"
+      style="border-top:3px solid ${color}"
+      ondragover="App.gcOnDragOver(event,${func.id})"
+      ondragleave="App.gcOnDragLeave(event,${func.id})"
+      ondrop="App.gcOnDrop(event,${func.id})">
+      <div class="role-card-header">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;color:var(--text-0);font-size:.85rem">${esc(func.name)}</div>
+          ${func.specs ? `<div style="font-size:.7rem;color:var(--text-4);margin-top:.1rem">${esc(func.specs)}</div>` : ''}
+        </div>
+        <button onclick="App.gcConfirmDeleteFunc(${func.id})"
+          style="color:var(--text-4);background:none;border:none;cursor:pointer;font-size:.9rem;padding:.2rem"
+          title="Delete">&times;</button>
+      </div>
+      <div class="role-card-body">${assignedBodies.join('') + dropZone}</div>
+    </div>`;
+  }
+
+  // ── Drag & drop (Guard Camp) ───────────────────────────────────
+  function gcOnWorkerDragStart(event, workerId) {
+    state.gcDragWorker = state.gcWorkers.find(w => w.id === workerId);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', workerId);
+    document.getElementById(`gc-worker-card-${workerId}`)?.classList.add('dragging');
+    const ghost = document.createElement('div');
+    ghost.className = 'drag-ghost';
+    ghost.textContent = state.gcDragWorker?.name || 'Guard';
+    document.body.appendChild(ghost);
+    event.dataTransfer.setDragImage(ghost, 60, 15);
+    setTimeout(() => ghost.remove(), 0);
+  }
+  function gcOnWorkerDragEnd() {
+    state.gcDragWorker = null;
+    document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+  }
+  function gcOnDragOver(event, funcId) {
+    event.preventDefault();
+    document.getElementById(`gc-role-card-${funcId}`)?.classList.add('drag-over');
+    document.getElementById(`gc-drop-${funcId}`)?.classList.add('drag-over');
+  }
+  function gcOnDragLeave(event, funcId) {
+    document.getElementById(`gc-role-card-${funcId}`)?.classList.remove('drag-over');
+    document.getElementById(`gc-drop-${funcId}`)?.classList.remove('drag-over');
+  }
+  function gcOnDrop(event, funcId) {
+    event.preventDefault();
+    document.getElementById(`gc-role-card-${funcId}`)?.classList.remove('drag-over');
+    document.getElementById(`gc-drop-${funcId}`)?.classList.remove('drag-over');
+    const worker = state.gcDragWorker;
+    if (!worker) return;
+    state.gcDragWorker = null;
+    _tabCtx = 'guard_camp';
+    openAssignModal(funcId, { id: worker.id, name: worker.name, daily_rate_estimate: worker.daily_rate_estimate || 0 });
+  }
+  function gcOnDropZoneClick(funcId) {
+    if (state.gcSelectedWorker) {
+      _tabCtx = 'guard_camp';
+      openAssignModal(funcId, state.gcSelectedWorker);
+      state.gcSelectedWorker = null;
+    } else {
+      state.gcPendingFuncId = funcId;
+      state.gcPendingDate   = null;
+      toast('Now click a guard to assign it', 'info');
+      renderGcWorkerList();
+    }
+  }
+
+  function gcOpenWorkerView(workerId) {
+    const worker = state.gcWorkers.find(w => w.id === workerId);
+    if (!worker) return;
+    if (state.gcPendingFuncId) {
+      _tabCtx = 'guard_camp';
+      openAssignModal(state.gcPendingFuncId, { id: worker.id, name: worker.name, daily_rate_estimate: worker.daily_rate_estimate || 0 }, null, state.gcPendingDate);
+      state.gcPendingFuncId = null; state.gcPendingDate = null; state.gcSelectedWorker = null;
+      renderGcWorkerList();
+      return;
+    }
+    _tabCtx = 'guard_camp';
+    const photo = $('bv-photo');
+    const phPh  = $('bv-photo-placeholder');
+    if (worker.image_path) {
+      photo.src = '/' + worker.image_path + '?t=' + Date.now();
+      photo.style.display = 'block'; phPh.style.display = 'none';
+    } else {
+      photo.style.display = 'none'; phPh.style.display = 'flex';
+      phPh.textContent = (worker.name || '?').slice(0, 2).toUpperCase();
+    }
+    $('bv-name').textContent     = worker.name || '?';
+    $('bv-nr-group').textContent = [worker.group_name, worker.role].filter(Boolean).join(' / ');
+    $('bv-badges').innerHTML = worker.group_name
+      ? `<span style="font-size:.6rem;font-weight:700;padding:.15rem .4rem;border-radius:4px;background:${_groupColor('guard_camp', worker.group_name)}22;color:${_groupColor('guard_camp', worker.group_name)};text-transform:uppercase;letter-spacing:.04em">${esc(worker.group_name)}</span>`
+      : '';
+    const fields = [
+      worker.role                    ? ['Role',     worker.role]     : null,
+      worker.contact                 ? ['Contact',  worker.contact]  : null,
+      worker.daily_rate_estimate > 0 ? ['Rate est.', `$${Math.round(worker.daily_rate_estimate).toLocaleString('en-US')}/day`] : null,
+      worker.notes                   ? ['Notes',     worker.notes]   : null,
+    ].filter(Boolean);
+    $('bv-fields').innerHTML = fields.map(([label, value]) =>
+      `<span class="bv-field-label">${esc(label)}</span><span class="bv-field-value">${esc(value)}</span>`
+    ).join('');
+    const asgns = state.gcAssignments.filter(a => a.helper_id === worker.id);
+    $('bv-assignments').innerHTML = asgns.length
+      ? asgns.map(a => `<div class="bd-asgn-row">
+          <span style="font-weight:600;color:var(--text-0)">${esc(a.function_name || '?')}</span>
+          <span style="color:var(--text-3);font-size:.72rem">${fmtDate(a.start_date)} &rarr; ${fmtDate(a.end_date)}</span>
+        </div>`).join('')
+      : '<div style="color:var(--text-4);font-size:.78rem">No assignments yet</div>';
+    $('bv-edit-btn').onclick = () => { closeBoatView(); gcOpenWorkerDetail(worker.id); };
+    $('boat-view-overlay').classList.remove('hidden');
+  }
+
+  // ── Worker detail (edit) ── reuse boat-detail overlay ──────────
+  function gcOpenWorkerDetail(workerId) {
+    const w = state.gcWorkers.find(x => x.id === workerId);
+    if (!w) return;
+    _detailBoatId      = workerId;
+    _detailIsPicture   = false;
+    _detailIsTransport = false;
+    _detailIsLabour    = false;
+    _detailIsGuardCamp = true;
+    const photo = $('bd-photo');
+    const placeholder = $('bd-photo-placeholder');
+    if (w.image_path) {
+      photo.src = '/' + w.image_path + '?t=' + Date.now();
+      photo.style.display = 'block'; placeholder.style.display = 'none';
+    } else {
+      photo.style.display = 'none'; placeholder.style.display = 'flex';
+      placeholder.textContent = (w.name || '?').slice(0, 2).toUpperCase();
+    }
+    $('bd-name').value     = w.name                || '';
+    $('bd-nr').value       = '';
+    $('bd-captain').value  = w.role                || '';
+    $('bd-vendor').value   = w.contact             || '';
+    $('bd-rate-est').value = w.daily_rate_estimate  || '';
+    $('bd-rate-act').value = w.daily_rate_actual    || '';
+    $('bd-notes').value    = w.notes               || '';
+    const hideIds = ['bd-group', 'bd-category', 'bd-waves', 'bd-night', 'bd-capacity'];
+    hideIds.forEach(id => { const el = $(id); if (el) { const row = el.closest('tr'); if (row) row.style.display = 'none'; } });
+    $('bd-delete-btn').classList.remove('hidden');
+    $('bd-delete-btn').onclick = () => {
+      showConfirm(`Delete guard "${w.name}"?`, async () => {
+        await api('DELETE', `/api/guard-camp-workers/${workerId}`);
+        state.gcWorkers = state.gcWorkers.filter(x => x.id !== workerId);
+        closeBoatDetail();
+        renderGuardCamp();
+        toast('Guard deleted');
+      });
+    };
+    const asgns = state.gcAssignments.filter(a => a.helper_id === workerId);
+    $('bd-assignments-list').innerHTML = asgns.length
+      ? asgns.map(a => `<div class="bd-asgn-row">
+          <span style="font-weight:600;color:var(--text-0)">${esc(a.function_name || '?')}</span>
+          <span style="color:var(--text-3);font-size:.72rem">${fmtDate(a.start_date)} &rarr; ${fmtDate(a.end_date)}</span>
+        </div>`).join('')
+      : '<div style="color:var(--text-4);font-size:.78rem">No assignments yet</div>';
+    $('boat-detail-overlay').classList.remove('hidden');
+  }
+
+  // ── Add worker modal ─────────────────────────────────────────
+  function gcShowAddWorkerModal() {
+    ['gcw-name','gcw-price','gcw-role','gcw-contact','gcw-notes'].forEach(id => { const el = $(id); if(el) el.value = ''; });
+    $('gcw-price').value = '45';
+    const sel = $('gcw-group');
+    if (sel) {
+      sel.innerHTML = state.gcGroups.map(g => `<option value="${g.name}">${g.name}</option>`).join('');
+      sel.value = state.gcGroups[0]?.name || 'GENERAL';
+    }
+    $('add-gc-worker-overlay').classList.remove('hidden');
+    setTimeout(() => { const el = $('gcw-name'); if(el) el.focus(); }, 80);
+  }
+  function gcCloseAddWorkerModal() { $('add-gc-worker-overlay').classList.add('hidden'); }
+
+  async function gcCreateWorker() {
+    const name = $('gcw-name').value.trim();
+    if (!name) { toast('Name is required', 'error'); return; }
+    try {
+      const w = await api('POST', `/api/productions/${state.prodId}/guard-camp-workers`, {
+        name,
+        daily_rate_estimate: parseFloat($('gcw-price').value) || 45,
+        group_name:   $('gcw-group').value || 'GENERAL',
+        role:         $('gcw-role').value.trim()    || null,
+        contact:      $('gcw-contact').value.trim() || null,
+        notes:        $('gcw-notes').value.trim()   || null,
+      });
+      state.gcWorkers.push(w);
+      gcCloseAddWorkerModal();
+      renderGcWorkerList();
+      toast(`Guard "${w.name}" created`);
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // ── Add function modal (Guard Camp) ──────────────────────────
+  function gcShowAddFunctionModal() {
+    ['nf-name','nf-specs','nf-start','nf-end'].forEach(id => { const el = $(id); if(el) el.value = ''; });
+    $('nf-group').innerHTML = state.gcGroups.map(g => `<option value="${g.name}">${g.name}</option>`).join('');
+    $('nf-group').value = state.gcGroups[0]?.name || '';
+    $('nf-color').value = state.gcGroups[0]?.color || '#22C55E';
+    $('nf-group').onchange = (e) => {
+      const g = state.gcGroups.find(g => g.name === e.target.value);
+      $('nf-color').value = g?.color || '#6b7280';
+    };
+    $('add-func-overlay').dataset.ctx = 'guard_camp';
+    $('add-func-overlay').classList.remove('hidden');
+    setTimeout(() => { const el = $('nf-name'); if(el) el.focus(); }, 80);
+  }
+
+  // ── Delete function ──────────────────────────────────────────
+  async function gcConfirmDeleteFunc(funcId) {
+    const func = state.gcFunctions.find(f => f.id === funcId);
+    showConfirm(`Delete function "${func?.name}" and all its assignments?`, async () => {
+      try {
+        await api('DELETE', `/api/productions/${state.prodId}/guard-camp-assignments/function/${funcId}`);
+        await api('DELETE', `/api/boat-functions/${funcId}`);
+        state.gcFunctions   = state.gcFunctions.filter(f => f.id !== funcId);
+        state.gcAssignments = state.gcAssignments.filter(a => a.boat_function_id !== funcId);
+        renderGuardCamp();
+        toast('Function deleted');
+      } catch(e) { toast('Error: ' + e.message, 'error'); }
+    });
+  }
+
+  // ── Edit / remove assignment by ID ───────────────────────────
+  function gcEditAssignmentById(assignmentId) {
+    const asgn = state.gcAssignments.find(a => a.id === assignmentId);
+    if (!asgn) return;
+    const worker = state.gcWorkers.find(w => w.id === asgn.helper_id);
+    const fakeBoat = worker
+      ? { id: worker.id, name: worker.name, daily_rate_estimate: worker.daily_rate_estimate || 0 }
+      : { id: 0, name: asgn.helper_name_override || asgn.helper_name || '?', daily_rate_estimate: asgn.helper_daily_rate_estimate || 0 };
+    _tabCtx = 'guard_camp';
+    openAssignModal(asgn.boat_function_id, fakeBoat, asgn);
+  }
+
+  async function gcRemoveAssignmentById(assignmentId) {
+    showConfirm('Remove this assignment?', async () => {
+      try {
+        await api('DELETE', `/api/guard-camp-assignments/${assignmentId}`);
+        state.gcAssignments = state.gcAssignments.filter(a => a.id !== assignmentId);
+        renderGuardCamp();
+        toast('Assignment removed');
+      } catch(e) { toast('Error: ' + e.message, 'error'); }
+    });
+  }
+
+  // ── Schedule view ─────────────────────────────────────────────
+  function renderGcSchedule() {
+    const container = $('gc-schedule-container');
+    if (!container) return;
+    const days = [];
+    const d = new Date(SCHEDULE_START);
+    while (d <= SCHEDULE_END) { days.push(new Date(d)); d.setDate(d.getDate() + 1); }
+    const pdtByDate = {};
+    state.shootingDays.forEach(day => { pdtByDate[day.date] = day; });
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const monthGroups = [];
+    let prevM = -1, cnt = 0;
+    days.forEach(day => {
+      if (day.getMonth() !== prevM) {
+        if (prevM >= 0) monthGroups.push({ m: prevM, cnt });
+        prevM = day.getMonth(); cnt = 1;
+      } else cnt++;
+    });
+    monthGroups.push({ m: prevM, cnt });
+    let monthRow = '<th class="role-name-cell"></th>';
+    monthRow += monthGroups.map(mg =>
+      `<th colspan="${mg.cnt}" style="text-align:center;font-size:.65rem">${monthNames[mg.m]}</th>`
+    ).join('');
+    let dayRow = '<th class="role-name-cell"></th>';
+    dayRow += days.map(day => {
+      const dk = _localDk(day);
+      const isWE = day.getDay() === 0 || day.getDay() === 6;
+      const isLocked = !!state.gcLockedDays[dk];
+      return `<th class="schedule-day-th ${isWE ? 'weekend-col' : ''} ${pdtByDate[dk] ? 'has-pdt' : ''} ${isLocked ? 'day-locked' : ''}"
+        data-date="${dk}"
+        onmouseenter="App.showPDTTooltip(event,'${dk}')"
+        onmouseleave="App.hidePDTTooltip()"
+      >${day.getDate()}</th>`;
+    }).join('');
+    const dailyCnt = {};
+    days.forEach(d => { dailyCnt[_localDk(d)] = 0; });
+    const rowsHTML = state.gcFunctions.map(func => {
+      const funcAsgns = _gcAssignmentsForFunc(func.id);
+      const color = _groupColor('guard_camp', func.function_group);
+      funcAsgns.forEach(asgn => {
+        days.forEach(d => {
+          const dk = _localDk(d);
+          if (effectiveStatus(asgn, dk)) dailyCnt[dk] = (dailyCnt[dk] || 0) + 1;
+        });
+      });
+      const wAsgn = funcAsgns.find(a => a.helper_id || a.helper_name_override || a.helper_name);
+      const wLabel = wAsgn ? (wAsgn.helper_name_override || wAsgn.helper_name || null) : null;
+      const multiSuffix = funcAsgns.length > 1 ? ` +${funcAsgns.length - 1}` : '';
+      let cells = `<td class="role-name-cell sch-func-cell" style="border-top:2px solid ${color}"
+        title="${esc(func.name)}" onclick="App.gcOnFuncCellClick(event,${func.id})">
+        <div class="rn-group" style="color:${color}">${esc(func.function_group || 'GENERAL')}</div>
+        <div class="${wLabel ? 'rn-boat' : 'rn-empty'}">${esc(wLabel ? wLabel + multiSuffix : func.name)}</div>
+      </td>`;
+      days.forEach(day => {
+        const dk = _localDk(day);
+        const isWE = day.getDay() === 0 || day.getDay() === 6;
+        const weClass = isWE ? 'weekend-col' : '';
+        let filledAsgn = null, filledStatus = null;
+        for (const asgn of funcAsgns) {
+          const st = effectiveStatus(asgn, dk);
+          if (st) { filledAsgn = asgn; filledStatus = st; break; }
+        }
+        if (!filledAsgn) {
+          cells += `<td class="schedule-cell ${weClass}"
+            onclick="App.gcOnDateCellClick(event,${func.id},null,'${dk}')"></td>`;
+        } else {
+          const bg = _scheduleCellBg(filledStatus, color, isWE);
+          cells += `<td class="schedule-cell ${weClass}" style="background:${bg}"
+            onclick="App.gcOnDateCellClick(event,${func.id},${filledAsgn.id},'${dk}')"></td>`;
+        }
+      });
+      return `<tr>${cells}</tr>`;
+    }).join('');
+    let countCells = '<td class="role-name-cell" style="color:var(--text-3);font-size:.68rem">Active guards</td>';
+    countCells += days.map(day => {
+      const dk = _localDk(day);
+      const c = dailyCnt[dk] || 0;
+      const isWE = day.getDay() === 0 || day.getDay() === 6;
+      return `<td class="${isWE ? 'weekend-col' : ''}" style="text-align:center;font-size:.68rem;color:${c ? 'var(--green)' : 'var(--border)'};font-weight:700">${c || ''}</td>`;
+    }).join('');
+    let lockCells = '<td class="role-name-cell sch-lock-label" title="Lock a day to prevent accidental changes">&#x1F512; LOCK</td>';
+    lockCells += days.map(day => {
+      const dk = _localDk(day);
+      const isWE = day.getDay() === 0 || day.getDay() === 6;
+      const isLocked = !!state.gcLockedDays[dk];
+      return `<td class="sch-lock-cell ${isWE ? 'weekend-col' : ''}">
+        <input type="checkbox" class="day-lock-cb" ${isLocked ? 'checked' : ''}
+          onchange="App.gcToggleDayLock('${dk}',this.checked)"
+          title="${isLocked ? 'Unlock' : 'Lock this day'}">
+      </td>`;
+    }).join('');
+    container.innerHTML = `
+      <div class="schedule-wrap"><table class="schedule-table">
+        <thead><tr>${monthRow}</tr><tr>${dayRow}</tr></thead>
+        <tbody>${rowsHTML}<tr class="schedule-count-row">${countCells}</tr></tbody>
+      </table></div>
+      <div class="schedule-lock-outer"><table class="schedule-table">
+        <tbody><tr class="schedule-lock-row">${lockCells}</tr></tbody>
+      </table></div>`;
+    const _sw = container.querySelector('.schedule-wrap');
+    const _sl = container.querySelector('.schedule-lock-outer');
+    if (_sw && _sl) _sw.addEventListener('scroll', () => { _sl.scrollLeft = _sw.scrollLeft; });
+  }
+
+  // ── Schedule cell click ────────────────────────────────────────
+  async function gcOnDateCellClick(event, funcId, assignmentId, date) {
+    event.stopPropagation();
+    closeSchedulePopover();
+    if (!!state.gcLockedDays[date]) {
+      toast(`Day ${fmtDateLong(date)} is locked`, 'info');
+      return;
+    }
+    if (!assignmentId) await _gcFillDay(funcId, date);
+    else await _gcDoCellCycle(funcId, assignmentId, date);
+  }
+
+  async function _gcFillDay(funcId, date) {
+    const funcAsgns = _gcAssignmentsForFunc(funcId);
+    try {
+      if (funcAsgns.length > 0) {
+        const asgn = funcAsgns[0];
+        const overrides = JSON.parse(asgn.day_overrides || '{}');
+        overrides[date] = 'on';
+        const updates = { day_overrides: JSON.stringify(overrides) };
+        const s = (asgn.start_date || '').slice(0, 10);
+        const e = (asgn.end_date   || '').slice(0, 10);
+        if (!s || date < s) updates.start_date = date;
+        if (!e || date > e) updates.end_date = date;
+        await api('PUT', `/api/guard-camp-assignments/${asgn.id}`, updates);
+      } else {
+        await api('POST', `/api/productions/${state.prodId}/guard-camp-assignments`, {
+          boat_function_id: funcId,
+          start_date: date, end_date: date,
+          day_overrides: JSON.stringify({ [date]: 'on' }),
+        });
+      }
+      state.gcAssignments = await api('GET', `/api/productions/${state.prodId}/guard-camp-assignments`);
+      renderGuardCamp();
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function _gcDoCellCycle(funcId, assignmentId, date) {
+    const asgn = state.gcAssignments.find(a => a.id === assignmentId);
+    if (!asgn) return;
+    const overrides = JSON.parse(asgn.day_overrides || '{}');
+    overrides[date] = 'empty';
+    try {
+      await api('PUT', `/api/guard-camp-assignments/${assignmentId}`, { day_overrides: JSON.stringify(overrides) });
+      const idx = state.gcAssignments.findIndex(a => a.id === assignmentId);
+      if (idx >= 0) state.gcAssignments[idx].day_overrides = JSON.stringify(overrides);
+      renderGuardCamp();
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  // ── Schedule func cell click (popover) ───────────────────────
+  function gcOnFuncCellClick(event, funcId) {
+    event.stopPropagation();
+    const el = $('schedule-popover');
+    if (_schPop.funcId === funcId && _schPop.type === 'gcfunc' && !el.classList.contains('hidden')) {
+      closeSchedulePopover(); return;
+    }
+    _schPop = { assignmentId: null, funcId, date: null, type: 'gcfunc' };
+    const func = state.gcFunctions.find(f => f.id === funcId);
+    const asgns = _gcAssignmentsForFunc(funcId);
+    const asgnRows = asgns.length
+      ? asgns.map(a => {
+          const wName = a.helper_name_override || a.helper_name || '---';
+          return `<div class="sch-pop-asgn-row">
+            <span style="flex:1;font-size:.75rem;overflow:hidden;text-overflow:ellipsis;color:var(--text-0)">${esc(wName)}</span>
+            <button class="btn btn-sm btn-icon btn-secondary"
+              onclick="App.gcEditAssignmentById(${a.id});App.closeSchedulePopover()" title="Edit">&#x270E;</button>
+            <button class="btn btn-sm btn-icon btn-danger"
+              onclick="App.gcRemoveAssignmentById(${a.id})" title="Remove">&times;</button>
+          </div>`;
+        }).join('')
+      : `<div style="color:var(--text-4);font-size:.75rem;padding:.25rem 0">No guard assigned</div>`;
+    $('sch-pop-content').innerHTML = `
+      <div class="sch-pop-header">
+        <strong>${esc(func?.name || '')}</strong>
+        <span style="color:var(--text-4);font-size:.65rem;margin-left:.4rem">${esc(func?.function_group || '')}</span>
+      </div>
+      ${asgnRows}
+      <div class="sch-pop-actions" style="margin-top:.4rem">
+        <button onclick="App.gcAssignFromDate(${funcId},null)">+ Assign a guard</button>
+      </div>`;
+    const rect = event.target.getBoundingClientRect();
+    el.style.left = (rect.right + 4) + 'px';
+    el.style.top  = rect.top + 'px';
+    el.classList.remove('hidden');
+  }
+
+  function gcAssignFromDate(funcId, date) {
+    closeSchedulePopover();
+    _tabCtx = 'guard_camp';
+    if (state.gcSelectedWorker) {
+      openAssignModal(funcId, state.gcSelectedWorker, null, date);
+      state.gcSelectedWorker = null;
+    } else {
+      state.gcPendingFuncId = funcId;
+      state.gcPendingDate   = date;
+      toast('Click a guard in the sidebar to assign it', 'info');
+    }
+  }
+
+  // ── Lock toggle ──────────────────────────────────────────────
+  function gcToggleDayLock(date, locked) {
+    if (locked) state.gcLockedDays[date] = true;
+    else delete state.gcLockedDays[date];
+    try { localStorage.setItem('guard_camp_locked_days', JSON.stringify(state.gcLockedDays)); } catch(e) {}
+    renderGcSchedule();
+  }
+
+  // ── Undo ─────────────────────────────────────────────────────
+  async function gcUndo() {
+    try {
+      const res = await api('POST', `/api/productions/${state.prodId}/undo`);
+      toast(res.message || 'Undo done');
+      state.gcAssignments = await api('GET', `/api/productions/${state.prodId}/guard-camp-assignments`);
+      renderGuardCamp();
+    } catch (e) {
+      toast('Nothing to undo', 'info');
+    }
+  }
+
+  // ── Export ───────────────────────────────────────────────────
+  function gcToggleExport() { $('gc-export-menu').classList.toggle('hidden'); }
+  function gcExportCSV()  { window.location.href = `/api/productions/${state.prodId}/export/guard-camp/csv`; $('gc-export-menu').classList.add('hidden'); }
+
+  // ── Budget view ──────────────────────────────────────────────
+  function renderGcBudget() {
+    const container = $('gc-budget-content');
+    if (!container) return;
+    const asgns = state.gcAssignments;
+    const funcs = state.gcFunctions;
+    const byGroup = {};
+    state.gcGroups.forEach(g => { byGroup[g.name] = { rows: [], total: 0, color: g.color }; });
+    asgns.forEach(a => {
+      const func = funcs.find(f => f.id === a.boat_function_id);
+      const wd   = a.working_days ?? workingDays(a.start_date, a.end_date);
+      const rate = a.price_override || a.helper_daily_rate_estimate || 0;
+      const total = Math.round(wd * rate);
+      if (wd <= 0) return;
+      const g = func?.function_group || a.function_group || 'GENERAL';
+      if (!byGroup[g]) byGroup[g] = { rows: [], total: 0, color: '#6B7280' };
+      byGroup[g].rows.push({
+        funcName: func?.name || a.function_name || '---',
+        workerName: a.helper_name_override || a.helper_name || '---',
+        start: a.start_date, end: a.end_date, wd, rate, total
+      });
+      byGroup[g].total += total;
+    });
+
+    function rowFigeAmount(row) {
+      if (!row.start || !row.end || !row.total) return 0;
+      const cur = new Date(row.start + 'T00:00:00');
+      const end = new Date(row.end   + 'T00:00:00');
+      let total = 0, lockedCount = 0;
+      while (cur <= end) {
+        total++;
+        if (state.gcLockedDays[_localDk(cur)]) lockedCount++;
+        cur.setDate(cur.getDate() + 1);
+      }
+      return total === 0 ? 0 : Math.round(row.total * lockedCount / total);
+    }
+
+    const allRows = Object.values(byGroup).flatMap(g => g.rows);
+    const totalGlobal   = allRows.reduce((s, r) => s + r.total, 0);
+    const totalFige     = allRows.reduce((s, r) => s + rowFigeAmount(r), 0);
+    const totalEstimate = totalGlobal - totalFige;
+
+    let html = `
+      <div class="stat-grid" style="margin-bottom:.75rem">
+        <div class="stat-card" style="border:1px solid var(--border)">
+          <div class="stat-val">${fmtMoney(totalGlobal)}</div>
+          <div class="stat-lbl">TOTAL GLOBAL</div>
+        </div>
+        <div class="stat-card" style="border:1px solid var(--green);background:rgba(34,197,94,.07)">
+          <div class="stat-val" style="color:var(--green)">${fmtMoney(totalFige)}</div>
+          <div class="stat-lbl">UP TO DATE <span style="font-size:.6rem;opacity:.55">(locked)</span></div>
+        </div>
+        <div class="stat-card" style="border:1px solid #F59E0B;background:rgba(245,158,11,.07)">
+          <div class="stat-val" style="color:#F59E0B">${fmtMoney(totalEstimate)}</div>
+          <div class="stat-lbl">ESTIMATE</div>
+        </div>
+      </div>`;
+
+    Object.entries(byGroup).forEach(([name, data]) => {
+      if (!data.rows.length) return;
+      html += `<div class="budget-dept-card">
+        <div class="budget-dept-header">
+          <span style="font-weight:700;font-size:.82rem;color:${data.color}">${esc(name)}</span>
+          <span style="font-weight:700;color:var(--green)">${fmtMoney(data.total)}</span>
+        </div>
+        <table class="budget-table">
+          <thead>
+            <tr>
+              <th>Function</th>
+              <th style="text-align:left">Guard</th>
+              <th>Start</th><th>End</th>
+              <th>Days</th><th>$/day</th><th>Total $</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.rows.map((r, i) => `<tr style="${i%2 ? 'background:var(--bg-surface)' : ''}">
+              <td style="color:var(--text-1)">${esc(r.funcName)}</td>
+              <td style="color:var(--cyan)">${esc(r.workerName)}</td>
+              <td style="font-size:.72rem;color:var(--text-3)">${fmtDate(r.start)}</td>
+              <td style="font-size:.72rem;color:var(--text-3)">${fmtDate(r.end)}</td>
+              <td style="text-align:right;color:var(--text-2)">${r.wd ?? '---'}</td>
+              <td style="text-align:right;color:var(--text-3)">${fmtMoney(r.rate)}</td>
+              <td style="text-align:right;font-weight:700;color:var(--green)">${fmtMoney(r.total)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    });
+
+    html += `<div class="budget-dept-card" style="margin-top:.5rem">
+      <table class="budget-table">
+        <tbody><tr class="budget-total-row">
+          <td colspan="6" style="text-align:right;color:var(--text-1)">TOTAL BASE CAMP GUARDS</td>
+          <td style="text-align:right;color:var(--green);font-size:1.05rem">${fmtMoney(totalGlobal)}</td>
+        </tr></tbody>
+      </table>
+    </div>`;
+
+    container.innerHTML = html;
   }
 
 
@@ -7309,7 +8136,7 @@ const App = (() => {
   function closeGroupsModal() { $('groups-modal-overlay').classList.add('hidden'); }
 
   function _renderGroupsList(ctx) {
-    const groups = ctx === 'security' ? state.sbGroups : ctx === 'labour' ? state.lbGroups : ctx === 'picture' ? state.pbGroups : ctx === 'transport' ? state.tbGroups : state.boatGroups;
+    const groups = ctx === 'security' ? state.sbGroups : ctx === 'labour' ? state.lbGroups : ctx === 'guard_camp' ? state.gcGroups : ctx === 'picture' ? state.pbGroups : ctx === 'transport' ? state.tbGroups : state.boatGroups;
     $('groups-list').innerHTML = groups.map((g, i) => `
       <div style="display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border-radius:6px;background:var(--bg-surface)">
         <span style="width:14px;height:14px;border-radius:3px;background:${g.color};flex-shrink:0"></span>
@@ -7322,25 +8149,25 @@ const App = (() => {
     const ctx  = $('groups-modal-overlay').dataset.ctx;
     const name = $('ng-name').value.trim();
     if (!name) { toast('Nom requis', 'error'); return; }
-    const groups = ctx === 'security' ? state.sbGroups : ctx === 'labour' ? state.lbGroups : ctx === 'picture' ? state.pbGroups : ctx === 'transport' ? state.tbGroups : state.boatGroups;
+    const groups = ctx === 'security' ? state.sbGroups : ctx === 'labour' ? state.lbGroups : ctx === 'guard_camp' ? state.gcGroups : ctx === 'picture' ? state.pbGroups : ctx === 'transport' ? state.tbGroups : state.boatGroups;
     if (groups.find(g => g.name === name)) { toast('Ce groupe existe déjà', 'error'); return; }
     groups.push({ name, color: $('ng-color').value });
     _saveGroups(ctx);
     _renderGroupsList(ctx);
     $('ng-name').value = '';
-    if (ctx === 'security') renderSbRoleCards(); else if (ctx === 'labour') renderLbRoleCards(); else if (ctx === 'picture') renderPbRoleCards(); else if (ctx === 'transport') renderTbRoleCards(); else renderRoleCards();
+    if (ctx === 'security') renderSbRoleCards(); else if (ctx === 'labour') renderLbRoleCards(); else if (ctx === 'guard_camp') renderGcRoleCards(); else if (ctx === 'picture') renderPbRoleCards(); else if (ctx === 'transport') renderTbRoleCards(); else renderRoleCards();
   }
 
   function removeGroup(ctx, idx) {
-    const groups = ctx === 'security' ? state.sbGroups : ctx === 'labour' ? state.lbGroups : ctx === 'picture' ? state.pbGroups : ctx === 'transport' ? state.tbGroups : state.boatGroups;
+    const groups = ctx === 'security' ? state.sbGroups : ctx === 'labour' ? state.lbGroups : ctx === 'guard_camp' ? state.gcGroups : ctx === 'picture' ? state.pbGroups : ctx === 'transport' ? state.tbGroups : state.boatGroups;
     const group  = groups[idx];
-    const funcs  = ctx === 'security' ? state.securityFunctions : ctx === 'labour' ? state.labourFunctions : ctx === 'picture' ? state.pictureFunctions : ctx === 'transport' ? state.transportFunctions : state.functions;
+    const funcs  = ctx === 'security' ? state.securityFunctions : ctx === 'labour' ? state.labourFunctions : ctx === 'guard_camp' ? state.gcFunctions : ctx === 'picture' ? state.pictureFunctions : ctx === 'transport' ? state.transportFunctions : state.functions;
     const inUse  = funcs.some(f => f.function_group === group.name);
     if (inUse) { toast(`Group "${group.name}" is used by functions`, 'error'); return; }
     groups.splice(idx, 1);
     _saveGroups(ctx);
     _renderGroupsList(ctx);
-    if (ctx === 'security') renderSbRoleCards(); else if (ctx === 'labour') renderLbRoleCards(); else if (ctx === 'picture') renderPbRoleCards(); else if (ctx === 'transport') renderTbRoleCards(); else renderRoleCards();
+    if (ctx === 'security') renderSbRoleCards(); else if (ctx === 'labour') renderLbRoleCards(); else if (ctx === 'guard_camp') renderGcRoleCards(); else if (ctx === 'picture') renderPbRoleCards(); else if (ctx === 'transport') renderTbRoleCards(); else renderRoleCards();
   }
 
   function _saveGroups(ctx) {
@@ -7352,6 +8179,8 @@ const App = (() => {
       try { localStorage.setItem('transport_groups', JSON.stringify(state.tbGroups)); } catch(e) {}
     } else if (ctx === 'labour') {
       try { localStorage.setItem('labour_groups', JSON.stringify(state.lbGroups)); } catch(e) {}
+    } else if (ctx === 'guard_camp') {
+      try { localStorage.setItem('guard_camp_groups', JSON.stringify(state.gcGroups)); } catch(e) {}
     } else {
       try { localStorage.setItem('boat_groups', JSON.stringify(state.boatGroups)); } catch(e) {}
     }
@@ -7429,10 +8258,22 @@ const App = (() => {
     locSetSubTab, locCellClick, locToggleLock, locAutoFill, locExportCSV,
     showAddLocationModal, closeAddLocationModal, editLocationSite,
     saveLocationSite, deleteLocationSite,
-    // Guards
-    gdSetView, gdCellClick, gdCellRightClick, gdToggleLock, gdExportCSV,
+    // Guards — sub-tab navigation
+    gdSetSubTab, gdSetView,
+    // Guards — Location Guards (read-only)
+    gdlRefresh, gdlExportCSV,
+    // Guards — legacy guard post CRUD
     showAddGuardModal, closeAddGuardModal, editGuardPost,
     saveGuardPost, deleteGuardPost,
+    // Guards — Base Camp
+    gcSetView, gcFilterWorkers, gcOpenWorkerView,
+    gcOnWorkerDragStart, gcOnWorkerDragEnd, gcOnDragOver, gcOnDragLeave, gcOnDrop,
+    gcOnDropZoneClick, gcShowAddFunctionModal, gcUndo,
+    gcEditAssignmentById, gcRemoveAssignmentById, gcConfirmDeleteFunc,
+    gcOnDateCellClick, gcOnFuncCellClick, gcAssignFromDate,
+    gcToggleDayLock, gcToggleExport, gcExportCSV,
+    gcShowAddWorkerModal, gcCloseAddWorkerModal, gcCreateWorker,
+    gcOpenWorkerDetail,
     // FNB
     fnbSetSubTab, fnbSetViewMode, fnbCellClick, fnbCellClear, fnbExportCSV,
     showFnbCatModal, closeFnbCatModal, editFnbCategory, saveFnbCategory, deleteFnbCategory,

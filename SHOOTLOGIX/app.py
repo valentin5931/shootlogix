@@ -64,6 +64,12 @@ from database import (
     # Guard posts CRUD
     get_guard_posts, create_guard_post, update_guard_post,
     delete_guard_post, rename_guard_post_in_schedules,
+    # Guard Camp (Base Camp guards)
+    get_guard_camp_workers, create_guard_camp_worker, update_guard_camp_worker,
+    delete_guard_camp_worker,
+    get_guard_camp_assignments, create_guard_camp_assignment,
+    update_guard_camp_assignment, delete_guard_camp_assignment,
+    delete_guard_camp_assignment_by_function,
 )
 
 app = Flask(__name__)
@@ -1555,6 +1561,157 @@ def api_lock_guard_location_schedules(prod_id):
     locked = data.get('locked', True)
     lock_guard_location_schedules(prod_id, dates, locked)
     return jsonify({"ok": True})
+
+
+# ─── Guard Camp (Base Camp) Workers & Assignments ─────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/guard-camp-workers", methods=["GET"])
+def api_guard_camp_workers(prod_id):
+    prod_or_404(prod_id)
+    return jsonify(get_guard_camp_workers(prod_id))
+
+
+@app.route("/api/productions/<int:prod_id>/guard-camp-workers", methods=["POST"])
+def api_create_guard_camp_worker(prod_id):
+    prod_or_404(prod_id)
+    data = request.json or {}
+    data["production_id"] = prod_id
+    if not data.get("name"):
+        return jsonify({"error": "name required"}), 400
+    worker_id = create_guard_camp_worker(data)
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM guard_camp_workers WHERE id=?", (worker_id,)).fetchone()
+    return jsonify(dict(row)), 201
+
+
+@app.route("/api/guard-camp-workers/<int:worker_id>", methods=["PUT"])
+def api_update_guard_camp_worker(worker_id):
+    data = request.json or {}
+    update_guard_camp_worker(worker_id, data)
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM guard_camp_workers WHERE id=?", (worker_id,)).fetchone()
+    if not row:
+        abort(404)
+    return jsonify(dict(row))
+
+
+@app.route("/api/guard-camp-workers/<int:worker_id>", methods=["DELETE"])
+def api_delete_guard_camp_worker(worker_id):
+    delete_guard_camp_worker(worker_id)
+    return jsonify({"deleted": worker_id})
+
+
+@app.route("/api/guard-camp-workers/<int:worker_id>/upload-image", methods=["POST"])
+def api_upload_guard_camp_worker_image(worker_id):
+    if 'image' not in request.files:
+        return jsonify({"error": "No image file"}), 400
+    file = request.files['image']
+    upload_dir = os.path.join(app.static_folder, 'uploads', 'guard_camp')
+    os.makedirs(upload_dir, exist_ok=True)
+    ext = os.path.splitext(file.filename)[1] or '.jpg'
+    fname = f"gc_{worker_id}{ext}"
+    filepath = os.path.join(upload_dir, fname)
+    file.save(filepath)
+    rel_path = f"static/uploads/guard_camp/{fname}"
+    update_guard_camp_worker(worker_id, {"image_path": rel_path})
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM guard_camp_workers WHERE id=?", (worker_id,)).fetchone()
+    return jsonify(dict(row))
+
+
+@app.route("/api/productions/<int:prod_id>/guard-camp-assignments", methods=["GET"])
+def api_guard_camp_assignments(prod_id):
+    prod_or_404(prod_id)
+    return jsonify(get_guard_camp_assignments(prod_id))
+
+
+@app.route("/api/productions/<int:prod_id>/guard-camp-assignments", methods=["POST"])
+def api_create_guard_camp_assignment(prod_id):
+    prod_or_404(prod_id)
+    data = request.json or {}
+    if not data.get("boat_function_id"):
+        return jsonify({"error": "boat_function_id required"}), 400
+    assignment_id = create_guard_camp_assignment(data)
+    assignments = get_guard_camp_assignments(prod_id)
+    asgn = next((a for a in assignments if a["id"] == assignment_id), None)
+    return jsonify(asgn), 201
+
+
+@app.route("/api/guard-camp-assignments/<int:assignment_id>", methods=["PUT"])
+def api_update_guard_camp_assignment(assignment_id):
+    data = request.json or {}
+    update_guard_camp_assignment(assignment_id, data)
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM guard_camp_assignments WHERE id=?", (assignment_id,)).fetchone()
+    if not row:
+        abort(404)
+    return jsonify(dict(row))
+
+
+@app.route("/api/guard-camp-assignments/<int:assignment_id>", methods=["DELETE"])
+def api_delete_guard_camp_assignment(assignment_id):
+    delete_guard_camp_assignment(assignment_id)
+    return jsonify({"deleted": assignment_id})
+
+
+@app.route("/api/productions/<int:prod_id>/guard-camp-assignments/function/<int:func_id>", methods=["DELETE"])
+def api_delete_guard_camp_assignment_by_function(prod_id, func_id):
+    prod_or_404(prod_id)
+    delete_guard_camp_assignment_by_function(func_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/productions/<int:prod_id>/export/guard-camp/csv")
+def api_export_guard_camp_csv(prod_id):
+    prod_or_404(prod_id)
+    rows = [r for r in get_guard_camp_assignments(prod_id) if r.get("working_days")]
+    from collections import OrderedDict
+    by_group = OrderedDict()
+    for r in rows:
+        g = r.get("function_group") or r.get("helper_group") or "GENERAL"
+        if g not in by_group:
+            by_group[g] = []
+        by_group[g].append(r)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Group", "Function", "Guard", "Role", "Contact",
+                     "Start", "End", "Working Days", "Rate/day",
+                     "Total Estimate", "Total Actual"])
+    grand_est = 0
+    grand_act = 0
+    for group_name, group_rows in by_group.items():
+        group_est = 0
+        group_act = 0
+        for r in group_rows:
+            est = r.get("amount_estimate") or 0
+            act = r.get("amount_actual") or 0
+            group_est += est
+            group_act += act
+            writer.writerow([
+                group_name,
+                r.get("function_name") or "",
+                r.get("helper_name_override") or r.get("helper_name") or "",
+                r.get("helper_role") or "",
+                r.get("helper_contact") or "",
+                r.get("start_date") or "", r.get("end_date") or "",
+                r.get("working_days") or "",
+                r.get("price_override") or r.get("helper_daily_rate_estimate") or "",
+                est,
+                act if act else "",
+            ])
+        writer.writerow(["", "", "", "", "", "", f"SUB-TOTAL {group_name}", "", "", group_est, group_act if group_act else ""])
+        writer.writerow([])
+        grand_est += group_est
+        grand_act += group_act
+    writer.writerow(["", "", "", "", "", "", "GRAND TOTAL", "", "", grand_est, grand_act if grand_act else ""])
+    output.seek(0)
+    from datetime import datetime as dt
+    fname = f"KLAS7_GUARDS-BASECAMP_{dt.now().strftime('%y%m%d')}.csv"
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
+    )
 
 
 # ─── Security Auto-fill from Locations ──────────────────────────────────────

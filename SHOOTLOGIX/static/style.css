@@ -559,6 +559,10 @@ select.form-control { cursor: pointer; }
 #lb-sidebar       { display:flex; flex-direction:column; gap:.5rem; overflow-y:auto; }
 #lb-main          { overflow-y:auto; }
 
+#gc-layout        { display:grid; grid-template-columns:260px 1fr; gap:1rem; height:calc(100vh - 48px - 2.5rem - 36px); }
+#gc-sidebar       { display:flex; flex-direction:column; gap:.5rem; overflow-y:auto; }
+#gc-main          { overflow-y:auto; }
+
 
 .boats-toolbar {
   display: flex;
@@ -968,6 +972,8 @@ select.form-control { cursor: pointer; }
   #sb-boat-sidebar { max-height: 40vh; }
   #lb-layout { grid-template-columns: 1fr; }
   #lb-sidebar { max-height: 40vh; }
+  #gc-layout { grid-template-columns: 1fr; }
+  #gc-sidebar { max-height: 40vh; }
   .form-row, .form-row-3 { grid-template-columns: 1fr; }
 }
 

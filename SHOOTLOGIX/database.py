@@ -464,6 +464,38 @@ CREATE TABLE IF NOT EXISTS guard_location_schedules (
 );
 
 -- ═══════════════════════════════════════════════
+-- DÉPARTEMENT : GUARD CAMP (Base Camp guards)
+-- ═══════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS guard_camp_workers (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    production_id       INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+    name                TEXT NOT NULL,
+    role                TEXT,
+    contact             TEXT,
+    group_name          TEXT DEFAULT 'GENERAL',
+    daily_rate_estimate REAL DEFAULT 45,
+    daily_rate_actual   REAL,
+    notes               TEXT,
+    image_path          TEXT
+);
+
+CREATE TABLE IF NOT EXISTS guard_camp_assignments (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    boat_function_id    INTEGER NOT NULL REFERENCES boat_functions(id) ON DELETE CASCADE,
+    helper_id           INTEGER REFERENCES guard_camp_workers(id) ON DELETE SET NULL,
+    helper_name_override TEXT,
+    start_date          TEXT,
+    end_date            TEXT,
+    price_override      REAL,
+    notes               TEXT,
+    assignment_status   TEXT DEFAULT 'confirmed',
+    day_overrides       TEXT DEFAULT '{}',
+    created_at          TEXT DEFAULT (datetime('now')),
+    updated_at          TEXT DEFAULT (datetime('now'))
+);
+
+-- ═══════════════════════════════════════════════
 -- DÉPARTEMENT : FNB DAILY TRACKING (legacy)
 -- ═══════════════════════════════════════════════
 
@@ -1556,6 +1588,130 @@ def get_helper_schedules(prod_id):
         return [dict(r) for r in rows]
 
 
+# ─── Guard Camp Workers ──────────────────────────────────────────────────────
+
+def get_guard_camp_workers(prod_id):
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM guard_camp_workers WHERE production_id=? ORDER BY name", (prod_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_guard_camp_worker(data):
+    cols = ["production_id", "name", "role", "contact", "group_name",
+            "daily_rate_estimate", "daily_rate_actual", "notes", "image_path"]
+    fields = {k: data[k] for k in cols if k in data}
+    placeholders = ", ".join("?" * len(fields))
+    col_names = ", ".join(fields.keys())
+    with get_db() as conn:
+        cur = conn.execute(
+            f"INSERT INTO guard_camp_workers ({col_names}) VALUES ({placeholders})",
+            list(fields.values())
+        )
+        return cur.lastrowid
+
+
+def update_guard_camp_worker(worker_id, data):
+    allowed = ["name", "role", "contact", "group_name",
+               "daily_rate_estimate", "daily_rate_actual", "notes", "image_path"]
+    sets = []
+    vals = []
+    for k in allowed:
+        if k in data:
+            sets.append(f"{k}=?")
+            vals.append(data[k])
+    if not sets:
+        return
+    vals.append(worker_id)
+    with get_db() as conn:
+        conn.execute(f"UPDATE guard_camp_workers SET {', '.join(sets)} WHERE id=?", vals)
+
+
+def delete_guard_camp_worker(worker_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM guard_camp_workers WHERE id=?", (worker_id,))
+
+
+def get_guard_camp_assignments(prod_id):
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT gca.*,
+                   gcw.name  AS helper_name,
+                   gcw.role  AS helper_role,
+                   gcw.contact AS helper_contact,
+                   gcw.group_name AS helper_group,
+                   gcw.daily_rate_estimate AS helper_daily_rate_estimate,
+                   gcw.daily_rate_actual   AS helper_daily_rate_actual,
+                   bf.name  AS function_name,
+                   bf.function_group,
+                   bf.color
+            FROM guard_camp_assignments gca
+            LEFT JOIN guard_camp_workers gcw ON gca.helper_id = gcw.id
+            LEFT JOIN boat_functions bf ON gca.boat_function_id = bf.id
+            WHERE bf.production_id = ?
+            ORDER BY bf.sort_order, gca.id
+        """, (prod_id,)).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            # Compute working_days
+            if d.get("start_date") and d.get("end_date"):
+                d["working_days"] = working_days(d["start_date"], d["end_date"])
+                rate = d.get("price_override") or d.get("helper_daily_rate_estimate") or 0
+                d["amount_estimate"] = round(d["working_days"] * rate)
+            else:
+                d["working_days"] = 0
+                d["amount_estimate"] = 0
+            result.append(d)
+        return result
+
+
+def create_guard_camp_assignment(data):
+    func_id = data["boat_function_id"]
+    with get_db() as conn:
+        cur = conn.execute(
+            """INSERT INTO guard_camp_assignments
+               (boat_function_id, helper_id, helper_name_override, start_date, end_date,
+                price_override, notes, assignment_status, day_overrides)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (func_id, data.get("helper_id"), data.get("helper_name_override"),
+             data.get("start_date"), data.get("end_date"),
+             data.get("price_override"), data.get("notes"),
+             data.get("assignment_status", "confirmed"),
+             data.get("day_overrides", "{}"))
+        )
+        return cur.lastrowid
+
+
+def update_guard_camp_assignment(assignment_id, data):
+    allowed = ["boat_function_id", "helper_id", "helper_name_override",
+               "start_date", "end_date", "price_override", "notes",
+               "assignment_status", "day_overrides"]
+    set_parts = []
+    vals = []
+    for k in allowed:
+        if k in data:
+            set_parts.append(f"{k}=?")
+            vals.append(data[k])
+    set_parts.append("updated_at=datetime('now')")
+    vals.append(assignment_id)
+    with get_db() as conn:
+        conn.execute(
+            f"UPDATE guard_camp_assignments SET {', '.join(set_parts)} WHERE id=?", vals
+        )
+
+
+def delete_guard_camp_assignment(assignment_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM guard_camp_assignments WHERE id=?", (assignment_id,))
+
+
+def delete_guard_camp_assignment_by_function(func_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM guard_camp_assignments WHERE boat_function_id=?", (func_id,))
+
+
 # ─── Security Boats ──────────────────────────────────────────────────────────
 
 def get_security_boats(prod_id):
@@ -2528,54 +2684,39 @@ def get_budget(prod_id):
             "source": "auto",
         })
 
-    # GUARDS (dynamic from guard_location_schedules + guard_posts rates)
-    guard_schedules = get_guard_location_schedules(prod_id)
-    guard_posts = get_guard_posts(prod_id)
-    rate_by_post = {gp['name']: gp.get('daily_rate', 45) or 45 for gp in guard_posts}
-    guard_total = 0
-    guard_days_by_loc = {}
-    for gs in guard_schedules:
-        loc = gs['location_name']
-        nb = gs.get('nb_guards', 1) or 1
-        rate = rate_by_post.get(loc, 45)
-        guard_days_by_loc.setdefault(loc, {'days': 0, 'guards': 0, 'rate': rate})
-        guard_days_by_loc[loc]['days'] += 1
-        guard_days_by_loc[loc]['guards'] = max(guard_days_by_loc[loc]['guards'], nb)
-        guard_total += nb * rate
+    # GUARDS - LOCATION (auto from location_schedules)
+    loc_schedules = get_location_schedules(prod_id)
+    loc_sites = get_location_sites(prod_id)
+    type_by_name = {s['name']: s.get('location_type', 'game') for s in loc_sites}
+    loc_guard_by_loc = {}
+    for ls in loc_schedules:
+        loc_name = ls['location_name']
+        loc_type = type_by_name.get(loc_name, ls.get('location_type', 'game'))
+        nb_guards = 4 if loc_type == 'tribal_camp' else 2
+        loc_guard_by_loc.setdefault(loc_name, {'days': 0, 'guards': nb_guards, 'cost': 0, 'type': loc_type})
+        loc_guard_by_loc[loc_name]['days'] += 1
+        loc_guard_by_loc[loc_name]['cost'] += nb_guards * 45
 
-    if guard_days_by_loc:
-        for loc, info in guard_days_by_loc.items():
-            loc_cost = info['days'] * info['guards'] * info['rate']
-            grand_total_est += loc_cost
+    if loc_guard_by_loc:
+        for loc, info in loc_guard_by_loc.items():
+            grand_total_est += info['cost']
             rows.append({
-                "department": "GUARDS",
+                "department": "GUARDS - LOCATION",
                 "name": f"GUARD - {loc}",
                 "boat": "",
                 "vendor": "LOCALS",
                 "start_date": None,
                 "end_date": None,
                 "working_days": info['days'],
-                "unit_price_estimate": info['guards'] * info['rate'],
-                "amount_estimate": loc_cost,
+                "unit_price_estimate": info['guards'] * 45,
+                "amount_estimate": info['cost'],
                 "amount_actual": None,
                 "source": "auto",
             })
-    else:
-        # Fallback static if no schedules
-        grand_total_est += 45000
-        rows.append({
-            "department": "GUARDS",
-            "name": "REALITY GUARD ALLOWANCE",
-            "boat": "",
-            "vendor": "LOCALS",
-            "start_date": None,
-            "end_date": None,
-            "working_days": 1,
-            "unit_price_estimate": 45000,
-            "amount_estimate": 45000,
-            "amount_actual": None,
-            "source": "auto",
-        })
+
+    # GUARDS - BASE CAMP (manual, from guard_camp_assignments)
+    gc_asgns = get_guard_camp_assignments(prod_id)
+    _add_rows("GUARDS - BASE CAMP", gc_asgns, entity_key='helper_name', rate_est_key='helper_daily_rate_estimate')
 
     # Manual budget_lines (other departments)
     with get_db() as conn:
