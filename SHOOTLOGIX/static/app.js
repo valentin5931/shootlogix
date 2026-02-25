@@ -6547,6 +6547,18 @@ const App = (() => {
       <div class="loc-schedule-wrap" style="overflow-x:auto">
         <table class="loc-schedule-table">
           <thead>
+            ${(() => {
+              const _mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+              const _mg = []; let _pm = -1, _mc = 0;
+              dates.forEach(d => {
+                const m = new Date(d + 'T00:00:00').getMonth();
+                if (m !== _pm) { if (_pm >= 0) _mg.push({ m: _pm, cnt: _mc }); _pm = m; _mc = 1; } else _mc++;
+              });
+              _mg.push({ m: _pm, cnt: _mc });
+              return '<tr><th class="loc-th-name" style="position:sticky;left:0;z-index:3;background:var(--bg-surface);min-width:140px"></th>'
+                + _mg.map(mg => '<th colspan="' + mg.cnt + '" style="text-align:center;font-size:.65rem;color:var(--text-3);padding:2px 0">' + _mn[mg.m] + '</th>').join('')
+                + '</tr>';
+            })()}
             <tr>
               <th class="loc-th-name" style="position:sticky;left:0;z-index:3;background:var(--bg-surface);min-width:140px">Location</th>
               ${dates.map(d => {
@@ -7120,6 +7132,18 @@ const App = (() => {
       <div class="loc-schedule-wrap" style="overflow-x:auto">
         <table class="loc-schedule-table">
           <thead>
+            ${(() => {
+              const _mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+              const _mg = []; let _pm = -1, _mc = 0;
+              dates.forEach(d => {
+                const m = new Date(d + 'T00:00:00').getMonth();
+                if (m !== _pm) { if (_pm >= 0) _mg.push({ m: _pm, cnt: _mc }); _pm = m; _mc = 1; } else _mc++;
+              });
+              _mg.push({ m: _pm, cnt: _mc });
+              return '<tr><th class="loc-th-name" style="position:sticky;left:0;z-index:3;background:var(--bg-surface);min-width:160px"></th>'
+                + _mg.map(mg => '<th colspan="' + mg.cnt + '" style="text-align:center;font-size:.65rem;color:var(--text-3);padding:2px 0">' + _mn[mg.m] + '</th>').join('')
+                + '</tr>';
+            })()}
             <tr>
               <th class="loc-th-name" style="position:sticky;left:0;z-index:3;background:var(--bg-surface);min-width:160px">Location</th>
               ${dates.map(d => {
