@@ -13,7 +13,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY SHOOTLOGIX/ .
-COPY BATEAUX/static/boat_images/ /app/static/boat_images_bateaux/ 2>/dev/null || true
 
 # Create data directory
 RUN mkdir -p /data/uploads
