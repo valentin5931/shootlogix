@@ -291,6 +291,108 @@ const App = (() => {
     return res;
   }
 
+  // ── Auth: permissions & UI restrictions ──────────────────
+  const ROLE_ALLOWED_TABS = {
+    ADMIN:   ['pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
+    UNIT:    ['pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
+    TRANSPO: ['boats','picture-boats','security-boats','transport','fuel'],
+    READER:  ['pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
+  };
+
+  function _canViewTab(tab) {
+    const role = authState.currentRole || 'READER';
+    if (role === 'ADMIN') return true;
+    return (ROLE_ALLOWED_TABS[role] || []).includes(tab);
+  }
+
+  function _canEdit() {
+    const role = authState.currentRole || 'READER';
+    return role !== 'READER';
+  }
+
+  function _canEditPrices() {
+    return authState.currentRole === 'ADMIN';
+  }
+
+  function _canEditFuelPrices() {
+    const role = authState.currentRole || 'READER';
+    return role === 'ADMIN' || role === 'UNIT' || role === 'TRANSPO';
+  }
+
+  function _isAdmin() {
+    return authState.currentRole === 'ADMIN' || (authState.user && authState.user.is_admin);
+  }
+
+  function _applyUIRestrictions() {
+    const role = authState.currentRole || 'READER';
+
+    // 1. Hide/show tabs in topbar based on role
+    document.querySelectorAll('#topbar .tab-btn').forEach(btn => {
+      const tab = btn.getAttribute('data-tab');
+      if (!tab) return;
+      btn.style.display = _canViewTab(tab) ? '' : 'none';
+    });
+
+    // Also hide separators adjacent to hidden tabs (cleanup visual)
+    // Simple approach: hide all seps, then show ones between visible tabs
+    const btns = Array.from(document.querySelectorAll('#topbar .tab-btn, #topbar .topbar-sep'));
+    let lastWasVisible = false;
+    btns.forEach(el => {
+      if (el.classList.contains('topbar-sep')) {
+        el.style.display = lastWasVisible ? '' : 'none';
+        lastWasVisible = false;
+      } else if (el.classList.contains('tab-btn')) {
+        const tab = el.getAttribute('data-tab');
+        const visible = !tab || _canViewTab(tab);
+        el.style.display = visible ? '' : 'none';
+        if (visible) lastWasVisible = true;
+      }
+    });
+
+    // 2. Add CSS class to body for role-based styling
+    document.body.classList.remove('role-admin', 'role-unit', 'role-transpo', 'role-reader');
+    document.body.classList.add('role-' + role.toLowerCase());
+
+    // 3. If current tab is not allowed, switch to first allowed tab
+    if (!_canViewTab(state.tab)) {
+      const allowed = ROLE_ALLOWED_TABS[role] || ['boats'];
+      setTab(allowed[0]);
+    }
+
+    // 4. Disable draggable for READER
+    if (role === 'READER') {
+      document.querySelectorAll('[draggable="true"]').forEach(el => {
+        el.setAttribute('draggable', 'false');
+      });
+    }
+  }
+
+  // Apply price field restrictions after rendering
+  function _applyPriceRestrictions() {
+    if (_canEditPrices()) return; // ADMIN can edit all prices
+
+    // Mark price-related inputs as readonly
+    // Selectors for price inputs in boat/assignment modals and inline edits
+    const priceSelectors = [
+      'input[name*="price"]',
+      'input[name*="rate"]',
+      'input[name*="cost"]',
+      'input[data-field*="price"]',
+      'input[data-field*="rate"]',
+      'input[data-field*="cost"]',
+      'input[data-field*="daily_rate"]',
+      '.price-input',
+      '.rate-input',
+    ];
+
+    document.querySelectorAll(priceSelectors.join(',')).forEach(el => {
+      // Exception: fuel prices (diesel/petrol) can be edited by UNIT and TRANSPO
+      if (_canEditFuelPrices() && el.closest('#view-fuel')) return;
+      el.classList.add('price-readonly');
+      el.setAttribute('tabindex', '-1');
+    });
+  }
+
   // ── Auth: project selector & user state ──────────────────
   async function _loadAuthState() {
     const data = await api('GET', '/api/auth/me');
@@ -328,6 +430,7 @@ const App = (() => {
     localStorage.setItem('currentProdId', prodId);
     localStorage.setItem('currentRole', role);
     _updateTopbarUser();
+    _applyUIRestrictions();
     try {
       await Promise.all([loadShootingDays(), loadBoatsData(), loadPictureBoatsData(), _loadFuelGlobals()]);
       renderPDT();
@@ -338,13 +441,28 @@ const App = (() => {
   }
 
   function _updateTopbarUser() {
-    // Remove existing user badge if any
+    const topbar = document.getElementById('topbar');
+
+    // Admin panel link (only for ADMIN)
+    let adminLink = document.getElementById('topbar-admin-link');
+    if (!adminLink) {
+      adminLink = document.createElement('button');
+      adminLink.id = 'topbar-admin-link';
+      adminLink.className = 'tab-btn admin-only';
+      adminLink.innerHTML = '<span class="dot" style="background:#EF4444"></span>ADMIN';
+      adminLink.onclick = () => setTab('admin');
+      // Insert before the flex spacer
+      const spacer = topbar.querySelector('div[style*="flex:1"]');
+      if (spacer) topbar.insertBefore(adminLink, spacer);
+    }
+
+    // User badge
     let badge = document.getElementById('topbar-user-badge');
     if (!badge) {
       badge = document.createElement('div');
       badge.id = 'topbar-user-badge';
       badge.className = 'topbar-user';
-      document.getElementById('topbar').appendChild(badge);
+      topbar.appendChild(badge);
     }
     const nick = authState.user ? authState.user.nickname : '';
     const role = authState.currentRole || '';
@@ -355,6 +473,18 @@ const App = (() => {
         _showProjectSelector();
       }
     };
+
+    // Logout button
+    let logoutBtn = document.getElementById('topbar-logout-btn');
+    if (!logoutBtn) {
+      logoutBtn = document.createElement('button');
+      logoutBtn.id = 'topbar-logout-btn';
+      logoutBtn.className = 'tab-btn';
+      logoutBtn.style.cssText = 'color:var(--text-3);font-size:0.75rem;';
+      logoutBtn.textContent = 'Sign Out';
+      logoutBtn.onclick = logout;
+      topbar.appendChild(logoutBtn);
+    }
   }
 
   function logout() {
@@ -9377,6 +9507,8 @@ const App = (() => {
     showFnbItemModal, closeFnbItemModal, editFnbItem, saveFnbItem, deleteFnbItem,
     // Auth
     logout, authState,
+    _canEdit, _canEditPrices, _canEditFuelPrices, _isAdmin, _canViewTab,
+    _applyPriceRestrictions,
     init,
   };
 })();
