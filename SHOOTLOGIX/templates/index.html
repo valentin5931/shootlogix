@@ -9,6 +9,21 @@
 <body>
 <div id="app">
 
+  <!-- ── Project selector overlay (shown after login) ────────────────────── -->
+  <div id="project-selector" class="project-selector-overlay" style="display:none">
+    <div class="project-selector-card">
+      <div class="project-selector-header">
+        <h2>Shoot<span style="color:#3B82F6">Logix</span></h2>
+        <p id="ps-welcome"></p>
+      </div>
+      <div class="project-selector-label">Select a project</div>
+      <div id="ps-list" class="project-selector-list"></div>
+      <div class="project-selector-footer">
+        <button class="btn btn-secondary btn-sm" onclick="App.logout()">Sign Out</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Top navigation ──────────────────────────────────────────────────── -->
   <nav id="topbar">
     <div class="topbar-brand">Shoot<span>Logix</span></div>

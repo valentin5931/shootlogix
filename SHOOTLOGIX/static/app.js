@@ -14,6 +14,13 @@ const App = (() => {
     off:     { name: 'OFF GAME' },
   };
 
+  // Auth state
+  let authState = {
+    user: null,         // { id, nickname, is_admin }
+    memberships: [],    // [{ production_id, production_name, role, ... }]
+    currentRole: null,  // role on current project
+  };
+
   let state = {
     prodId: null,
     tab: 'pdt',
@@ -280,6 +287,84 @@ const App = (() => {
       }
     }
     return res;
+  }
+
+  // ── Auth: project selector & user state ──────────────────
+  async function _loadAuthState() {
+    const data = await api('GET', '/api/auth/me');
+    authState.user = { id: data.id, nickname: data.nickname, is_admin: data.is_admin };
+    authState.memberships = data.memberships || [];
+    localStorage.setItem('user', JSON.stringify(authState.user));
+  }
+
+  function _showProjectSelector() {
+    const el = $('project-selector');
+    if (!el) return;
+    $('ps-welcome').textContent = `Welcome, ${authState.user.nickname}`;
+    const list = $('ps-list');
+    list.innerHTML = '';
+    for (const m of authState.memberships) {
+      const item = document.createElement('div');
+      item.className = 'project-selector-item';
+      item.innerHTML = `<span class="ps-name">${esc(m.production_name)}</span>
+        <span class="ps-role">${esc(m.role)}</span>`;
+      item.onclick = () => _selectProject(m.production_id, m.role);
+      list.appendChild(item);
+    }
+    el.style.display = 'flex';
+  }
+
+  function _hideProjectSelector() {
+    const el = $('project-selector');
+    if (el) el.style.display = 'none';
+  }
+
+  async function _selectProject(prodId, role) {
+    _hideProjectSelector();
+    state.prodId = prodId;
+    authState.currentRole = role;
+    localStorage.setItem('currentProdId', prodId);
+    localStorage.setItem('currentRole', role);
+    _updateTopbarUser();
+    try {
+      await Promise.all([loadShootingDays(), loadBoatsData(), loadPictureBoatsData(), _loadFuelGlobals()]);
+      renderPDT();
+    } catch (e) {
+      console.error('Load error after project select:', e);
+      toast('Failed to load project data: ' + e.message, 'error');
+    }
+  }
+
+  function _updateTopbarUser() {
+    // Remove existing user badge if any
+    let badge = document.getElementById('topbar-user-badge');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.id = 'topbar-user-badge';
+      badge.className = 'topbar-user';
+      document.getElementById('topbar').appendChild(badge);
+    }
+    const nick = authState.user ? authState.user.nickname : '';
+    const role = authState.currentRole || '';
+    badge.innerHTML = `<span class="tu-nickname">${esc(nick)}</span>
+      <span class="tu-role">${esc(role)}</span>`;
+    badge.onclick = () => {
+      if (authState.memberships.length > 1) {
+        _showProjectSelector();
+      }
+    };
+  }
+
+  function logout() {
+    const rt = _getRefreshToken();
+    if (rt) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: rt }),
+      }).catch(() => {});
+    }
+    _redirectToLogin();
   }
 
   // ── API ────────────────────────────────────────────────────
@@ -9108,11 +9193,23 @@ const App = (() => {
     });
 
     try {
-      await loadProduction();
-      await Promise.all([loadShootingDays(), loadBoatsData(), loadPictureBoatsData(), _loadFuelGlobals()]);
-      renderPDT();
+      // Auth: fetch user info and show project selector
+      await _loadAuthState();
+      if (authState.memberships.length === 1) {
+        // Auto-select if only one project
+        await _selectProject(authState.memberships[0].production_id, authState.memberships[0].role);
+      } else if (authState.memberships.length > 1) {
+        _showProjectSelector();
+      } else {
+        document.getElementById('main-content').innerHTML =
+          `<div style="color:var(--text-3);padding:3rem;text-align:center">
+            You are not assigned to any project.<br>
+            <small>Ask an administrator to invite you to a project.</small>
+          </div>`;
+      }
     } catch (e) {
       console.error('Init error:', e);
+      if (e.message === 'Session expired') return;
       document.getElementById('main-content').innerHTML =
         `<div style="color:var(--red);padding:3rem;text-align:center">
           Load error: ${esc(e.message)}<br>
@@ -9276,6 +9373,8 @@ const App = (() => {
     fnbSetSubTab, fnbSetViewMode, fnbCellClick, fnbCellClear, fnbExportCSV,
     showFnbCatModal, closeFnbCatModal, editFnbCategory, saveFnbCategory, deleteFnbCategory,
     showFnbItemModal, closeFnbItemModal, editFnbItem, saveFnbItem, deleteFnbItem,
+    // Auth
+    logout, authState,
     init,
   };
 })();

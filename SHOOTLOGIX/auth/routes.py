@@ -24,6 +24,7 @@ from auth.models import (
     delete_refresh_token,
     delete_user_refresh_tokens,
     get_user_memberships,
+    get_auth_db,
 )
 from auth.tokens import (
     create_access_token,
@@ -166,12 +167,27 @@ def logout():
 @auth_bp.route("/me", methods=["GET"])
 @require_auth
 def me():
-    """Return current user info and their project memberships."""
+    """Return current user info and their project memberships.
+    ADMIN users see all projects (with role='ADMIN' for each)."""
     user = get_user_by_id(g.user_id)
     if user is None:
         return jsonify({"error": "User not found"}), 404
 
-    memberships = get_user_memberships(g.user_id)
+    if user.get("is_admin"):
+        # ADMIN sees all projects
+        with get_auth_db() as conn:
+            rows = conn.execute("""
+                SELECT p.id as production_id, p.name as production_name,
+                       p.status as production_status,
+                       COALESCE(pm.role, 'ADMIN') as role
+                FROM productions p
+                LEFT JOIN project_memberships pm
+                    ON pm.production_id = p.id AND pm.user_id = ?
+                ORDER BY p.name
+            """, (user["id"],)).fetchall()
+            memberships = [dict(r) for r in rows]
+    else:
+        memberships = get_user_memberships(g.user_id)
 
     return jsonify({
         "id": user["id"],

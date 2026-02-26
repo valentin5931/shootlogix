@@ -1666,3 +1666,123 @@ body.schedule-dragging * { cursor: col-resize !important; }
 .loc-locked {
   background: rgba(34, 197, 94, 0.08) !important;
 }
+
+/* ═══════════════════════════════════════════════
+   AUTH: Project selector overlay
+   ═══════════════════════════════════════════════ */
+
+.project-selector-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.project-selector-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 2rem;
+}
+
+.project-selector-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.project-selector-header h2 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.project-selector-header p {
+  color: var(--text-3);
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+}
+
+.project-selector-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+}
+
+.project-selector-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+}
+
+.project-selector-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.project-selector-item:hover {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.project-selector-item .ps-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.project-selector-item .ps-role {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(59, 130, 246, 0.1);
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.project-selector-footer {
+  text-align: center;
+}
+
+/* Auth: user badge in topbar */
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 0.5rem;
+  padding: 0.3rem 0.75rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.topbar-user:hover {
+  border-color: var(--accent);
+}
+
+.topbar-user .tu-nickname {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.topbar-user .tu-role {
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
