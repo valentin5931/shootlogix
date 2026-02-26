@@ -3,12 +3,7 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120"
-# healthcheckPath = "/api/health"
-# healthcheckTimeout = 120
+healthcheckPath = "/api/health"
+healthcheckTimeout = 120
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
-
-[[volumes]]
-mountPath = "/data"
-name = "shootlogix-data"
