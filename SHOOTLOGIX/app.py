@@ -79,6 +79,8 @@ app = Flask(__name__)
 # ─── Auth: Register blueprint & protect all /api/ routes ─────────────────────
 from auth.routes import auth_bp
 from auth.tokens import decode_access_token
+from auth.rbac import check_role_access, get_user_allowed_tabs
+from auth.models import get_membership
 
 app.register_blueprint(auth_bp)
 
@@ -121,6 +123,43 @@ def enforce_auth():
     g.user_id = payload.get("user_id", int(payload["sub"]))
     g.nickname = payload["nickname"]
     g.is_admin = payload.get("is_admin", False)
+    g.role = "ADMIN" if g.is_admin else None
+
+    # RBAC: determine user's role on the current project
+    # Extract production_id from URL if present
+    import re
+    prod_match = re.search(r'/api/productions/(\d+)', path)
+    if prod_match and not g.is_admin:
+        prod_id = int(prod_match.group(1))
+        membership = get_membership(g.user_id, prod_id)
+        if membership is None:
+            return jsonify({"error": "You are not a member of this project", "code": "NOT_MEMBER"}), 403
+        g.role = membership["role"]
+    elif not g.is_admin:
+        # For routes without prod_id (e.g., /api/boats/<id>), get role from
+        # X-Project-Id header or default to their first membership
+        project_header = request.headers.get("X-Project-Id")
+        if project_header:
+            try:
+                membership = get_membership(g.user_id, int(project_header))
+                if membership:
+                    g.role = membership["role"]
+            except (ValueError, TypeError):
+                pass
+        # If still no role, check if they have any membership at all
+        if g.role is None:
+            from auth.models import get_user_memberships
+            memberships = get_user_memberships(g.user_id)
+            if memberships:
+                g.role = memberships[0]["role"]
+            else:
+                return jsonify({"error": "You are not assigned to any project", "code": "NO_PROJECT"}), 403
+
+    # RBAC: check role-based access
+    if g.role:
+        allowed, reason = check_role_access(g.role, path, request.method)
+        if not allowed:
+            return jsonify({"error": reason, "code": "FORBIDDEN"}), 403
 
     return None  # Continue to the route handler
 

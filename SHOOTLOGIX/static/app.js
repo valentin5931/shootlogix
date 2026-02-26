@@ -268,6 +268,8 @@ const App = (() => {
     const h = { ...(extraHeaders || {}) };
     const token = _getAccessToken();
     if (token) h['Authorization'] = `Bearer ${token}`;
+    // Send current project ID for routes without prod_id in URL
+    if (state.prodId) h['X-Project-Id'] = String(state.prodId);
     return h;
   }
 
