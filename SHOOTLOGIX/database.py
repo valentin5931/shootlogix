@@ -9,7 +9,10 @@ import math
 from datetime import datetime, timedelta
 from contextlib import contextmanager
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shootlogix.db")
+# Database path: configurable via DATABASE_PATH env var for production (e.g. Railway volume).
+# Defaults to shootlogix.db in the same directory as this file (local dev).
+_default_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shootlogix.db")
+DB_PATH = os.environ.get("DATABASE_PATH", _default_db)
 
 
 @contextmanager
