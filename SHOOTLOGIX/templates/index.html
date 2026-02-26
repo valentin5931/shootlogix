@@ -468,6 +468,52 @@
       <div id="budget-content"></div>
     </div>
 
+    <!-- ADMIN PANEL ── -->
+    <div id="view-admin" class="view-panel admin-only">
+      <div class="admin-panel">
+        <div class="admin-tabs">
+          <button class="admin-tab active" data-atab="users" onclick="App.adminSetTab('users')">Users</button>
+          <button class="admin-tab" data-atab="projects" onclick="App.adminSetTab('projects')">Projects</button>
+          <button class="admin-tab" data-atab="invitations" onclick="App.adminSetTab('invitations')">Invitations</button>
+        </div>
+
+        <!-- Users sub-panel -->
+        <div id="admin-users" class="admin-sub active">
+          <div class="admin-toolbar">
+            <h3>User Management</h3>
+            <button class="btn btn-primary btn-sm" onclick="App.adminShowCreateUser()">+ Create User</button>
+          </div>
+          <div id="admin-users-list"></div>
+        </div>
+
+        <!-- Projects sub-panel -->
+        <div id="admin-projects" class="admin-sub">
+          <div class="admin-toolbar">
+            <h3>Project Management</h3>
+            <button class="btn btn-primary btn-sm" onclick="App.adminShowCreateProject()">+ Create Project</button>
+          </div>
+          <div id="admin-projects-list"></div>
+        </div>
+
+        <!-- Invitations sub-panel -->
+        <div id="admin-invitations" class="admin-sub">
+          <div class="admin-toolbar">
+            <h3>Project Invitations</h3>
+          </div>
+          <div class="form-row" style="margin-bottom:1rem">
+            <div class="form-group" style="flex:1">
+              <label class="form-label">Project</label>
+              <select id="admin-inv-project" class="form-control" onchange="App.adminLoadMembers()"></select>
+            </div>
+          </div>
+          <div id="admin-inv-members"></div>
+          <div class="admin-toolbar" style="margin-top:1rem">
+            <button class="btn btn-primary btn-sm" onclick="App.adminShowInvite()">+ Invite User</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /main-content -->
 </div><!-- /app -->
 
@@ -1283,6 +1329,18 @@
       <button class="btn btn-secondary" onclick="App.closeFnbItemModal()">Cancel</button>
       <button class="btn btn-danger hidden" id="fi-delete-btn" onclick="App.deleteFnbItem()" style="margin-right:auto">Delete</button>
       <button class="btn btn-primary" id="fi-confirm-btn" onclick="App.saveFnbItem()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Admin modals ────────────────────────────────────────────────────────── -->
+<div id="admin-modal-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.adminCloseModal()">
+  <div class="modal-box" style="max-width:400px">
+    <div class="modal-title" id="admin-modal-title">Admin</div>
+    <div id="admin-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="App.adminCloseModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="admin-modal-ok" onclick="App.adminModalConfirm()">OK</button>
     </div>
   </div>
 </div>

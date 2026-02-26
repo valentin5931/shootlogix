@@ -78,11 +78,13 @@ app = Flask(__name__)
 
 # ─── Auth: Register blueprint & protect all /api/ routes ─────────────────────
 from auth.routes import auth_bp
+from auth.admin_routes import admin_bp
 from auth.tokens import decode_access_token
 from auth.rbac import check_role_access, get_user_allowed_tabs
 from auth.models import get_membership
 
 app.register_blueprint(auth_bp)
+app.register_blueprint(admin_bp)
 
 # Routes that do NOT require authentication
 AUTH_EXEMPT_PREFIXES = (
