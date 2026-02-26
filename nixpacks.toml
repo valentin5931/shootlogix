@@ -1,8 +1,0 @@
-[phases.setup]
-nixPkgs = ["python311", "mupdf"]
-
-[phases.install]
-cmds = ["pip install -r SHOOTLOGIX/requirements.txt"]
-
-[start]
-cmd = "cd SHOOTLOGIX && gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120"
