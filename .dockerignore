@@ -1,0 +1,11 @@
+.git
+.claude
+__pycache__
+*.pyc
+*.db
+OLD
+MAP
+*.xlsx
+*.xlsm
+*.pdf
+.env

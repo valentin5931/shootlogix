@@ -1,12 +1,11 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "builder": "NIXPACKS",
-    "watchPatterns": ["SHOOTLOGIX/**"],
-    "nixpacksConfigPath": "SHOOTLOGIX/nixpacks.toml"
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile",
+    "watchPatterns": ["SHOOTLOGIX/**"]
   },
   "deploy": {
-    "startCommand": "cd SHOOTLOGIX && gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 10,
     "restartPolicyType": "ON_FAILURE",
