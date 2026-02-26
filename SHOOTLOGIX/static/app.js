@@ -291,6 +291,22 @@ const App = (() => {
     return res;
   }
 
+  async function authDownload(url) {
+    const res = await authFetch(url);
+    if (!res.ok) { alert('Export failed'); return; }
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename=(.+)/);
+    const filename = match ? match[1].replace(/"/g, '') : 'export';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  }
+
   // ── Auth: permissions & UI restrictions ──────────────────
   const ROLE_ALLOWED_TABS = {
     ADMIN:   ['pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
@@ -2722,8 +2738,8 @@ const App = (() => {
   }
 
   function toggleExport() { $('export-menu').classList.toggle('hidden'); }
-  function exportCSV()  { window.location.href = `/api/productions/${state.prodId}/export/csv`;  $('export-menu').classList.add('hidden'); }
-  function exportJSON() { window.location.href = `/api/productions/${state.prodId}/export/json`; $('export-menu').classList.add('hidden'); }
+  function exportCSV()  { authDownload(`/api/productions/${state.prodId}/export/csv`);  $('export-menu').classList.add('hidden'); }
+  function exportJSON() { authDownload(`/api/productions/${state.prodId}/export/json`); $('export-menu').classList.add('hidden'); }
 
   // ═══════════════════════════════════════════════════════════
   //  PICTURE BOATS TAB
@@ -3314,8 +3330,8 @@ const App = (() => {
   }
 
   function pbToggleExport() { $('pb-export-menu').classList.toggle('hidden'); }
-  function pbExportCSV()  { window.location.href = `/api/productions/${state.prodId}/export/picture-boats/csv`;  $('pb-export-menu').classList.add('hidden'); }
-  function pbExportJSON() { window.location.href = `/api/productions/${state.prodId}/export/picture-boats/json`; $('pb-export-menu').classList.add('hidden'); }
+  function pbExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/picture-boats/csv`);  $('pb-export-menu').classList.add('hidden'); }
+  function pbExportJSON() { authDownload(`/api/productions/${state.prodId}/export/picture-boats/json`); $('pb-export-menu').classList.add('hidden'); }
 
   // ═══════════════════════════════════════════════════════════
   //  BUDGET (consolidated)
@@ -3419,7 +3435,7 @@ const App = (() => {
   // ── Global Budget Export (KLAS7_BUDGET_YYMMDD.xlsx) ──────────────────────
 
   function budgetExportXlsx() {
-    window.location.href = `/api/productions/${state.prodId}/export/budget-global`;
+    authDownload(`/api/productions/${state.prodId}/export/budget-global`);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -4031,8 +4047,8 @@ const App = (() => {
   }
 
   function tbToggleExport() { $('tb-export-menu').classList.toggle('hidden'); }
-  function tbExportCSV()  { window.location.href = `/api/productions/${state.prodId}/export/transport/csv`;  $('tb-export-menu').classList.add('hidden'); }
-  function tbExportJSON() { window.location.href = `/api/productions/${state.prodId}/export/transport/json`; $('tb-export-menu').classList.add('hidden'); }
+  function tbExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/transport/csv`);  $('tb-export-menu').classList.add('hidden'); }
+  function tbExportJSON() { authDownload(`/api/productions/${state.prodId}/export/transport/json`); $('tb-export-menu').classList.add('hidden'); }
 
   function showAddTransportVehicleModal() {
     ['ntv-name','ntv-price','ntv-driver','ntv-vendor','ntv-notes','ntv-nr'].forEach(id => { const el = $(id); if(el) el.value = ''; });
@@ -4970,7 +4986,7 @@ const App = (() => {
   // ── Fuel Budget Export (KLAS7_FUEL_YYMMDD.csv) ─────────────────────────────
 
   function fuelBudgetExportCSV() {
-    window.location.href = `/api/productions/${state.prodId}/export/fuel-budget/csv`;
+    authDownload(`/api/productions/${state.prodId}/export/fuel-budget/csv`);
   }
 
   function fuelToggleExport() {
@@ -4978,12 +4994,12 @@ const App = (() => {
   }
 
   function fuelExportCSV() {
-    window.location.href = `/api/productions/${state.prodId}/export/fuel/csv`;
+    authDownload(`/api/productions/${state.prodId}/export/fuel/csv`);
     $('fuel-exp-menu').classList.add('hidden');
   }
 
   function fuelExportJSON() {
-    window.location.href = `/api/productions/${state.prodId}/export/fuel/json`;
+    authDownload(`/api/productions/${state.prodId}/export/fuel/json`);
     $('fuel-exp-menu').classList.add('hidden');
   }
 
@@ -5750,7 +5766,7 @@ const App = (() => {
 
   // ── Export ───────────────────────────────────────────────────
   function lbToggleExport() { $('lb-export-menu').classList.toggle('hidden'); }
-  function lbExportCSV()  { window.location.href = `/api/productions/${state.prodId}/export/labour/csv`; $('lb-export-menu').classList.add('hidden'); }
+  function lbExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/labour/csv`); $('lb-export-menu').classList.add('hidden'); }
 
   // ── Budget view ──────────────────────────────────────────────
   function renderLbBudget() {
@@ -6598,8 +6614,8 @@ const App = (() => {
 
   // ── Security Boats Export ───────────────────────────────────
   function sbToggleExport() { $('sb-export-menu')?.classList.toggle('hidden'); }
-  function sbExportCSV()  { window.location.href = `/api/productions/${state.prodId}/export/security-boats/csv`;  $('sb-export-menu')?.classList.add('hidden'); }
-  function sbExportJSON() { window.location.href = `/api/productions/${state.prodId}/export/security-boats/json`; $('sb-export-menu')?.classList.add('hidden'); }
+  function sbExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/security-boats/csv`);  $('sb-export-menu')?.classList.add('hidden'); }
+  function sbExportJSON() { authDownload(`/api/productions/${state.prodId}/export/security-boats/json`); $('sb-export-menu')?.classList.add('hidden'); }
 
   // ── Security Boat CRUD modals ──────────────────────────────
   function showAddSecurityBoatModal(editId) {
@@ -8454,7 +8470,7 @@ const App = (() => {
 
   // ── Export ───────────────────────────────────────────────────
   function gcToggleExport() { $('gc-export-menu').classList.toggle('hidden'); }
-  function gcExportCSV()  { window.location.href = `/api/productions/${state.prodId}/export/guard-camp/csv`; $('gc-export-menu').classList.add('hidden'); }
+  function gcExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/guard-camp/csv`); $('gc-export-menu').classList.add('hidden'); }
 
   // ── Budget view (combined: Location + Base Camp) ───────────
   async function renderGcBudget() {
@@ -9181,7 +9197,7 @@ const App = (() => {
   // ── FNB Export ────────────────────────────────────────────────
   function fnbExportCSV() {
     // Server-side simplified export (totals by category, Up to Date + Estimate)
-    window.location.href = `/api/productions/${state.prodId}/export/fnb-budget/csv`;
+    authDownload(`/api/productions/${state.prodId}/export/fnb-budget/csv`);
   }
 
 
