@@ -1834,7 +1834,7 @@ body.schedule-dragging * { cursor: col-resize !important; }
 .admin-only {
   display: none !important;
 }
-.role-admin .admin-only {
+.role-admin .admin-only:not(.view-panel) {
   display: flex !important;
 }
 /* Admin view-panel needs block display */
