@@ -17,8 +17,9 @@ COPY . .
 # Create data directory
 RUN mkdir -p /data/uploads
 
-# Expose port
+# Default port (Railway overrides via $PORT)
+ENV PORT=8080
 EXPOSE 8080
 
-# Start with gunicorn
-CMD ["gunicorn", "wsgi:app", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "120"]
+# Start with gunicorn — use shell form so $PORT is expanded
+CMD gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
