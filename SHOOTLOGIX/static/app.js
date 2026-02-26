@@ -224,11 +224,69 @@ const App = (() => {
     toastTimer = setTimeout(() => $('toast').classList.add('hidden'), 3200);
   }
 
+  // ── Auth helpers ─────────────────────────────────────────────
+  function _getAccessToken() {
+    return localStorage.getItem('access_token');
+  }
+
+  function _getRefreshToken() {
+    return localStorage.getItem('refresh_token');
+  }
+
+  async function _refreshAccessToken() {
+    const rt = _getRefreshToken();
+    if (!rt) return false;
+    try {
+      const res = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: rt }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      localStorage.setItem('access_token', data.access_token);
+      if (data.user) localStorage.setItem('user', JSON.stringify(data.user));
+      return true;
+    } catch { return false; }
+  }
+
+  function _redirectToLogin() {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+  }
+
+  function _authHeaders(extraHeaders) {
+    const h = { ...(extraHeaders || {}) };
+    const token = _getAccessToken();
+    if (token) h['Authorization'] = `Bearer ${token}`;
+    return h;
+  }
+
+  // Wrapper around fetch that adds auth header and handles 401 with token refresh
+  async function authFetch(url, opts = {}) {
+    opts.headers = _authHeaders(opts.headers);
+    let res = await fetch(url, opts);
+    if (res.status === 401) {
+      const refreshed = await _refreshAccessToken();
+      if (refreshed) {
+        opts.headers = _authHeaders(opts.headers);
+        res = await fetch(url, opts);
+      }
+      if (res.status === 401) {
+        _redirectToLogin();
+        throw new Error('Session expired');
+      }
+    }
+    return res;
+  }
+
   // ── API ────────────────────────────────────────────────────
   async function api(method, path, body) {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
     if (body !== undefined) opts.body = JSON.stringify(body);
-    const res = await fetch(path, opts);
+    const res = await authFetch(path, opts);
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error(err.error || `HTTP ${res.status}`);
@@ -437,7 +495,7 @@ const App = (() => {
       $('pdt-status').textContent = 'Uploading & parsing…';
       const form = new FormData();
       form.append('pdf', file);
-      const res = await fetch(`/api/productions/${state.prodId}/upload-pdt`, {
+      const res = await authFetch(`/api/productions/${state.prodId}/upload-pdt`, {
         method: 'POST',
         body: form,
       });
@@ -2289,7 +2347,7 @@ const App = (() => {
             ? `/api/picture-boats/${_detailBoatId}/upload-image`
             : `/api/boats/${_detailBoatId}/upload-image`;
     try {
-      const res = await fetch(endpoint, {
+      const res = await authFetch(endpoint, {
         method: 'POST', body: formData,
       });
       if (!res.ok) throw new Error('Upload failed');
@@ -8916,6 +8974,12 @@ const App = (() => {
   // ═══════════════════════════════════════════════════════════
 
   async function init() {
+    // Auth: redirect to login if no access token
+    if (!_getAccessToken()) {
+      window.location.href = '/login';
+      return;
+    }
+
     $('confirm-ok').onclick = _confirmOk;
 
     // Restore locked days from localStorage

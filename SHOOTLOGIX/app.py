@@ -8,7 +8,7 @@ import io
 import json
 import os
 import tempfile
-from flask import Flask, jsonify, request, render_template, abort, Response
+from flask import Flask, jsonify, request, render_template, abort, Response, g
 
 from database import (
     init_db, get_db,
@@ -76,6 +76,54 @@ from database import (
 
 app = Flask(__name__)
 
+# ─── Auth: Register blueprint & protect all /api/ routes ─────────────────────
+from auth.routes import auth_bp
+from auth.tokens import decode_access_token
+
+app.register_blueprint(auth_bp)
+
+# Routes that do NOT require authentication
+AUTH_EXEMPT_PREFIXES = (
+    "/api/auth/",    # Login, refresh, logout
+    "/api/health",   # Health check
+)
+
+
+@app.before_request
+def enforce_auth():
+    """
+    Global auth middleware: require a valid JWT for all /api/ routes
+    except auth endpoints and health check. Static files and HTML pages
+    are not affected.
+    """
+    path = request.path
+
+    # Only protect API routes
+    if not path.startswith("/api/"):
+        return None
+
+    # Skip auth-exempt routes
+    for prefix in AUTH_EXEMPT_PREFIXES:
+        if path.startswith(prefix):
+            return None
+
+    # Extract and validate token
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return jsonify({"error": "Authentication required", "code": "NO_TOKEN"}), 401
+
+    token = auth_header[7:]
+    payload = decode_access_token(token)
+    if payload is None:
+        return jsonify({"error": "Invalid or expired token", "code": "INVALID_TOKEN"}), 401
+
+    # Attach user info to Flask request context
+    g.user_id = payload.get("user_id", int(payload["sub"]))
+    g.nickname = payload["nickname"]
+    g.is_admin = payload.get("is_admin", False)
+
+    return None  # Continue to the route handler
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -98,6 +146,11 @@ def _row_or_404(conn, table, id_):
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/login")
+def login_page():
+    return render_template("login.html")
 
 
 # ─── Health ───────────────────────────────────────────────────────────────────
