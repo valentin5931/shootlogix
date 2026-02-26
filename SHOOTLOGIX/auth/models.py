@@ -12,8 +12,9 @@ import os
 import sqlite3
 from contextlib import contextmanager
 
-# Re-use the same DB path as database.py
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "shootlogix.db")
+# Re-use the same DB path as database.py (respects DATABASE_PATH env var)
+_default_db = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "shootlogix.db")
+DB_PATH = os.environ.get("DATABASE_PATH", _default_db)
 
 # Valid membership roles
 VALID_ROLES = ("ADMIN", "UNIT", "TRANSPO", "READER")
@@ -45,72 +46,80 @@ def migrate_auth_tables():
     All existing data is preserved.
     """
     with get_auth_db() as conn:
-        # --- Evolve users table ---
+        # --- Evolve users table (only if it already exists) ---
         user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
 
-        # Add 'nickname' column (unique, used for login instead of email)
-        if "nickname" not in user_cols:
-            conn.execute("ALTER TABLE users ADD COLUMN nickname TEXT")
-            # Backfill nickname from name for any existing users
-            conn.execute("UPDATE users SET nickname = name WHERE nickname IS NULL")
-            print("Auth migration: added users.nickname")
+        if not user_cols:
+            # Fresh deploy: users table not created yet. init_db() handles it.
+            print("Auth migration: users table not yet created — skipping ALTER migrations")
+        else:
+            # Add 'nickname' column (unique, used for login instead of email)
+            if "nickname" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN nickname TEXT")
+                conn.execute("UPDATE users SET nickname = name WHERE nickname IS NULL")
+                print("Auth migration: added users.nickname")
 
-        # Add 'is_admin' column (global admin flag)
-        if "is_admin" not in user_cols:
-            conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
-            print("Auth migration: added users.is_admin")
+            # Add 'is_admin' column (global admin flag)
+            if "is_admin" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+                print("Auth migration: added users.is_admin")
 
-        # Add 'created_at' column
-        if "created_at" not in user_cols:
-            conn.execute(
-                "ALTER TABLE users ADD COLUMN created_at TEXT DEFAULT (datetime('now'))"
-            )
-            print("Auth migration: added users.created_at")
+            # Add 'created_at' column
+            if "created_at" not in user_cols:
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN created_at TEXT DEFAULT (datetime('now'))"
+                )
+                print("Auth migration: added users.created_at")
 
         # --- Create project_memberships table ---
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS project_memberships (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                production_id   INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
-                role            TEXT NOT NULL DEFAULT 'READER',
-                created_at      TEXT DEFAULT (datetime('now')),
-                UNIQUE(user_id, production_id)
-            )
-        """)
+        # Only create tables with FK references to users/productions if those tables exist
+        tables = [r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()]
 
-        # --- Create refresh_tokens table ---
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS refresh_tokens (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                token       TEXT NOT NULL UNIQUE,
-                expires_at  TEXT NOT NULL,
-                created_at  TEXT DEFAULT (datetime('now'))
-            )
-        """)
+        if "users" in tables:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS project_memberships (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    production_id   INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+                    role            TEXT NOT NULL DEFAULT 'READER',
+                    created_at      TEXT DEFAULT (datetime('now')),
+                    UNIQUE(user_id, production_id)
+                )
+            """)
 
-        # Create indexes for performance
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_project_memberships_user
-            ON project_memberships(user_id)
-        """)
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_project_memberships_production
-            ON project_memberships(production_id)
-        """)
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user
-            ON refresh_tokens(user_id)
-        """)
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token
-            ON refresh_tokens(token)
-        """)
-        conn.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname
-            ON users(nickname)
-        """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS refresh_tokens (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    token       TEXT NOT NULL UNIQUE,
+                    expires_at  TEXT NOT NULL,
+                    created_at  TEXT DEFAULT (datetime('now'))
+                )
+            """)
+
+            # Create indexes for performance
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_project_memberships_user
+                ON project_memberships(user_id)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_project_memberships_production
+                ON project_memberships(production_id)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user
+                ON refresh_tokens(user_id)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token
+                ON refresh_tokens(token)
+            """)
+            conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname
+                ON users(nickname)
+            """)
 
     print("Auth migration: complete")
 
