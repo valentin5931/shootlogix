@@ -2882,8 +2882,14 @@ if __name__ == "__main__":
     import os
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     init_db()
+    # Auth: run auth schema migrations (adds nickname, is_admin, project_memberships, etc.)
+    from auth.models import migrate_auth_tables
+    migrate_auth_tables()
     from data_loader import bootstrap
     bootstrap()
+    # Auth: seed default users and project memberships
+    from auth.seed import seed_auth_data
+    seed_auth_data()
     # Auto-match boat photos from BATEAUX source images and uploads folder
     _ensure_boat_images_symlink()
     n = _auto_match_boat_photos()
