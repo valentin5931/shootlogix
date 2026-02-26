@@ -6491,6 +6491,10 @@ const App = (() => {
     const sites = state.locationSites || [];
     const schedules = state.locationSchedules || [];
     const dates = _locDates();
+
+    // PDT lookup for tooltips on day headers
+    const pdtByDate = {};
+    state.shootingDays.forEach(day => { pdtByDate[day.date] = day; });
     // Build lookup: key = "LOCNAME|DATE" -> {status, locked}
     const lookup = {};
     schedules.forEach(s => {
@@ -6566,7 +6570,10 @@ const App = (() => {
                 const day = dt.getDate();
                 const wd = dt.toLocaleDateString('en-US', { weekday: 'short' }).slice(0,2);
                 const isLocked = lockedDates.has(d);
-                return `<th class="loc-th-date ${isLocked ? 'loc-locked' : ''}" style="min-width:32px;text-align:center">
+                const hasPdt = !!pdtByDate[d];
+                return `<th class="loc-th-date ${isLocked ? 'loc-locked' : ''} ${hasPdt ? 'loc-has-pdt' : ''}" style="min-width:32px;text-align:center;position:relative"
+                  onmouseenter="App.showPDTTooltip(event,'${d}')"
+                  onmouseleave="App.hidePDTTooltip()">
                   <div style="font-size:.6rem;color:var(--text-4)">${wd}</div>
                   <div style="font-size:.7rem">${day}</div>
                 </th>`;
@@ -7073,6 +7080,10 @@ const App = (() => {
     const gdLookup = {};
     guardSchedules.forEach(g => { gdLookup[`${g.location_name}|${g.date}`] = g; });
 
+    // PDT lookup for day header tooltips
+    const gdPdtByDate = {};
+    state.shootingDays.forEach(day => { gdPdtByDate[day.date] = day; });
+
     // Compute totals per location
     const byLoc = {};
     guardSchedules.forEach(g => {
@@ -7151,7 +7162,11 @@ const App = (() => {
                 const day = dt.getDate();
                 const wd = dt.toLocaleDateString('en-US', { weekday: 'short' }).slice(0,2);
                 const isLocked = !!state.guardLocLocked[d];
-                return `<th class="loc-th-date" style="min-width:32px;text-align:center;cursor:pointer${isLocked ? ';background:rgba(34,197,94,.15)' : ''}" onclick="App.gdlToggleLock('${d}')">
+                const hasPdt = !!gdPdtByDate[d];
+                return `<th class="loc-th-date ${hasPdt ? 'loc-has-pdt' : ''}" style="min-width:32px;text-align:center;cursor:pointer;position:relative${isLocked ? ';background:rgba(34,197,94,.15)' : ''}"
+                  onclick="App.gdlToggleLock('${d}')"
+                  onmouseenter="App.showPDTTooltip(event,'${d}')"
+                  onmouseleave="App.hidePDTTooltip()">
                   <div style="font-size:.6rem;color:var(--text-4)">${wd}</div>
                   <div style="font-size:.7rem">${day}</div>
                   ${isLocked ? '<div style="font-size:.5rem;color:var(--green)">&#x1F512;</div>' : ''}

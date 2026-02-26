@@ -1041,6 +1041,16 @@ select.form-control { cursor: pointer; }
   color: var(--accent);
   line-height: 1;
 }
+.loc-th-date.loc-has-pdt::after {
+  content: '•';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.55rem;
+  color: var(--accent);
+  line-height: 1;
+}
 
 .role-name-cell {
   width: 180px;
