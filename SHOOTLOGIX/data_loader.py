@@ -342,6 +342,10 @@ def bootstrap():
     _sync_pdt_locations(prod_id)
     _migrate_boat_meeting_feb25(prod_id)
     _migrate_boat_update_feb27(prod_id)
+
+    # Verify settings were persisted
+    verify = get_setting("klas7_production_id")
+    _log(f"ShootLogix: bootstrap complete. prod_id_setting={verify}, DB_PATH={_dbp}, size={os.path.getsize(_dbp) if os.path.exists(_dbp) else 'N/A'}")
     return prod_id
 
 
