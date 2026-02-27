@@ -6,6 +6,9 @@ import os
 import sqlite3
 import json
 import math
+import shutil
+import glob as glob_mod
+from datetime import datetime
 
 from database import (
     get_db, get_setting, set_setting,
@@ -222,16 +225,49 @@ def _seed_picture_boats(prod_id):
         print(f"  Seeded 4 Picture Boats functions (YELLOW/RED/NEUTRAL/EXILE)")
 
 
+def _backup_db():
+    """Create a timestamped backup of the database before destructive migrations.
+    Keeps the 5 most recent backups."""
+    db_path = os.path.join(os.path.dirname(__file__), "shootlogix.db")
+    if not os.path.exists(db_path):
+        return
+    backup_dir = os.path.join(os.path.dirname(__file__), "backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest = os.path.join(backup_dir, f"shootlogix_backup_{ts}.db")
+    shutil.copy2(db_path, dest)
+    print(f"  DB backup saved: {dest}")
+    # Keep only 5 most recent backups
+    backups = sorted(glob_mod.glob(os.path.join(backup_dir, "shootlogix_backup_*.db")))
+    for old in backups[:-5]:
+        os.remove(old)
+
+
+def _needs_destructive_migration():
+    """Check if any destructive migration is pending (flag not yet set)."""
+    flags = ["pdt_full_seed_v1", "boat_meeting_feb25_v1", "boat_update_feb27_v1"]
+    return any(not get_setting(f) for f in flags)
+
+
 def bootstrap():
     """
     Called on first launch.
     Creates the KLAS7 production and migrates data from BATEAUX if not already done.
     Always ensures picture boats functions are seeded.
+
+    MIGRATION SAFETY RULES:
+    1. Every destructive migration MUST use a setting flag (get_setting/set_setting)
+    2. _backup_db() is called automatically before any pending destructive migration
+    3. NEVER delete user-created data — only ADD or UPDATE with merge logic
+    4. Preserve day_overrides when updating assignments
     """
     existing_prod_id = get_setting("klas7_production_id")
     if existing_prod_id:
         prod_id = int(existing_prod_id)
         print(f"ShootLogix: KLAS7 production already exists (id={prod_id})")
+        # Backup DB before any destructive migration
+        if _needs_destructive_migration():
+            _backup_db()
         _seed_picture_boats(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
@@ -240,6 +276,10 @@ def bootstrap():
         _migrate_boat_meeting_feb25(prod_id)
         _migrate_boat_update_feb27(prod_id)
         return prod_id
+
+    # First-time setup — backup before destructive migrations
+    if _needs_destructive_migration():
+        _backup_db()
 
     print("ShootLogix: bootstrapping KLAS7 production…")
     prod_id = create_production({
