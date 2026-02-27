@@ -16,6 +16,7 @@ from database import (
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
     create_fnb_category, get_fnb_categories,
+    create_shooting_day, create_event, get_shooting_days,
     working_days,
 )
 
@@ -235,6 +236,7 @@ def bootstrap():
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
+        _seed_pdt_days(prod_id)
         _migrate_boat_meeting_feb25(prod_id)
         _migrate_boat_update_feb27(prod_id)
         return prod_id
@@ -270,6 +272,7 @@ def bootstrap():
     _seed_location_sites(prod_id)
     _seed_guard_posts(prod_id)
     _seed_fnb_categories(prod_id)
+    _seed_pdt_days(prod_id)
     _migrate_boat_meeting_feb25(prod_id)
     _migrate_boat_update_feb27(prod_id)
     return prod_id
@@ -698,6 +701,44 @@ def _find_or_create_boat(conn, prod_id, canonical_name, daily_rate):
             (prod_id, canonical_name, daily_rate)
         )
         return cur.lastrowid
+
+
+def _seed_pdt_days(prod_id):
+    """Seed the 32 shooting days with dates if they don't exist yet.
+    Uses pdf_parser fallback (blank days with correct dates).
+    Users can then edit them in the UI or upload a new PDF."""
+    existing = get_shooting_days(prod_id)
+    if existing:
+        return  # Already have PDT data
+
+    print("  Seeding 32 PDT shooting days...")
+    try:
+        from pdf_parser import parse_pdt_pdf
+        days = parse_pdt_pdf()  # Will use fallback if PDF not found
+    except Exception as e:
+        print(f"  PDT seed: parser error ({e}), using inline dates")
+        # Inline fallback: 32 days from Mar 25 to Apr 25
+        days = []
+        from datetime import date, timedelta
+        start = date(2026, 3, 25)
+        for i in range(32):
+            d = start + timedelta(days=i)
+            days.append({
+                'day_number': i + 1,
+                'date': d.isoformat(),
+                'status': 'brouillon',
+                'events': [{'event_type': 'game', 'sort_order': 0}],
+            })
+
+    for d in days:
+        events = d.pop('events', [])
+        d['production_id'] = prod_id
+        day_id = create_shooting_day(d)
+        for ev in events:
+            ev['shooting_day_id'] = day_id
+            create_event(ev)
+
+    print(f"  Seeded {len(days)} PDT shooting days")
 
 
 def _migrate_boat_meeting_feb25(prod_id):
