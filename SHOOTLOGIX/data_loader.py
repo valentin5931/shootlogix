@@ -703,42 +703,358 @@ def _find_or_create_boat(conn, prod_id, canonical_name, daily_rate):
         return cur.lastrowid
 
 
+PDT_SEED_DATA = [
+    # D1 — 2026-03-25 Wed
+    {'day_number': 1, 'date': '2026-03-25', 'location': 'BOYA ARENA', 'game_name': 'OPENING SEQ',
+     'heure_animateur': '11H30', 'heure_game': '12H30',
+     'maree_hauteur': '1.3', 'maree_statut': 'D', 'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'BOYA ARENA', 'name': 'OPENING SEQ',
+          'heure_host': '11H30', 'heure_event': '12H30',
+          'maree_hauteur': '1.3', 'maree_statut': 'D', 'sort_order': 0},
+     ]},
+    # D2 — 2026-03-26 Thu
+    {'day_number': 2, 'date': '2026-03-26', 'location': 'test2', 'game_name': 'POIDS PARTAGES',
+     'heure_rehearsal': '9H15', 'heure_animateur': '11H00', 'heure_game': '12H00',
+     'heure_depart_candidats': '10H00',
+     'maree_hauteur': '2.45', 'maree_statut': 'D', 'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'test2', 'name': 'POIDS PARTAGES',
+          'heure_rehearsal': '9H15', 'heure_host': '11H00', 'heure_event': '12H00',
+          'heure_depart': '10H00',
+          'maree_hauteur': '2.45', 'maree_statut': 'D', 'sort_order': 0},
+     ]},
+    # D3 — 2026-03-27 Fri
+    {'day_number': 3, 'date': '2026-03-27', 'location': 'TESTING', 'game_name': 'SOUS PRESSION',
+     'conseil_soir': 1, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'TESTING', 'name': 'SOUS PRESSION', 'sort_order': 0},
+         {'event_type': 'council', 'heure_event': '20H50', 'heure_depart': '18H15', 'sort_order': 1},
+     ]},
+    # D4 — 2026-03-28 Sat
+    {'day_number': 4, 'date': '2026-03-28', 'game_name': 'FLORAL',
+     'heure_rehearsal': '19H15', 'heure_animateur': '11H30', 'heure_game': '12H00',
+     'heure_depart_candidats': '10H45',
+     'maree_hauteur': '3.2', 'maree_statut': 'E', 'conseil_soir': 1, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'name': 'FLORAL',
+          'heure_rehearsal': '19H15', 'heure_host': '11H30', 'heure_event': '12H00',
+          'heure_depart': '10H45',
+          'maree_hauteur': '3.2', 'maree_statut': 'E', 'sort_order': 0},
+         {'event_type': 'council', 'location': 'CONTADORA',
+          'heure_rehearsal': '19H00', 'heure_depart': '18H00', 'sort_order': 1},
+     ]},
+    # D5 — 2026-03-29 Sun
+    {'day_number': 5, 'date': '2026-03-29', 'game_name': 'OFF GAME',
+     'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'off', 'name': 'OFF GAME', 'sort_order': 0},
+     ]},
+    # D6 — 2026-03-30 Mon
+    {'day_number': 6, 'date': '2026-03-30', 'location': 'CHAPERA (Tbc)', 'game_name': 'DOS A DOS',
+     'heure_rehearsal': '9H15', 'heure_animateur': '10H45', 'heure_game': '11H30',
+     'maree_hauteur': '2.4', 'maree_statut': 'M', 'conseil_soir': 1, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'CHAPERA (Tbc)', 'name': 'DOS A DOS',
+          'heure_rehearsal': '9H15', 'heure_host': '10H45', 'heure_event': '11H30',
+          'maree_hauteur': '2.4', 'maree_statut': 'M', 'sort_order': 0},
+         {'event_type': 'council', 'location': 'CONTADORA',
+          'heure_rehearsal': '19H00', 'heure_depart': '18H00', 'sort_order': 1},
+     ]},
+    # D7 — 2026-03-31 Tue
+    {'day_number': 7, 'date': '2026-03-31', 'location': 'MOGO MOGO 1', 'game_name': 'JONCTION - GECKOS',
+     'heure_rehearsal': '9H30', 'heure_animateur': '11H15', 'heure_game': '11H45',
+     'heure_depart_candidats': '13H00',
+     'maree_hauteur': '2', 'maree_statut': 'M', 'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'MOGO MOGO 1', 'name': 'JONCTION - GECKOS',
+          'heure_rehearsal': '9H30', 'heure_host': '11H15', 'heure_event': '11H45',
+          'heure_depart': '13H00',
+          'maree_hauteur': '2', 'maree_statut': 'M', 'sort_order': 0},
+     ]},
+    # D8 — 2026-04-01 Wed
+    {'day_number': 8, 'date': '2026-04-01', 'location': 'MOGO 2 A', 'game_name': 'AVEUGLES',
+     'heure_rehearsal': '9H30', 'heure_animateur': '11H15', 'heure_game': '12H00',
+     'maree_hauteur': '1.6', 'maree_statut': 'M', 'conseil_soir': 1, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'MOGO 2 A', 'name': 'AVEUGLES',
+          'heure_rehearsal': '9H30', 'heure_host': '11H15', 'heure_event': '12H00',
+          'maree_hauteur': '1.6', 'maree_statut': 'M', 'sort_order': 0},
+         {'event_type': 'council', 'location': 'CONTADORA',
+          'heure_rehearsal': '19H00', 'heure_depart': '18H00', 'sort_order': 1},
+     ]},
+    # D9 — 2026-04-02 Thu
+    {'day_number': 9, 'date': '2026-04-02', 'location': 'MOGO 2 F', 'game_name': 'ARENA',
+     'heure_animateur': '12H30', 'heure_game': '8H45',
+     'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'MOGO 2 F', 'name': 'ARENA',
+          'heure_host': '12H30', 'heure_event': '8H45', 'sort_order': 0},
+         {'event_type': 'arena', 'location': 'SABOGA',
+          'heure_event': '13H30', 'sort_order': 1},
+     ]},
+    # D10 — 2026-04-03 Fri
+    {'day_number': 10, 'date': '2026-04-03', 'location': 'SAN AUGUSTIN', 'game_name': 'RESERVES',
+     'heure_rehearsal': '10H00', 'heure_animateur': '12H00', 'heure_game': '12H45',
+     'heure_depart_candidats': '14H00',
+     'maree_hauteur': '1.16', 'maree_statut': 'M', 'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'SAN AUGUSTIN', 'name': 'RESERVES',
+          'heure_rehearsal': '10H00', 'heure_host': '12H00', 'heure_event': '12H45',
+          'heure_depart': '14H00',
+          'maree_hauteur': '1.16', 'maree_statut': 'M', 'sort_order': 0},
+     ]},
+    # D11 — 2026-04-04 Sat
+    {'day_number': 11, 'date': '2026-04-04', 'location': 'CONTADORA', 'game_name': 'COUNCIL N°4',
+     'heure_rehearsal': '19H15', 'heure_game': '20H00',
+     'heure_depart_candidats': '18H00',
+     'conseil_soir': 1, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'council', 'location': 'CONTADORA', 'name': 'COUNCIL N°4',
+          'heure_rehearsal': '19H15', 'heure_event': '20H00',
+          'heure_depart': '18H00', 'sort_order': 0},
+     ]},
+    # D12 — 2026-04-05 Sun
+    {'day_number': 12, 'date': '2026-04-05', 'game_name': 'OFF GAME',
+     'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'off', 'name': 'OFF GAME', 'sort_order': 0},
+     ]},
+    # D13 — 2026-04-06 Mon
+    {'day_number': 13, 'date': '2026-04-06', 'game_name': 'RADEAUX',
+     'heure_rehearsal': '10H', 'heure_animateur': '11H30', 'heure_game': '12H',
+     'heure_depart_candidats': '13H30',
+     'maree_hauteur': '0.44', 'maree_statut': 'E', 'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'name': 'RADEAUX',
+          'heure_rehearsal': '10H', 'heure_host': '11H30', 'heure_event': '12H',
+          'heure_depart': '13H30',
+          'maree_hauteur': '0.44', 'maree_statut': 'E', 'sort_order': 0},
+     ]},
+    # D14 — 2026-04-07 Tue
+    {'day_number': 14, 'date': '2026-04-07', 'location': 'MARTIN PEREZ', 'game_name': 'BELIERS',
+     'heure_rehearsal': '10H00', 'heure_animateur': '11H30', 'heure_game': '12H00',
+     'maree_hauteur': '0.9', 'maree_statut': 'D', 'conseil_soir': 1, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'MARTIN PEREZ', 'name': 'BELIERS',
+          'heure_rehearsal': '10H00', 'heure_host': '11H30', 'heure_event': '12H00',
+          'maree_hauteur': '0.9', 'maree_statut': 'D', 'sort_order': 0},
+         {'event_type': 'council', 'location': 'CONTADORA',
+          'heure_rehearsal': '19H00', 'heure_depart': '18H00', 'sort_order': 1},
+     ]},
+    # D15 — 2026-04-08 Wed
+    {'day_number': 15, 'date': '2026-04-08', 'location': 'MOGO 2H', 'game_name': 'COURSE PUZZLE',
+     'heure_rehearsal': '9H30', 'heure_animateur': '11H00', 'heure_game': '11H30',
+     'heure_depart_candidats': '10H15',
+     'maree_hauteur': '1.65', 'maree_statut': 'D', 'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'MOGO 2H', 'name': 'COURSE PUZZLE',
+          'heure_rehearsal': '9H30', 'heure_host': '11H00', 'heure_event': '11H30',
+          'heure_depart': '10H15',
+          'maree_hauteur': '1.65', 'maree_statut': 'D', 'sort_order': 0},
+     ]},
+    # D16 — 2026-04-09 Thu
+    {'day_number': 16, 'date': '2026-04-09', 'game_name': 'REPARTITION',
+     'heure_rehearsal': '10H00', 'heure_animateur': '11H30', 'heure_game': '12H00',
+     'heure_depart_candidats': '14H00',
+     'maree_hauteur': '1.9', 'maree_statut': 'D', 'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'name': 'REPARTITION',
+          'heure_rehearsal': '10H00', 'heure_host': '11H30', 'heure_event': '12H00',
+          'heure_depart': '14H00',
+          'maree_hauteur': '1.9', 'maree_statut': 'D', 'sort_order': 0},
+     ]},
+    # D17 — 2026-04-10 Fri
+    {'day_number': 17, 'date': '2026-04-10', 'location': 'CONTADORA', 'game_name': 'COUNCIL N°6',
+     'heure_rehearsal': '19H15', 'heure_game': '20H00',
+     'heure_depart_candidats': '18H00',
+     'conseil_soir': 1, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'council', 'location': 'CONTADORA', 'name': 'COUNCIL N°6',
+          'heure_rehearsal': '19H15', 'heure_event': '20H00',
+          'heure_depart': '18H00', 'sort_order': 0},
+     ]},
+    # D18 — 2026-04-11 Sat
+    {'day_number': 18, 'date': '2026-04-11', 'location': 'MOGO 1 C E', 'game_name': 'CAGE EVASION',
+     'conseil_soir': 1, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'MOGO 1 C E', 'name': 'CAGE EVASION',
+          'heure_event': '11H30', 'sort_order': 0},
+         {'event_type': 'council', 'name': 'CONSEIL SUR X2: 12H30', 'sort_order': 1},
+         {'event_type': 'arena', 'location': 'SABOGA',
+          'heure_event': '15H30', 'sort_order': 2},
+     ]},
+    # D19 — 2026-04-12 Sun
+    {'day_number': 19, 'date': '2026-04-12', 'game_name': 'OFF GAME',
+     'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'off', 'name': 'OFF GAME', 'sort_order': 0},
+     ]},
+    # D20 — 2026-04-13 Mon
+    {'day_number': 20, 'date': '2026-04-13', 'game_name': 'COMBATTANTS',
+     'heure_rehearsal': '10H15', 'heure_animateur': '12H00', 'heure_game': '12H30',
+     'heure_depart_candidats': '13H30',
+     'maree_hauteur': '3.13', 'maree_statut': 'E', 'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'name': 'COMBATTANTS',
+          'heure_rehearsal': '10H15', 'heure_host': '12H00', 'heure_event': '12H30',
+          'heure_depart': '13H30',
+          'maree_hauteur': '3.13', 'maree_statut': 'E', 'sort_order': 0},
+     ]},
+    # D21 — 2026-04-14 Tue
+    {'day_number': 21, 'date': '2026-04-14', 'location': 'CONTADORA', 'game_name': 'COUNCIL N°7',
+     'heure_rehearsal': '19H15', 'heure_game': '20H00',
+     'heure_depart_candidats': '18H00',
+     'conseil_soir': 1, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'council', 'location': 'CONTADORA', 'name': 'COUNCIL N°7',
+          'heure_rehearsal': '19H15', 'heure_event': '20H00',
+          'heure_depart': '18H00', 'sort_order': 0},
+     ]},
+    # D22 — 2026-04-15 Wed
+    {'day_number': 22, 'date': '2026-04-15', 'location': 'MOGO 2 F',
+     'heure_rehearsal': '9H15', 'heure_animateur': '10H45', 'heure_game': '11H15',
+     'heure_depart_candidats': '10H00',
+     'maree_hauteur': '2.25', 'maree_statut': 'M', 'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'MOGO 2 F',
+          'heure_rehearsal': '9H15', 'heure_host': '10H45', 'heure_event': '11H15',
+          'heure_depart': '10H00',
+          'maree_hauteur': '2.25', 'maree_statut': 'M', 'sort_order': 0},
+     ]},
+    # D23 — 2026-04-16 Thu
+    {'day_number': 23, 'date': '2026-04-16', 'location': 'MOGO 1 I', 'game_name': 'EQUILIBRE S/EAU',
+     'heure_rehearsal': '12H15', 'heure_animateur': '14H00', 'heure_game': '14H30',
+     'heure_depart_candidats': '13H30',
+     'maree_hauteur': '4.13', 'maree_statut': 'E', 'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'MOGO 1 I', 'name': 'EQUILIBRE S/EAU',
+          'heure_rehearsal': '12H15', 'heure_host': '14H00', 'heure_event': '14H30',
+          'heure_depart': '13H30',
+          'maree_hauteur': '4.13', 'maree_statut': 'E', 'sort_order': 0},
+     ]},
+    # D24 — 2026-04-17 Fri
+    {'day_number': 24, 'date': '2026-04-17', 'location': 'CONTADORA', 'game_name': 'COUNCIL N°8',
+     'heure_game': '19H45',
+     'heure_depart_candidats': '18H00',
+     'conseil_soir': 1, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'council', 'location': 'CONTADORA', 'name': 'COUNCIL N°8',
+          'heure_event': '19H45',
+          'heure_depart': '18H00', 'sort_order': 0},
+     ]},
+    # D25 — 2026-04-18 Sat
+    {'day_number': 25, 'date': '2026-04-18', 'game_name': 'COURSE MÉMOIRE',
+     'heure_game': '11H30',
+     'maree_hauteur': '0.2', 'maree_statut': 'M', 'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'name': 'COURSE MÉMOIRE',
+          'heure_event': '11H30',
+          'maree_hauteur': '0.2', 'maree_statut': 'M', 'sort_order': 0},
+         {'event_type': 'arena', 'location': 'SABOGA',
+          'heure_event': '15H30', 'sort_order': 1},
+     ]},
+    # D26 — 2026-04-19 Sun
+    {'day_number': 26, 'date': '2026-04-19', 'game_name': 'OFF GAME',
+     'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'off', 'name': 'OFF GAME', 'sort_order': 0},
+     ]},
+    # D27 — 2026-04-20 Mon
+    {'day_number': 27, 'date': '2026-04-20', 'location': 'CHAPERA (Tbc)', 'game_name': 'ESPALIERS',
+     'heure_rehearsal': '9H30', 'heure_game': '11H30',
+     'conseil_soir': 1, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'CHAPERA (Tbc)', 'name': 'ESPALIERS',
+          'heure_rehearsal': '9H30', 'heure_event': '11H30', 'sort_order': 0},
+         {'event_type': 'council', 'location': 'CONTADORA',
+          'heure_rehearsal': '19H00', 'heure_depart': '18H00', 'sort_order': 1},
+     ]},
+    # D28 — 2026-04-21 Tue
+    {'day_number': 28, 'date': '2026-04-21', 'location': 'CHAPERA (Tbc)', 'game_name': 'DISQUES',
+     'heure_game': '11H30',
+     'maree_hauteur': '0.32', 'maree_statut': 'D', 'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'CHAPERA (Tbc)', 'name': 'DISQUES',
+          'heure_event': '11H30',
+          'maree_hauteur': '0.32', 'maree_statut': 'D', 'sort_order': 0},
+         {'event_type': 'arena', 'location': 'SABOGA',
+          'heure_event': '15H30', 'sort_order': 1},
+     ]},
+    # D29 — 2026-04-22 Wed
+    {'day_number': 29, 'date': '2026-04-22', 'game_name': 'COUNCIL N°10',
+     'heure_animateur': '10H30', 'heure_game': '11H00',
+     'maree_hauteur': '1.65', 'maree_statut': 'D', 'conseil_soir': 1, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'name': 'COUNCIL N°10',
+          'heure_host': '10H30', 'heure_event': '11H00',
+          'maree_hauteur': '1.65', 'maree_statut': 'D', 'sort_order': 0},
+         {'event_type': 'council', 'location': 'CONTADORA',
+          'heure_rehearsal': '19H00', 'heure_depart': '18H00', 'sort_order': 1},
+     ]},
+    # D30 — 2026-04-23 Thu
+    {'day_number': 30, 'date': '2026-04-23', 'location': 'MOGO 2 F', 'game_name': 'ARENA',
+     'heure_game': '10H00',
+     'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'location': 'MOGO 2 F', 'name': 'ARENA',
+          'heure_event': '10H00', 'sort_order': 0},
+     ]},
+    # D31 — 2026-04-24 Fri
+    {'day_number': 31, 'date': '2026-04-24',
+     'heure_rehearsal': '9H50', 'heure_animateur': '10H30', 'heure_game': '9H15',
+     'conseil_soir': 0, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game',
+          'heure_rehearsal': '9H50', 'heure_host': '10H30', 'heure_event': '9H15',
+          'sort_order': 0},
+     ]},
+    # D32 — 2026-04-25 Sat
+    {'day_number': 32, 'date': '2026-04-25', 'game_name': 'COUNCIL N°11',
+     'heure_rehearsal': '9H30', 'heure_animateur': '10H00', 'heure_game': '9H00',
+     'maree_hauteur': '3.35', 'maree_statut': 'M', 'conseil_soir': 1, 'status': 'brouillon',
+     'events': [
+         {'event_type': 'game', 'name': 'COUNCIL N°11',
+          'heure_rehearsal': '9H30', 'heure_host': '10H00', 'heure_event': '9H00',
+          'maree_hauteur': '3.35', 'maree_statut': 'M', 'sort_order': 0},
+         {'event_type': 'council', 'location': 'CONTADORA',
+          'heure_rehearsal': '19H00', 'heure_depart': '18H00', 'sort_order': 1},
+     ]},
+]
+
+
 def _seed_pdt_days(prod_id):
-    """Seed the 32 shooting days with dates if they don't exist yet.
-    Uses pdf_parser fallback (blank days with correct dates).
-    Users can then edit them in the UI or upload a new PDF."""
+    """Seed the 32 shooting days with full schedule data.
+    If blank days already exist (from previous seed), replaces them with complete data.
+    Uses migration flag pdt_full_seed_v1 to avoid re-running."""
+
+    # If already migrated to full data, skip
+    if get_setting("pdt_full_seed_v1"):
+        return
+
     existing = get_shooting_days(prod_id)
     if existing:
-        return  # Already have PDT data
+        # Delete existing blank days to replace with full data
+        print("  Replacing blank PDT days with full schedule data...")
+        with get_db() as conn:
+            day_ids = [d['id'] for d in existing]
+            for did in day_ids:
+                conn.execute("DELETE FROM shooting_day_events WHERE shooting_day_id=?", (did,))
+                conn.execute("DELETE FROM shooting_days WHERE id=?", (did,))
 
-    print("  Seeding 32 PDT shooting days...")
-    try:
-        from pdf_parser import parse_pdt_pdf
-        days = parse_pdt_pdf()  # Will use fallback if PDF not found
-    except Exception as e:
-        print(f"  PDT seed: parser error ({e}), using inline dates")
-        # Inline fallback: 32 days from Mar 25 to Apr 25
-        days = []
-        from datetime import date, timedelta
-        start = date(2026, 3, 25)
-        for i in range(32):
-            d = start + timedelta(days=i)
-            days.append({
-                'day_number': i + 1,
-                'date': d.isoformat(),
-                'status': 'brouillon',
-                'events': [{'event_type': 'game', 'sort_order': 0}],
-            })
-
-    for d in days:
-        events = d.pop('events', [])
-        d['production_id'] = prod_id
-        day_id = create_shooting_day(d)
+    print("  Seeding 32 PDT shooting days with full schedule data...")
+    for d in PDT_SEED_DATA:
+        events = d.get('events', [])
+        day_data = {k: v for k, v in d.items() if k != 'events'}
+        day_data['production_id'] = prod_id
+        day_id = create_shooting_day(day_data)
         for ev in events:
-            ev['shooting_day_id'] = day_id
-            create_event(ev)
+            ev_copy = dict(ev)
+            ev_copy['shooting_day_id'] = day_id
+            create_event(ev_copy)
 
-    print(f"  Seeded {len(days)} PDT shooting days")
+    set_setting("pdt_full_seed_v1", "1")
+    print(f"  Seeded {len(PDT_SEED_DATA)} PDT shooting days with full data")
 
 
 def _migrate_boat_meeting_feb25(prod_id):
