@@ -271,6 +271,14 @@ def bootstrap():
     3. NEVER delete user-created data — only ADD or UPDATE with merge logic
     4. Preserve day_overrides when updating assignments
     """
+    from database import DB_PATH as _dbp
+    _log(f"ShootLogix: DB_PATH={_dbp} exists={os.path.exists(_dbp)} size={os.path.getsize(_dbp) if os.path.exists(_dbp) else 0}")
+    # Check /data directory
+    if os.path.exists('/data'):
+        _log(f"ShootLogix: /data contents={os.listdir('/data')}")
+    else:
+        _log("ShootLogix: /data directory does NOT exist!")
+
     existing_prod_id = get_setting("klas7_production_id")
     if existing_prod_id:
         prod_id = int(existing_prod_id)
