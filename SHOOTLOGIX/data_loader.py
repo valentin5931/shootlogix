@@ -3,12 +3,18 @@ data_loader.py — ShootLogix Phase 1
 Bootstrap + migration from BATEAUX fleet.db.
 """
 import os
+import sys
 import sqlite3
 import json
 import math
 import shutil
 import glob as glob_mod
 from datetime import datetime
+
+
+def _log(msg):
+    """Print with immediate flush so Railway logs capture output."""
+    print(msg, flush=True)
 
 from database import (
     get_db, get_setting, set_setting,
@@ -268,7 +274,14 @@ def bootstrap():
     existing_prod_id = get_setting("klas7_production_id")
     if existing_prod_id:
         prod_id = int(existing_prod_id)
-        print(f"ShootLogix: KLAS7 production already exists (id={prod_id})")
+        # Diagnostic: log migration flag status on every startup
+        flags = {
+            "pdt_full_seed_v1": get_setting("pdt_full_seed_v1"),
+            "pdt_location_sync_v1": get_setting("pdt_location_sync_v1"),
+            "boat_meeting_feb25_v1": get_setting("boat_meeting_feb25_v1"),
+            "boat_update_feb27_v1": get_setting("boat_update_feb27_v1"),
+        }
+        _log(f"ShootLogix: KLAS7 prod={prod_id} | flags={flags}")
         # Backup DB before any destructive migration
         if _needs_destructive_migration():
             _backup_db()

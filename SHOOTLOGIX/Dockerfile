@@ -14,6 +14,7 @@ COPY . .
 RUN mkdir -p /data/uploads
 
 ENV PORT=8080
+ENV PYTHONUNBUFFERED=1
 
 # Use gunicorn config file which reads PORT from environment in Python
 # This avoids any shell variable expansion issues
