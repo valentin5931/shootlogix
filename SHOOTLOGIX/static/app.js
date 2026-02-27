@@ -2040,7 +2040,13 @@ const App = (() => {
     days.forEach(d => { dailyCnt[_localDk(d)] = 0; });
 
     // ── Function rows ──
-    const rowsHTML = state.functions.map(func => {
+    const gOrder = _groupOrder('boats');
+    const sortedFuncs = [...state.functions].sort((a, b) => {
+      const ga = gOrder.indexOf(a.function_group || 'Special');
+      const gb = gOrder.indexOf(b.function_group || 'Special');
+      return (ga === -1 ? 999 : ga) - (gb === -1 ? 999 : gb) || a.sort_order - b.sort_order;
+    });
+    const rowsHTML = sortedFuncs.map(func => {
       const funcAsgns = _assignmentsForFunc(func.id);
       const color = _groupColor('boats', func.function_group);
 
@@ -2944,7 +2950,13 @@ const App = (() => {
     }).join('');
     const dailyCnt = {};
     days.forEach(d => { dailyCnt[_localDk(d)] = 0; });
-    const rowsHTML = state.pictureFunctions.map(func => {
+    const gOrder = _groupOrder('picture');
+    const sortedFuncs = [...state.pictureFunctions].sort((a, b) => {
+      const ga = gOrder.indexOf(a.function_group || 'Special');
+      const gb = gOrder.indexOf(b.function_group || 'Special');
+      return (ga === -1 ? 999 : ga) - (gb === -1 ? 999 : gb) || a.sort_order - b.sort_order;
+    });
+    const rowsHTML = sortedFuncs.map(func => {
       const funcAsgns = _pbAssignmentsForFunc(func.id);
       const color = _groupColor('picture', func.function_group);
       funcAsgns.forEach(asgn => {
@@ -3711,7 +3723,13 @@ const App = (() => {
     }).join('');
     const dailyCnt = {};
     days.forEach(d => { dailyCnt[_localDk(d)] = 0; });
-    const rowsHTML = state.transportFunctions.map(func => {
+    const gOrder = _groupOrder('transport');
+    const sortedFuncs = [...state.transportFunctions].sort((a, b) => {
+      const ga = gOrder.indexOf(a.function_group || 'UNIT');
+      const gb = gOrder.indexOf(b.function_group || 'UNIT');
+      return (ga === -1 ? 999 : ga) - (gb === -1 ? 999 : gb) || a.sort_order - b.sort_order;
+    });
+    const rowsHTML = sortedFuncs.map(func => {
       const funcAsgns = _tbAssignmentsForFunc(func.id);
       const color = _groupColor('transport', func.function_group);
       funcAsgns.forEach(asgn => {
@@ -5536,7 +5554,13 @@ const App = (() => {
     }).join('');
     const dailyCnt = {};
     days.forEach(d => { dailyCnt[_localDk(d)] = 0; });
-    const rowsHTML = state.labourFunctions.map(func => {
+    const gOrder = _groupOrder('labour');
+    const sortedFuncs = [...state.labourFunctions].sort((a, b) => {
+      const ga = gOrder.indexOf(a.function_group || 'Special');
+      const gb = gOrder.indexOf(b.function_group || 'Special');
+      return (ga === -1 ? 999 : ga) - (gb === -1 ? 999 : gb) || a.sort_order - b.sort_order;
+    });
+    const rowsHTML = sortedFuncs.map(func => {
       const funcAsgns = _lbAssignmentsForFunc(func.id);
       const color = _groupColor('labour', func.function_group);
       funcAsgns.forEach(asgn => {
@@ -6125,7 +6149,13 @@ const App = (() => {
     }).join('');
     const dailyCnt = {};
     days.forEach(d => { dailyCnt[_localDk(d)] = 0; });
-    const rowsHTML = state.securityFunctions.map(func => {
+    const gOrder = _sbGroupOrder();
+    const sortedFuncs = [...state.securityFunctions].sort((a, b) => {
+      const ga = gOrder.indexOf(a.function_group || 'SAFETY');
+      const gb = gOrder.indexOf(b.function_group || 'SAFETY');
+      return (ga === -1 ? 999 : ga) - (gb === -1 ? 999 : gb) || a.sort_order - b.sort_order;
+    });
+    const rowsHTML = sortedFuncs.map(func => {
       const funcAsgns = _sbAssignmentsForFunc(func.id);
       const color = _sbGroupColor(func.function_group);
       funcAsgns.forEach(asgn => {
@@ -8278,7 +8308,13 @@ const App = (() => {
     }).join('');
     const dailyCnt = {};
     days.forEach(d => { dailyCnt[_localDk(d)] = 0; });
-    const rowsHTML = state.gcFunctions.map(func => {
+    const gOrder = _groupOrder('guard_camp');
+    const sortedFuncs = [...state.gcFunctions].sort((a, b) => {
+      const ga = gOrder.indexOf(a.function_group || 'Special');
+      const gb = gOrder.indexOf(b.function_group || 'Special');
+      return (ga === -1 ? 999 : ga) - (gb === -1 ? 999 : gb) || a.sort_order - b.sort_order;
+    });
+    const rowsHTML = sortedFuncs.map(func => {
       const funcAsgns = _gcAssignmentsForFunc(func.id);
       const color = _groupColor('guard_camp', func.function_group);
       funcAsgns.forEach(asgn => {
