@@ -236,6 +236,7 @@ def bootstrap():
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
         _migrate_boat_meeting_feb25(prod_id)
+        _migrate_boat_update_feb27(prod_id)
         return prod_id
 
     print("ShootLogix: bootstrapping KLAS7 production…")
@@ -270,6 +271,7 @@ def bootstrap():
     _seed_guard_posts(prod_id)
     _seed_fnb_categories(prod_id)
     _migrate_boat_meeting_feb25(prod_id)
+    _migrate_boat_update_feb27(prod_id)
     return prod_id
 
 
@@ -627,6 +629,34 @@ UNASSIGNED_BOATS_FEB25 = [
     'San Miguel', 'Dios Es Perfecto', 'Relax Time', 'Baila Mono', 'Leo Nena', 'Mas Bongos',
 ]
 
+# ─── Feb 27 Update: Complete boat schedule replacement ───────────────────────
+BOAT_UPDATE_FEB27_DATA = [
+    {'function': 'UNIT REALITY',      'boat': 'NINA NABELIS',          'price': 300.00, 'start': '2026-02-24', 'end': '2026-04-30', 'pricing': 'standard',  'group': 'Reality'},
+    {'function': 'TAXI',              'boat': 'PCC4',                  'price': 337.05, 'start': '2026-03-01', 'end': '2026-05-04', 'pricing': 'standard',  'group': 'Special'},
+    {'function': 'SAFETY',            'boat': 'GOD IS LOVE',           'price': 337.05, 'start': '2026-02-24', 'end': '2026-04-26', 'pricing': 'standard',  'group': 'Special'},
+    {'function': 'CONSTRUCTIONS 4',   'boat': 'BONGO 3',              'price': 481.50, 'start': '2026-03-16', 'end': '2026-04-27', 'pricing': 'standard',  'group': 'Construction'},
+    {'function': 'CONSTRUCTION 1',    'boat': 'RUGE LEON',            'price': 300.00, 'start': '2026-03-09', 'end': '2026-04-27', 'pricing': 'standard',  'group': 'Construction'},
+    {'function': 'CONSTRUCTION 3',    'boat': 'PERICO 1',             'price': 674.10, 'start': '2026-03-16', 'end': '2026-04-27', 'pricing': 'standard',  'group': 'Construction'},
+    {'function': 'CONSTRUCTION 2',    'boat': 'TBD',                  'price': 350.00, 'start': '2026-03-12', 'end': '2026-04-27', 'pricing': 'standard',  'group': 'Construction'},
+    {'function': 'BODY DOUBLE',       'boat': 'BONGO 1',              'price': 481.50, 'start': '2026-03-14', 'end': '2026-04-30', 'pricing': 'standard',  'group': 'Special'},
+    {'function': 'VIP',               'boat': 'TBD (Nathan?)',        'price': 500.00, 'start': '2026-03-18', 'end': '2026-04-25', 'pricing': 'standard',  'group': 'Special'},
+    {'function': 'CONTESTANTS 1',     'boat': 'YORIANIS',             'price': 481.50, 'start': '2026-03-19', 'end': '2026-04-26', 'pricing': 'standard',  'group': 'Contestants'},
+    {'function': 'CONTESTANTS 2',     'boat': 'BUENA MAR',            'price': 481.50, 'start': '2026-03-19', 'end': '2026-04-26', 'pricing': 'standard',  'group': 'Contestants'},
+    {'function': 'CONTESTANTS 3',     'boat': 'BOCAS 3',              'price': 481.50, 'start': '2026-03-19', 'end': '2026-04-15', 'pricing': 'standard',  'group': 'Contestants'},
+    {'function': 'UNIT GAMES 1',      'boat': 'BORUCA LANDING CRAFT', 'price': 834.00, 'start': '2026-03-09', 'end': '2026-04-26', 'pricing': 'monthly',   'group': 'Games'},
+    {'function': 'CREW GAMES 1',      'boat': 'BOCAS 4',              'price': 481.50, 'start': '2026-03-20', 'end': '2026-04-25', 'pricing': 'standard',  'group': 'Crew'},
+    {'function': 'CREW GAMES 2',      'boat': 'BOCAS 5',              'price': 481.50, 'start': '2026-03-20', 'end': '2026-04-25', 'pricing': 'standard',  'group': 'Crew'},
+    {'function': 'CREW GAMES 3',      'boat': 'PCC3',                 'price': 434.00, 'start': '2026-03-20', 'end': '2026-04-25', 'pricing': 'standard',  'group': 'Crew'},
+    {'function': 'REALITY CREW 1',    'boat': 'ESMELDA',              'price': 321.00, 'start': '2026-03-20', 'end': '2026-04-24', 'pricing': 'standard',  'group': 'Crew'},
+    {'function': 'REALITY CREW 2',    'boat': 'DIOS PERFECTO',        'price': 300.00, 'start': '2026-03-20', 'end': '2026-04-24', 'pricing': 'standard',  'group': 'Crew'},
+    {'function': 'REALITY CREW 3 tbc','boat': 'RD',                   'price': 375.00, 'start': '2026-03-20', 'end': '2026-04-15', 'pricing': 'standard',  'group': 'Crew'},
+    {'function': 'EVAC',              'boat': 'EVAC',                 'price': 880.00, 'start': '2026-03-22', 'end': '2026-04-26', 'pricing': '24_7',      'group': 'Special'},
+    {'function': 'MEDICAL PREP',      'boat': 'MISHKA',               'price': 321.00, 'start': '2026-03-05', 'end': '2026-03-24', 'pricing': 'standard',  'group': 'Special'},
+    {'function': 'MEDICAL SHOOT',     'boat': 'MISHKA 24/7',          'price': 642.00, 'start': '2026-03-20', 'end': '2026-04-25', 'pricing': '24_7',      'group': 'Special'},
+    {'function': 'MEDICAL WRAP',      'boat': 'MISHKA',               'price': 321.00, 'start': '2026-04-26', 'end': '2026-05-03', 'pricing': 'standard',  'group': 'Special'},
+    {'function': 'EVAC 2',            'boat': 'EVAC BOAT',            'price': 800.00, 'start': '2026-03-20', 'end': '2026-04-25', 'pricing': '24_7',      'group': 'Special'},
+]
+
 
 def _find_boat_by_name(conn, prod_id, canonical_name):
     """Find a boat by canonical name, trying aliases. Returns boat row or None."""
@@ -789,6 +819,88 @@ def _migrate_boat_meeting_feb25(prod_id):
 
     set_setting("boat_meeting_feb25_v1", "1")
     print("  [Feature #23] Boat Meeting Feb 25 data update complete.")
+
+
+def _migrate_boat_update_feb27(prod_id):
+    """
+    Feb 27 update: Replace ALL boat assignments with updated schedule.
+    Removes old functions/assignments that are no longer in the list,
+    updates existing ones, creates new ones.
+    """
+    if get_setting("boat_update_feb27_v1"):
+        return
+
+    print("  [Update Feb 27] Applying new boat schedule...")
+
+    with get_db() as conn:
+        # Step 1: Delete ALL existing boat assignments for this production
+        func_ids = [r[0] for r in conn.execute(
+            "SELECT id FROM boat_functions WHERE production_id=? AND context='boats'",
+            (prod_id,)
+        ).fetchall()]
+        if func_ids:
+            placeholders = ','.join('?' * len(func_ids))
+            conn.execute(
+                f"DELETE FROM boat_assignments WHERE boat_function_id IN ({placeholders})",
+                func_ids
+            )
+            print(f"    Cleared {len(func_ids)} old function assignments")
+
+        # Step 2: Remove functions no longer in the new list
+        new_func_names = {r['function'] for r in BOAT_UPDATE_FEB27_DATA}
+        for fid in func_ids:
+            func = conn.execute("SELECT name FROM boat_functions WHERE id=?", (fid,)).fetchone()
+            if func and func[0] not in new_func_names:
+                conn.execute("DELETE FROM boat_functions WHERE id=?", (fid,))
+                print(f"    Removed old function: {func[0]}")
+
+        # Step 3: Process each new assignment row
+        for row in BOAT_UPDATE_FEB27_DATA:
+            func_name = row['function']
+            boat_name = row['boat']
+            price = row['price']
+            start = row['start']
+            end = row['end']
+            pricing = row['pricing']
+            group = row['group']
+
+            # Find or create function
+            func = conn.execute(
+                "SELECT * FROM boat_functions WHERE production_id=? AND context='boats' AND name=?",
+                (prod_id, func_name)
+            ).fetchone()
+
+            if not func:
+                cur = conn.execute(
+                    """INSERT INTO boat_functions (production_id, name, function_group, color, sort_order, context)
+                       VALUES (?, ?, ?, ?, ?, 'boats')""",
+                    (prod_id, func_name, group,
+                     GROUP_COLORS.get(group, '#EF4444'), 99)
+                )
+                func_id = cur.lastrowid
+                print(f"    Created function: {func_name}")
+            else:
+                func_id = func['id']
+                conn.execute(
+                    "UPDATE boat_functions SET function_group=?, color=? WHERE id=?",
+                    (group, GROUP_COLORS.get(group, '#EF4444'), func_id)
+                )
+
+            # Find or create boat
+            boat_id = _find_or_create_boat(conn, prod_id, boat_name, price)
+
+            # Create assignment
+            conn.execute(
+                """INSERT INTO boat_assignments
+                   (boat_function_id, boat_id, start_date, end_date,
+                    price_override, pricing_type, assignment_status, day_overrides)
+                   VALUES (?, ?, ?, ?, ?, ?, 'confirmed', '{}')""",
+                (func_id, boat_id, start, end, price, pricing)
+            )
+            print(f"    {func_name} -> {boat_name} (${price}/day, {start} to {end})")
+
+    set_setting("boat_update_feb27_v1", "1")
+    print("  [Update Feb 27] Boat schedule update complete.")
 
 
 if __name__ == "__main__":
