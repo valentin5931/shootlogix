@@ -229,14 +229,14 @@ def _seed_picture_boats(prod_id):
 def _backup_db():
     """Create a timestamped backup of the database before destructive migrations.
     Keeps the 5 most recent backups."""
-    db_path = os.path.join(os.path.dirname(__file__), "shootlogix.db")
-    if not os.path.exists(db_path):
+    from database import DB_PATH
+    if not os.path.exists(DB_PATH):
         return
-    backup_dir = os.path.join(os.path.dirname(__file__), "backups")
+    backup_dir = os.path.join(os.path.dirname(DB_PATH), "backups")
     os.makedirs(backup_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = os.path.join(backup_dir, f"shootlogix_backup_{ts}.db")
-    shutil.copy2(db_path, dest)
+    shutil.copy2(DB_PATH, dest)
     print(f"  DB backup saved: {dest}")
     # Keep only 5 most recent backups
     backups = sorted(glob_mod.glob(os.path.join(backup_dir, "shootlogix_backup_*.db")))
@@ -247,7 +247,10 @@ def _backup_db():
 def _needs_destructive_migration():
     """Check if any destructive migration is pending (flag not yet set)."""
     flags = ["pdt_full_seed_v1", "boat_meeting_feb25_v1", "boat_update_feb27_v1"]
-    return any(not get_setting(f) for f in flags)
+    pending = [f for f in flags if not get_setting(f)]
+    if pending:
+        print(f"  WARNING: Destructive migrations pending (flags not set): {pending}")
+    return len(pending) > 0
 
 
 def bootstrap():
