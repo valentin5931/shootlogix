@@ -21,6 +21,7 @@ from database import (
     create_fnb_category, get_fnb_categories,
     create_shooting_day, create_event, get_shooting_days,
     working_days,
+    sync_pdt_day_to_locations,
 )
 
 BATEAUX_DB = os.path.join(os.path.dirname(__file__), "..", "BATEAUX", "fleet.db")
@@ -273,6 +274,7 @@ def bootstrap():
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
         _seed_pdt_days(prod_id)
+        _sync_pdt_locations(prod_id)
         _migrate_boat_meeting_feb25(prod_id)
         _migrate_boat_update_feb27(prod_id)
         return prod_id
@@ -313,6 +315,7 @@ def bootstrap():
     _seed_guard_posts(prod_id)
     _seed_fnb_categories(prod_id)
     _seed_pdt_days(prod_id)
+    _sync_pdt_locations(prod_id)
     _migrate_boat_meeting_feb25(prod_id)
     _migrate_boat_update_feb27(prod_id)
     return prod_id
@@ -1093,8 +1096,45 @@ def _seed_pdt_days(prod_id):
             ev_copy['shooting_day_id'] = day_id
             create_event(ev_copy)
 
+        # Sync locations to location_schedules (creates "F" entries)
+        locs = set()
+        if day_data.get('location'):
+            locs.add(day_data['location'])
+        for ev in events:
+            if ev.get('location'):
+                locs.add(ev['location'])
+        if locs and day_data.get('date'):
+            sync_pdt_day_to_locations(prod_id, day_data['date'], list(locs))
+
     set_setting("pdt_full_seed_v1", "1")
     print(f"  Seeded {len(PDT_SEED_DATA)} PDT shooting days with full data")
+
+
+def _sync_pdt_locations(prod_id):
+    """One-time migration: sync all existing PDT shooting days to location_schedules.
+    Creates 'F' entries for every location found in PDT events."""
+    if get_setting("pdt_location_sync_v1"):
+        return
+
+    days = get_shooting_days(prod_id)
+    if not days:
+        return
+
+    print("  Syncing PDT locations to location_schedules...")
+    count = 0
+    for d in days:
+        locs = set()
+        if d.get('location'):
+            locs.add(d['location'])
+        for ev in d.get('events', []):
+            if ev.get('location'):
+                locs.add(ev['location'])
+        if locs and d.get('date'):
+            sync_pdt_day_to_locations(prod_id, d['date'], list(locs))
+            count += 1
+
+    set_setting("pdt_location_sync_v1", "1")
+    print(f"  Synced locations for {count} PDT days")
 
 
 def _migrate_boat_meeting_feb25(prod_id):
