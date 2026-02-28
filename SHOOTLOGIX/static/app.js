@@ -2311,21 +2311,15 @@ const App = (() => {
     const day = state.shootingDays.find(d => d.date === date);
     if (!day) return;
     const events = day.events?.length ? day.events : (day.game_name ? [{ event_type: 'game', name: day.game_name, location: day.location }] : []);
-    if (!events.length && !day.location) return;
 
-    const tip = $('pdt-tooltip');
-    let html = `<div style="font-weight:700;margin-bottom:.25rem;color:var(--text-0)">J${day.day_number || '?'} — ${date}</div>` +
-      events.map(ev => `<div class="pdt-tip-event">
-        <span class="event-badge ev-${ev.event_type || 'game'}" style="font-size:.58rem">${(ev.event_type||'game').toUpperCase()}</span>
-        <span style="color:var(--text-1)">${esc(ev.name || day.game_name || '—')}</span>
-        ${ev.location ? `<span style="color:var(--text-4)">@ ${esc(ev.location)}</span>` : ''}
-      </div>`).join('');
-    // Notes section
+    // Only show tooltip if there are notes
     const noteLines = [];
     if (day.notes) noteLines.push(`📝 ${esc(day.notes)}`);
     events.forEach(ev => { if (ev.notes) noteLines.push(`${(ev.event_type||'game').toUpperCase()}: ${esc(ev.notes)}`); });
-    if (noteLines.length) html += `<div class="pdt-tip-note">${noteLines.join('<br>')}</div>`;
-    tip.innerHTML = html;
+    if (!noteLines.length) return;
+
+    const tip = $('pdt-tooltip');
+    tip.innerHTML = `<div class="pdt-tip-note" style="border:none;padding:0;margin:0">${noteLines.join('<br>')}</div>`;
 
     const rect = event.target.getBoundingClientRect();
     tip.style.left = rect.left + 'px';
@@ -7351,12 +7345,20 @@ const App = (() => {
     const editId = $('nl-edit-id').value;
     const site = (state.locationSites || []).find(s => s.id === parseInt(editId));
     if (!site) return;
-    const date = $('nl-sched-date').value;
+    const startDate = $('nl-sched-date-start').value;
+    const endDate = $('nl-sched-date-end').value || startDate;
     const status = $('nl-sched-status').value;
-    if (!date) { toast('Select a date', 'error'); return; }
-    await api('POST', `/api/productions/${state.prodId}/location-schedules`, {
-      location_name: site.name, location_type: site.location_type, date, status
-    });
+    if (!startDate) { toast('Select a start date', 'error'); return; }
+    if (endDate < startDate) { toast('End date must be after start date', 'error'); return; }
+    const cur = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    while (cur <= end) {
+      const d = cur.toISOString().slice(0, 10);
+      await api('POST', `/api/productions/${state.prodId}/location-schedules`, {
+        location_name: site.name, location_type: site.location_type, date: d, status
+      });
+      cur.setDate(cur.getDate() + 1);
+    }
     state.locationSchedules = await api('GET', `/api/productions/${state.prodId}/location-schedules`);
     _renderLocationScheduleInModal(site);
     renderLocations();

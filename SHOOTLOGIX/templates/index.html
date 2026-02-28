@@ -941,8 +941,9 @@
     <div id="nl-schedule-section" style="display:none;border-top:1px solid var(--border);margin:.75rem 0;padding-top:.75rem">
       <div style="font-size:.75rem;font-weight:700;color:var(--text-2);margin-bottom:.5rem">SCHEDULE</div>
       <div id="nl-schedule-grid" style="max-height:200px;overflow-y:auto"></div>
-      <div style="display:flex;gap:.3rem;align-items:end;margin-top:.4rem">
-        <input type="date" id="nl-sched-date" class="form-control" style="font-size:.72rem;padding:.2rem .3rem;flex:1">
+      <div style="display:flex;gap:.3rem;align-items:end;margin-top:.4rem;flex-wrap:wrap">
+        <input type="date" id="nl-sched-date-start" class="form-control" style="font-size:.72rem;padding:.2rem .3rem;flex:1" title="Start date">
+        <input type="date" id="nl-sched-date-end" class="form-control" style="font-size:.72rem;padding:.2rem .3rem;flex:1" title="End date (optional)">
         <select id="nl-sched-status" class="form-control" style="font-size:.72rem;padding:.2rem .3rem;width:auto">
           <option value="P">P (Prep)</option>
           <option value="F">F (Film)</option>
