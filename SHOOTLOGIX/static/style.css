@@ -25,6 +25,24 @@
   --purple:     #8B5CF6;
   --cyan:       #06B6D4;
   --orange:     #F97316;
+  --shadow-color: rgba(0,0,0,.4);
+  --overlay-bg: rgba(0,0,0,.6);
+}
+
+[data-theme="light"] {
+  --bg-base:    #F1F5F9;
+  --bg-surface: #FFFFFF;
+  --bg-card:    #FFFFFF;
+  --bg-hover:   #E2E8F0;
+  --border:     #CBD5E1;
+  --border-lt:  #E2E8F0;
+  --text-0:     #0F172A;
+  --text-1:     #1E293B;
+  --text-2:     #475569;
+  --text-3:     #94A3B8;
+  --text-4:     #CBD5E1;
+  --shadow-color: rgba(0,0,0,.1);
+  --overlay-bg: rgba(0,0,0,.35);
 }
 
 html, body {
@@ -1263,7 +1281,7 @@ body.schedule-dragging * { cursor: col-resize !important; }
   font-size: .72rem;
   max-width: 260px;
   pointer-events: none;
-  box-shadow: 0 4px 16px rgba(0,0,0,.4);
+  box-shadow: 0 4px 16px var(--shadow-color, rgba(0,0,0,.4));
 }
 .pdt-tip-event {
   display: flex;
@@ -1271,6 +1289,22 @@ body.schedule-dragging * { cursor: col-resize !important; }
   gap: .35rem;
   margin-top: .2rem;
   flex-wrap: wrap;
+}
+.pdt-tip-note {
+  margin-top: .35rem;
+  padding-top: .3rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: .68rem;
+  font-style: italic;
+  max-width: 280px;
+  word-wrap: break-word;
+}
+.pdt-note-icon {
+  font-size: .65rem;
+  cursor: help;
+  opacity: .7;
+  margin-left: .25rem;
 }
 
 /* ── Boat detail modal ───────────────────────────────────────────────────── */

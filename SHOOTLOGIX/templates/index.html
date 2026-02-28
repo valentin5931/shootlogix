@@ -68,6 +68,7 @@
       <span class="dot" style="background:#22C55E"></span>BUDGET
     </button>
     <div style="flex:1"></div>
+    <button class="tab-btn" onclick="App.toggleTheme()" title="Toggle light/dark mode" id="theme-toggle-btn" style="font-size:1rem;padding:.3rem .5rem">🌙</button>
   </nav>
 
   <!-- ── Main panels ─────────────────────────────────────────────────────── -->
@@ -1345,6 +1346,17 @@
 
 <!-- ── PDT tooltip ─────────────────────────────────────────────────────────── -->
 <div id="pdt-tooltip" class="pdt-tooltip hidden"></div>
+
+<!-- ── Location Detail Modal ──────────────────────────────────────────────── -->
+<div id="location-detail-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeLocationDetail()">
+  <div class="modal-card" style="max-width:520px;max-height:85vh;overflow-y:auto">
+    <div class="modal-header">
+      <h3 id="loc-detail-title">Location Detail</h3>
+      <button class="btn btn-icon btn-secondary btn-sm" onclick="App.closeLocationDetail()">✕</button>
+    </div>
+    <div id="loc-detail-body" style="padding:1rem"></div>
+  </div>
+</div>
 
 <!-- ── Toast ───────────────────────────────────────────────────────────────── -->
 <div id="toast" class="hidden">

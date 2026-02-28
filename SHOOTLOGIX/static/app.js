@@ -649,9 +649,9 @@ const App = (() => {
           <td>${tide}</td>
           ${isFirst ? `<td rowspan="${n}" style="text-align:center;color:var(--text-2)">${d.nb_candidats != null ? d.nb_candidats : '—'}</td>` : ''}
           ${isFirst ? `<td rowspan="${n}"><span class="status-badge status-${d.status || 'brouillon'}">${esc(statusLabel)}</span></td>` : ''}
-          ${isFirst ? `<td rowspan="${n}">
+          ${isFirst ? `<td rowspan="${n}" style="white-space:nowrap">
             <button class="btn btn-icon btn-secondary btn-sm"
-              onclick="event.stopPropagation();App.editDay(${d.id})" title="Edit">✎</button>
+              onclick="event.stopPropagation();App.editDay(${d.id})" title="Edit">✎</button>${(d.notes || events.some(e => e.notes)) ? `<span class="pdt-note-icon" onmouseenter="App.showPDTTooltip(event,'${d.date}')" onmouseleave="App.hidePDTTooltip()">📝</span>` : ''}
           </td>` : ''}
         </tr>`);
       });
@@ -2313,12 +2313,18 @@ const App = (() => {
     if (!events.length && !day.location) return;
 
     const tip = $('pdt-tooltip');
-    tip.innerHTML = `<div style="font-weight:700;margin-bottom:.25rem;color:var(--text-0)">J${day.day_number || '?'} — ${date}</div>` +
+    let html = `<div style="font-weight:700;margin-bottom:.25rem;color:var(--text-0)">J${day.day_number || '?'} — ${date}</div>` +
       events.map(ev => `<div class="pdt-tip-event">
         <span class="event-badge ev-${ev.event_type || 'game'}" style="font-size:.58rem">${(ev.event_type||'game').toUpperCase()}</span>
         <span style="color:var(--text-1)">${esc(ev.name || day.game_name || '—')}</span>
         ${ev.location ? `<span style="color:var(--text-4)">@ ${esc(ev.location)}</span>` : ''}
       </div>`).join('');
+    // Notes section
+    const noteLines = [];
+    if (day.notes) noteLines.push(`📝 ${esc(day.notes)}`);
+    events.forEach(ev => { if (ev.notes) noteLines.push(`${(ev.event_type||'game').toUpperCase()}: ${esc(ev.notes)}`); });
+    if (noteLines.length) html += `<div class="pdt-tip-note">${noteLines.join('<br>')}</div>`;
+    tip.innerHTML = html;
 
     const rect = event.target.getBoundingClientRect();
     tip.style.left = rect.left + 'px';
@@ -6907,6 +6913,7 @@ const App = (() => {
                   <div style="display:flex;align-items:center;gap:.3rem">
                     <span style="width:8px;height:8px;border-radius:2px;background:${typeColor};flex-shrink:0"></span>
                     <span style="font-size:.72rem;font-weight:600;white-space:nowrap">${esc(site.name)}</span>
+                    <span style="font-size:.6rem;opacity:.5;margin-left:auto" onclick="event.stopPropagation();App.openLocationDetail(${site.id})" title="Schedules detail">🕐</span>
                   </div>
                 </td>
                 ${dates.map(d => {
@@ -7307,6 +7314,121 @@ const App = (() => {
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
+
+  // ── Location Detail — Time Slots (Filming/Prep/Wrap) ──────
+
+  let _locDetailId = null;
+
+  async function openLocationDetail(locId) {
+    const site = (state.locationSites || []).find(s => s.id === locId);
+    if (!site) return;
+    _locDetailId = locId;
+    $('loc-detail-title').textContent = site.name;
+    await _renderLocationDetail(locId);
+    $('location-detail-overlay').classList.remove('hidden');
+  }
+
+  function closeLocationDetail() {
+    $('location-detail-overlay').classList.add('hidden');
+    _locDetailId = null;
+  }
+
+  async function _renderLocationDetail(locId) {
+    const slots = await api('GET', `/api/locations/${locId}/time-slots`);
+    const body = $('loc-detail-body');
+    const types = ['filming', 'prep', 'wrap'];
+    const labels = { filming: 'Filming', prep: 'Prep', wrap: 'Wrap' };
+    const colors = { filming: 'var(--accent)', prep: 'var(--amber)', wrap: 'var(--purple)' };
+
+    body.innerHTML = types.map(t => {
+      const items = slots.filter(s => s.slot_type === t);
+      return `<div class="loc-slot-section" style="margin-bottom:1rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+          <span style="font-weight:700;color:${colors[t]};font-size:.8rem">${labels[t]}</span>
+          <button class="btn btn-sm btn-secondary" onclick="App._locSlotAddForm('${t}')">+ Add</button>
+        </div>
+        <div id="loc-slots-${t}">
+          ${items.length ? items.map(s => _locSlotRow(s)).join('') : '<div style="color:var(--text-4);font-size:.72rem">No slots yet</div>'}
+        </div>
+        <div id="loc-slot-form-${t}" style="display:none"></div>
+      </div>`;
+    }).join('');
+  }
+
+  function _locSlotRow(s) {
+    const dateStr = s.end_date ? `${fmtDate(s.start_date)} → ${fmtDate(s.end_date)}` : fmtDate(s.start_date);
+    const timeStr = s.start_time ? ` ${s.start_time}${s.end_time ? '–' + s.end_time : ''}` : '';
+    return `<div style="display:flex;align-items:center;gap:.4rem;padding:.25rem 0;font-size:.75rem;border-bottom:1px solid var(--border-lt)">
+      <span style="flex:1;color:var(--text-1)">${dateStr}${timeStr}</span>
+      ${s.notes ? `<span style="color:var(--text-3);font-style:italic;font-size:.68rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.notes)}">${esc(s.notes)}</span>` : ''}
+      <button class="btn btn-icon btn-sm btn-secondary" onclick="App._locSlotEdit(${s.id})" title="Edit" style="font-size:.6rem">✎</button>
+      <button class="btn btn-icon btn-sm btn-danger" onclick="App._locSlotDelete(${s.id})" title="Delete" style="font-size:.6rem">✕</button>
+    </div>`;
+  }
+
+  function _locSlotAddForm(slotType) {
+    const form = $(`loc-slot-form-${slotType}`);
+    const isFilming = slotType === 'filming';
+    form.style.display = 'block';
+    form.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:.4rem;align-items:end;padding:.5rem;background:var(--bg-hover);border-radius:6px;margin-top:.3rem">
+      <div><label style="font-size:.6rem;color:var(--text-3)">Start</label><br><input type="date" id="lsf-start-${slotType}" class="form-control" style="font-size:.72rem;padding:.2rem .3rem"></div>
+      <div><label style="font-size:.6rem;color:var(--text-3)">End</label><br><input type="date" id="lsf-end-${slotType}" class="form-control" style="font-size:.72rem;padding:.2rem .3rem"></div>
+      ${isFilming ? `<div><label style="font-size:.6rem;color:var(--text-3)">From</label><br><input type="time" id="lsf-stime-${slotType}" class="form-control" style="font-size:.72rem;padding:.2rem .3rem"></div>
+      <div><label style="font-size:.6rem;color:var(--text-3)">To</label><br><input type="time" id="lsf-etime-${slotType}" class="form-control" style="font-size:.72rem;padding:.2rem .3rem"></div>` : ''}
+      <div><label style="font-size:.6rem;color:var(--text-3)">Notes</label><br><input type="text" id="lsf-notes-${slotType}" class="form-control" style="font-size:.72rem;padding:.2rem .3rem" placeholder="Optional"></div>
+      <button class="btn btn-sm btn-primary" onclick="App._locSlotSave('${slotType}')">Save</button>
+      <button class="btn btn-sm btn-secondary" onclick="document.getElementById('loc-slot-form-${slotType}').style.display='none'">Cancel</button>
+    </div>`;
+  }
+
+  async function _locSlotSave(slotType, editId) {
+    const data = {
+      production_id: state.prodId,
+      slot_type: slotType,
+      start_date: $(`lsf-start-${slotType}`).value,
+      end_date: $(`lsf-end-${slotType}`).value || null,
+      start_time: $(`lsf-stime-${slotType}`)?.value || null,
+      end_time: $(`lsf-etime-${slotType}`)?.value || null,
+      notes: $(`lsf-notes-${slotType}`)?.value || null,
+    };
+    if (!data.start_date) { toast('Start date required', 'error'); return; }
+    try {
+      if (editId) {
+        await api('PUT', `/api/location-time-slots/${editId}`, data);
+        toast('Slot updated');
+      } else {
+        await api('POST', `/api/locations/${_locDetailId}/time-slots`, data);
+        toast('Slot created');
+      }
+      await _renderLocationDetail(_locDetailId);
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function _locSlotEdit(slotId) {
+    const slots = await api('GET', `/api/locations/${_locDetailId}/time-slots`);
+    const s = slots.find(x => x.id === slotId);
+    if (!s) return;
+    const t = s.slot_type;
+    _locSlotAddForm(t);
+    $(`lsf-start-${t}`).value = s.start_date || '';
+    $(`lsf-end-${t}`).value = s.end_date || '';
+    if ($(`lsf-stime-${t}`)) $(`lsf-stime-${t}`).value = s.start_time || '';
+    if ($(`lsf-etime-${t}`)) $(`lsf-etime-${t}`).value = s.end_time || '';
+    if ($(`lsf-notes-${t}`)) $(`lsf-notes-${t}`).value = s.notes || '';
+    // Replace Save button to pass editId
+    const form = $(`loc-slot-form-${t}`);
+    const saveBtn = form.querySelector('.btn-primary');
+    saveBtn.onclick = () => App._locSlotSave(t, slotId);
+  }
+
+  async function _locSlotDelete(slotId) {
+    if (!confirm('Delete this time slot?')) return;
+    try {
+      await api('DELETE', `/api/location-time-slots/${slotId}`);
+      toast('Slot deleted');
+      await _renderLocationDetail(_locDetailId);
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
 
   // ═══════════════════════════════════════════════════════════
   //  GUARDS MODULE — Split into Location Guards + Base Camp
@@ -9238,7 +9360,23 @@ const App = (() => {
   //  INIT
   // ═══════════════════════════════════════════════════════════
 
+  // ── Theme toggle ──────────────────────────────────────────────────────────
+  function _applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    const btn = $('theme-toggle-btn');
+    if (btn) btn.textContent = theme === 'light' ? '☀️' : '🌙';
+  }
+
+  function toggleTheme() {
+    const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+    localStorage.setItem('theme', next);
+    _applyTheme(next);
+  }
+
   async function init() {
+    // Apply saved theme
+    _applyTheme(localStorage.getItem('theme') || 'dark');
+
     // Auth: redirect to login if no access token
     if (!_getAccessToken()) {
       window.location.href = '/login';
@@ -9824,6 +9962,8 @@ const App = (() => {
     locSetView, locSetSubTab, locCellClick, locToggleLock, locAutoFill, locExportCSV,
     showAddLocationModal, closeAddLocationModal, editLocationSite,
     saveLocationSite, deleteLocationSite,
+    openLocationDetail, closeLocationDetail,
+    _locSlotAddForm, _locSlotSave, _locSlotEdit, _locSlotDelete,
     // Guards — sub-tab navigation
     gdSetSubTab, gdSetView,
     // Guards — Location Guards (editable)
@@ -9855,6 +9995,7 @@ const App = (() => {
     adminResetPassword, adminDeleteUser,
     adminRenameProject, adminArchiveProject,
     adminChangeRole, adminRemoveMember,
+    toggleTheme,
     init,
   };
 })();

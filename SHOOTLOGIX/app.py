@@ -63,6 +63,9 @@ from database import (
     # Location sites CRUD
     get_location_sites, create_location_site, update_location_site,
     delete_location_site, rename_location_in_schedules,
+    # Location time slots
+    get_location_time_slots, create_location_time_slot,
+    update_location_time_slot, delete_location_time_slot,
     # Guard posts CRUD
     get_guard_posts, create_guard_post, update_guard_post,
     delete_guard_post, rename_guard_post_in_schedules,
@@ -1905,6 +1908,36 @@ def api_update_location(loc_id):
 def api_delete_location(loc_id):
     delete_location_site(loc_id)
     return jsonify({"deleted": loc_id})
+
+
+# ─── Location Time Slots ─────────────────────────────────────────────────────
+
+@app.route("/api/locations/<int:loc_id>/time-slots", methods=["GET"])
+def api_get_location_time_slots(loc_id):
+    return jsonify(get_location_time_slots(loc_id))
+
+
+@app.route("/api/locations/<int:loc_id>/time-slots", methods=["POST"])
+def api_create_location_time_slot(loc_id):
+    data = request.json or {}
+    data['location_id'] = loc_id
+    if not data.get('slot_type') or not data.get('start_date'):
+        return jsonify({"error": "slot_type and start_date are required"}), 400
+    result = create_location_time_slot(data)
+    return jsonify(result), 201
+
+
+@app.route("/api/location-time-slots/<int:slot_id>", methods=["PUT"])
+def api_update_location_time_slot(slot_id):
+    data = request.json or {}
+    result = update_location_time_slot(slot_id, data)
+    return jsonify(result or {})
+
+
+@app.route("/api/location-time-slots/<int:slot_id>", methods=["DELETE"])
+def api_delete_location_time_slot(slot_id):
+    delete_location_time_slot(slot_id)
+    return jsonify({"deleted": slot_id})
 
 
 # ─── Guard Posts CRUD ────────────────────────────────────────────────────────

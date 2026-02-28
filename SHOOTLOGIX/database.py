@@ -456,6 +456,23 @@ CREATE TABLE IF NOT EXISTS location_schedules (
 );
 
 -- ═══════════════════════════════════════════════
+-- LOCATION TIME SLOTS (filming/prep/wrap details)
+-- ═══════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS location_time_slots (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    production_id   INTEGER NOT NULL,
+    location_id     INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+    slot_type       TEXT NOT NULL,   -- 'filming' / 'prep' / 'wrap'
+    start_date      TEXT NOT NULL,
+    end_date        TEXT,
+    start_time      TEXT,            -- HH:MM for filming
+    end_time        TEXT,            -- HH:MM for filming
+    notes           TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+
+-- ═══════════════════════════════════════════════
 -- DÉPARTEMENT : GUARD LOCATION SCHEDULES (P/F/W)
 -- ═══════════════════════════════════════════════
 
@@ -2489,6 +2506,53 @@ def rename_location_in_schedules(prod_id, old_name, new_name):
             "UPDATE location_schedules SET location_name=? WHERE production_id=? AND location_name=?",
             (new_name, prod_id, old_name)
         )
+
+
+# ─── Location Time Slots ─────────────────────────────────────────────────────
+
+def get_location_time_slots(location_id):
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM location_time_slots WHERE location_id=? ORDER BY slot_type, start_date",
+            (location_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_location_time_slot(data):
+    with get_db() as conn:
+        cur = conn.execute(
+            """INSERT INTO location_time_slots
+               (production_id, location_id, slot_type, start_date, end_date, start_time, end_time, notes)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (data['production_id'], data['location_id'], data['slot_type'],
+             data['start_date'], data.get('end_date'), data.get('start_time'),
+             data.get('end_time'), data.get('notes'))
+        )
+        row = conn.execute("SELECT * FROM location_time_slots WHERE id=?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
+
+def update_location_time_slot(slot_id, data):
+    allowed = ["slot_type", "start_date", "end_date", "start_time", "end_time", "notes"]
+    fields = {k: v for k, v in data.items() if k in allowed}
+    if not fields:
+        return
+    set_parts = []
+    vals = []
+    for k, v in fields.items():
+        set_parts.append(f"{k}=?")
+        vals.append(v)
+    vals.append(slot_id)
+    with get_db() as conn:
+        conn.execute(f"UPDATE location_time_slots SET {', '.join(set_parts)} WHERE id=?", vals)
+        row = conn.execute("SELECT * FROM location_time_slots WHERE id=?", (slot_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def delete_location_time_slot(slot_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM location_time_slots WHERE id=?", (slot_id,))
 
 
 # ─── Guard Posts CRUD ────────────────────────────────────────────────────────
