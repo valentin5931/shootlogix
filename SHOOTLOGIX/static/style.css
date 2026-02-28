@@ -1300,12 +1300,6 @@ body.schedule-dragging * { cursor: col-resize !important; }
   max-width: 280px;
   word-wrap: break-word;
 }
-.pdt-note-icon {
-  font-size: .65rem;
-  cursor: help;
-  opacity: .7;
-  margin-left: .25rem;
-}
 
 /* ── Boat detail modal ───────────────────────────────────────────────────── */
 

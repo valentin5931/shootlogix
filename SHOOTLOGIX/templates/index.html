@@ -938,6 +938,19 @@
         <input type="number" id="nl-global-deal" class="form-control" placeholder="$ flat rate" step="0.01" min="0">
       </div>
     </div>
+    <div id="nl-schedule-section" style="display:none;border-top:1px solid var(--border);margin:.75rem 0;padding-top:.75rem">
+      <div style="font-size:.75rem;font-weight:700;color:var(--text-2);margin-bottom:.5rem">SCHEDULE</div>
+      <div id="nl-schedule-grid" style="max-height:200px;overflow-y:auto"></div>
+      <div style="display:flex;gap:.3rem;align-items:end;margin-top:.4rem">
+        <input type="date" id="nl-sched-date" class="form-control" style="font-size:.72rem;padding:.2rem .3rem;flex:1">
+        <select id="nl-sched-status" class="form-control" style="font-size:.72rem;padding:.2rem .3rem;width:auto">
+          <option value="P">P (Prep)</option>
+          <option value="F">F (Film)</option>
+          <option value="W">W (Wrap)</option>
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="App._locModalAddSchedule()" style="font-size:.68rem">+ Add</button>
+      </div>
+    </div>
     <input type="hidden" id="nl-edit-id" value="">
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeAddLocationModal()">Cancel</button>
@@ -1347,16 +1360,6 @@
 <!-- ── PDT tooltip ─────────────────────────────────────────────────────────── -->
 <div id="pdt-tooltip" class="pdt-tooltip hidden"></div>
 
-<!-- ── Location Detail Modal ──────────────────────────────────────────────── -->
-<div id="location-detail-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeLocationDetail()">
-  <div class="modal-card" style="max-width:520px;max-height:85vh;overflow-y:auto">
-    <div class="modal-header">
-      <h3 id="loc-detail-title">Location Detail</h3>
-      <button class="btn btn-icon btn-secondary btn-sm" onclick="App.closeLocationDetail()">✕</button>
-    </div>
-    <div id="loc-detail-body" style="padding:1rem"></div>
-  </div>
-</div>
 
 <!-- ── Toast ───────────────────────────────────────────────────────────────── -->
 <div id="toast" class="hidden">

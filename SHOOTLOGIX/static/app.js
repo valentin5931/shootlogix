@@ -633,7 +633,8 @@ const App = (() => {
         const rehearsal = ev.heure_rehearsal || (isFirst ? d.heure_rehearsal : null);
         const host      = ev.heure_host || (isFirst ? d.heure_animateur : null);
 
-        rows.push(`<tr class="${rowClass} ${evClass}-row" onclick="App.editDay(${d.id})">
+        rows.push(`<tr class="${rowClass} ${evClass}-row" onclick="App.editDay(${d.id})"
+          onmouseenter="App.showPDTTooltip(event,'${d.date}')" onmouseleave="App.hidePDTTooltip()">
           ${isFirst ? `<td rowspan="${n}" class="td-day-num"><span class="day-num">D${d.day_number}</span></td>` : ''}
           ${isFirst ? `<td rowspan="${n}" class="td-date">
             <div class="day-date">${fmtDateLong(d.date)}</div>
@@ -651,7 +652,7 @@ const App = (() => {
           ${isFirst ? `<td rowspan="${n}"><span class="status-badge status-${d.status || 'brouillon'}">${esc(statusLabel)}</span></td>` : ''}
           ${isFirst ? `<td rowspan="${n}" style="white-space:nowrap">
             <button class="btn btn-icon btn-secondary btn-sm"
-              onclick="event.stopPropagation();App.editDay(${d.id})" title="Edit">✎</button>${(d.notes || events.some(e => e.notes)) ? `<span class="pdt-note-icon" onmouseenter="App.showPDTTooltip(event,'${d.date}')" onmouseleave="App.hidePDTTooltip()">📝</span>` : ''}
+              onclick="event.stopPropagation();App.editDay(${d.id})" title="Edit">✎</button>
           </td>` : ''}
         </tr>`);
       });
@@ -6913,7 +6914,6 @@ const App = (() => {
                   <div style="display:flex;align-items:center;gap:.3rem">
                     <span style="width:8px;height:8px;border-radius:2px;background:${typeColor};flex-shrink:0"></span>
                     <span style="font-size:.72rem;font-weight:600;white-space:nowrap">${esc(site.name)}</span>
-                    <span style="font-size:.6rem;opacity:.5;margin-left:auto" onclick="event.stopPropagation();App.openLocationDetail(${site.id})" title="Schedules detail">🕐</span>
                   </div>
                 </td>
                 ${dates.map(d => {
@@ -7240,6 +7240,7 @@ const App = (() => {
     $('loc-modal-title').textContent = 'Add Location';
     $('nl-confirm-btn').textContent = 'Create';
     $('nl-delete-btn').classList.add('hidden');
+    $('nl-schedule-section').style.display = 'none';
     $('add-location-overlay').classList.remove('hidden');
   }
 
@@ -7257,6 +7258,8 @@ const App = (() => {
     $('loc-modal-title').textContent = 'Edit Location';
     $('nl-confirm-btn').textContent = 'Save';
     $('nl-delete-btn').classList.remove('hidden');
+    $('nl-schedule-section').style.display = '';
+    _renderLocationScheduleInModal(site);
     $('add-location-overlay').classList.remove('hidden');
   }
 
@@ -7315,119 +7318,59 @@ const App = (() => {
   }
 
 
-  // ── Location Detail — Time Slots (Filming/Prep/Wrap) ──────
 
-  let _locDetailId = null;
+  // ── Location Schedule inside Edit Modal ──────────────────
 
-  async function openLocationDetail(locId) {
-    const site = (state.locationSites || []).find(s => s.id === locId);
+  function _renderLocationScheduleInModal(site) {
+    const schedules = (state.locationSchedules || []).filter(s => s.location_name === site.name);
+    const grid = $('nl-schedule-grid');
+    if (!schedules.length) {
+      grid.innerHTML = '<div style="color:var(--text-4);font-size:.72rem">No schedule entries yet.</div>';
+      return;
+    }
+    const sorted = [...schedules].sort((a,b) => a.date.localeCompare(b.date));
+    grid.innerHTML = `<table style="width:100%;font-size:.72rem;border-collapse:collapse">
+      <thead><tr style="color:var(--text-3)">
+        <th style="text-align:left;padding:.2rem .3rem">Date</th>
+        <th style="text-align:center;padding:.2rem .3rem">Status</th>
+        <th style="text-align:center;padding:.2rem .3rem"></th>
+      </tr></thead>
+      <tbody>${sorted.map(s => {
+        const clr = s.status === 'P' ? 'var(--amber)' : s.status === 'F' ? 'var(--green)' : 'var(--accent)';
+        return `<tr style="border-bottom:1px solid var(--border-lt)">
+          <td style="padding:.2rem .3rem">${fmtDate(s.date)}</td>
+          <td style="text-align:center"><span style="color:${clr};font-weight:700">${s.status}</span></td>
+          <td style="text-align:center"><button class="btn btn-icon btn-sm btn-danger"
+            onclick="App._locModalRemoveSchedule('${esc(site.name)}','${s.date}')"
+            style="font-size:.55rem">✕</button></td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  }
+
+  async function _locModalAddSchedule() {
+    const editId = $('nl-edit-id').value;
+    const site = (state.locationSites || []).find(s => s.id === parseInt(editId));
     if (!site) return;
-    _locDetailId = locId;
-    $('loc-detail-title').textContent = site.name;
-    await _renderLocationDetail(locId);
-    $('location-detail-overlay').classList.remove('hidden');
+    const date = $('nl-sched-date').value;
+    const status = $('nl-sched-status').value;
+    if (!date) { toast('Select a date', 'error'); return; }
+    await api('POST', `/api/productions/${state.prodId}/location-schedules`, {
+      location_name: site.name, location_type: site.location_type, date, status
+    });
+    state.locationSchedules = await api('GET', `/api/productions/${state.prodId}/location-schedules`);
+    _renderLocationScheduleInModal(site);
+    renderLocations();
   }
 
-  function closeLocationDetail() {
-    $('location-detail-overlay').classList.add('hidden');
-    _locDetailId = null;
-  }
-
-  async function _renderLocationDetail(locId) {
-    const slots = await api('GET', `/api/locations/${locId}/time-slots`);
-    const body = $('loc-detail-body');
-    const types = ['filming', 'prep', 'wrap'];
-    const labels = { filming: 'Filming', prep: 'Prep', wrap: 'Wrap' };
-    const colors = { filming: 'var(--accent)', prep: 'var(--amber)', wrap: 'var(--purple)' };
-
-    body.innerHTML = types.map(t => {
-      const items = slots.filter(s => s.slot_type === t);
-      return `<div class="loc-slot-section" style="margin-bottom:1rem">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
-          <span style="font-weight:700;color:${colors[t]};font-size:.8rem">${labels[t]}</span>
-          <button class="btn btn-sm btn-secondary" onclick="App._locSlotAddForm('${t}')">+ Add</button>
-        </div>
-        <div id="loc-slots-${t}">
-          ${items.length ? items.map(s => _locSlotRow(s)).join('') : '<div style="color:var(--text-4);font-size:.72rem">No slots yet</div>'}
-        </div>
-        <div id="loc-slot-form-${t}" style="display:none"></div>
-      </div>`;
-    }).join('');
-  }
-
-  function _locSlotRow(s) {
-    const dateStr = s.end_date ? `${fmtDate(s.start_date)} → ${fmtDate(s.end_date)}` : fmtDate(s.start_date);
-    const timeStr = s.start_time ? ` ${s.start_time}${s.end_time ? '–' + s.end_time : ''}` : '';
-    return `<div style="display:flex;align-items:center;gap:.4rem;padding:.25rem 0;font-size:.75rem;border-bottom:1px solid var(--border-lt)">
-      <span style="flex:1;color:var(--text-1)">${dateStr}${timeStr}</span>
-      ${s.notes ? `<span style="color:var(--text-3);font-style:italic;font-size:.68rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.notes)}">${esc(s.notes)}</span>` : ''}
-      <button class="btn btn-icon btn-sm btn-secondary" onclick="App._locSlotEdit(${s.id})" title="Edit" style="font-size:.6rem">✎</button>
-      <button class="btn btn-icon btn-sm btn-danger" onclick="App._locSlotDelete(${s.id})" title="Delete" style="font-size:.6rem">✕</button>
-    </div>`;
-  }
-
-  function _locSlotAddForm(slotType) {
-    const form = $(`loc-slot-form-${slotType}`);
-    const isFilming = slotType === 'filming';
-    form.style.display = 'block';
-    form.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:.4rem;align-items:end;padding:.5rem;background:var(--bg-hover);border-radius:6px;margin-top:.3rem">
-      <div><label style="font-size:.6rem;color:var(--text-3)">Start</label><br><input type="date" id="lsf-start-${slotType}" class="form-control" style="font-size:.72rem;padding:.2rem .3rem"></div>
-      <div><label style="font-size:.6rem;color:var(--text-3)">End</label><br><input type="date" id="lsf-end-${slotType}" class="form-control" style="font-size:.72rem;padding:.2rem .3rem"></div>
-      ${isFilming ? `<div><label style="font-size:.6rem;color:var(--text-3)">From</label><br><input type="time" id="lsf-stime-${slotType}" class="form-control" style="font-size:.72rem;padding:.2rem .3rem"></div>
-      <div><label style="font-size:.6rem;color:var(--text-3)">To</label><br><input type="time" id="lsf-etime-${slotType}" class="form-control" style="font-size:.72rem;padding:.2rem .3rem"></div>` : ''}
-      <div><label style="font-size:.6rem;color:var(--text-3)">Notes</label><br><input type="text" id="lsf-notes-${slotType}" class="form-control" style="font-size:.72rem;padding:.2rem .3rem" placeholder="Optional"></div>
-      <button class="btn btn-sm btn-primary" onclick="App._locSlotSave('${slotType}')">Save</button>
-      <button class="btn btn-sm btn-secondary" onclick="document.getElementById('loc-slot-form-${slotType}').style.display='none'">Cancel</button>
-    </div>`;
-  }
-
-  async function _locSlotSave(slotType, editId) {
-    const data = {
-      production_id: state.prodId,
-      slot_type: slotType,
-      start_date: $(`lsf-start-${slotType}`).value,
-      end_date: $(`lsf-end-${slotType}`).value || null,
-      start_time: $(`lsf-stime-${slotType}`)?.value || null,
-      end_time: $(`lsf-etime-${slotType}`)?.value || null,
-      notes: $(`lsf-notes-${slotType}`)?.value || null,
-    };
-    if (!data.start_date) { toast('Start date required', 'error'); return; }
-    try {
-      if (editId) {
-        await api('PUT', `/api/location-time-slots/${editId}`, data);
-        toast('Slot updated');
-      } else {
-        await api('POST', `/api/locations/${_locDetailId}/time-slots`, data);
-        toast('Slot created');
-      }
-      await _renderLocationDetail(_locDetailId);
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
-  }
-
-  async function _locSlotEdit(slotId) {
-    const slots = await api('GET', `/api/locations/${_locDetailId}/time-slots`);
-    const s = slots.find(x => x.id === slotId);
-    if (!s) return;
-    const t = s.slot_type;
-    _locSlotAddForm(t);
-    $(`lsf-start-${t}`).value = s.start_date || '';
-    $(`lsf-end-${t}`).value = s.end_date || '';
-    if ($(`lsf-stime-${t}`)) $(`lsf-stime-${t}`).value = s.start_time || '';
-    if ($(`lsf-etime-${t}`)) $(`lsf-etime-${t}`).value = s.end_time || '';
-    if ($(`lsf-notes-${t}`)) $(`lsf-notes-${t}`).value = s.notes || '';
-    // Replace Save button to pass editId
-    const form = $(`loc-slot-form-${t}`);
-    const saveBtn = form.querySelector('.btn-primary');
-    saveBtn.onclick = () => App._locSlotSave(t, slotId);
-  }
-
-  async function _locSlotDelete(slotId) {
-    if (!confirm('Delete this time slot?')) return;
-    try {
-      await api('DELETE', `/api/location-time-slots/${slotId}`);
-      toast('Slot deleted');
-      await _renderLocationDetail(_locDetailId);
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  async function _locModalRemoveSchedule(locName, date) {
+    await api('POST', `/api/productions/${state.prodId}/location-schedules/delete`, {
+      location_name: locName, date
+    });
+    state.locationSchedules = state.locationSchedules.filter(s => !(s.location_name === locName && s.date === date));
+    const editId = $('nl-edit-id').value;
+    const site = (state.locationSites || []).find(s => s.id === parseInt(editId));
+    if (site) _renderLocationScheduleInModal(site);
+    renderLocations();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -9962,8 +9905,7 @@ const App = (() => {
     locSetView, locSetSubTab, locCellClick, locToggleLock, locAutoFill, locExportCSV,
     showAddLocationModal, closeAddLocationModal, editLocationSite,
     saveLocationSite, deleteLocationSite,
-    openLocationDetail, closeLocationDetail,
-    _locSlotAddForm, _locSlotSave, _locSlotEdit, _locSlotDelete,
+    _locModalAddSchedule, _locModalRemoveSchedule,
     // Guards — sub-tab navigation
     gdSetSubTab, gdSetView,
     // Guards — Location Guards (editable)
