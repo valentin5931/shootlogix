@@ -700,6 +700,21 @@ def _migrate_db():
             except Exception:
                 pass  # table may not exist yet
 
+        # include_sunday on all assignment tables (replaces pricing_type for calculation)
+        for tbl in ['boat_assignments', 'picture_boat_assignments',
+                     'security_boat_assignments', 'transport_assignments',
+                     'helper_assignments', 'guard_camp_assignments']:
+            try:
+                cols = [r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
+                if 'include_sunday' not in cols:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN include_sunday INTEGER DEFAULT 1")
+                    # Migrate existing pricing_type values: 'standard' meant Sunday=NO → include_sunday=0
+                    conn.execute(f"UPDATE {tbl} SET include_sunday=0 WHERE pricing_type='standard'")
+                    # '24_7' meant Sunday=YES → include_sunday=1 (already default)
+                    print(f"Migration: added {tbl}.include_sunday (migrated from pricing_type)")
+            except Exception:
+                pass  # table may not exist yet
+
 
 # ─── Working days ─────────────────────────────────────────────────────────────
 
@@ -730,14 +745,14 @@ def calendar_days(start_str, end_str):
         return 0
 
 
-def active_working_days(start_str, end_str, day_overrides_json):
+def active_working_days(start_str, end_str, day_overrides_json, include_sunday=True):
     """Count actual active days by iterating each day in the date range.
 
     A day is active if:
     - It is within [start, end] AND not explicitly overridden to 'empty'
     - OR it is outside [start, end] but explicitly overridden to a non-empty status
 
-    This replaces the old 6/7 formula with an exact day-by-day count.
+    If include_sunday is False, Sundays are skipped (unless explicitly overridden to active).
     """
     if not start_str or not end_str:
         return 0
@@ -763,6 +778,10 @@ def active_working_days(start_str, end_str, day_overrides_json):
             if overrides[dk] and overrides[dk] != 'empty':
                 count += 1
         else:
+            # Skip Sundays if not included
+            if not include_sunday and current.weekday() == 6:
+                current += one_day
+                continue
             # Default: day within range is active
             count += 1
         current += one_day
@@ -779,15 +798,17 @@ def active_working_days(start_str, end_str, day_overrides_json):
 
 
 def compute_working_days(d):
-    """Compute working days for an assignment dict based on its pricing_type.
+    """Compute working days for an assignment dict.
 
-    - 'standard' (default): count actual active days (respects day_overrides)
-    - 'monthly' or '24_7': total calendar days from start to end
+    Uses include_sunday flag: if 0/False, Sundays are excluded from the count.
+    Always uses active_working_days (day-by-day count respecting day_overrides).
     """
-    pt = (d.get("pricing_type") or "standard").lower()
-    if pt in ("monthly", "24_7"):
-        return calendar_days(d.get("start_date"), d.get("end_date"))
-    return active_working_days(d.get("start_date"), d.get("end_date"), d.get("day_overrides", "{}"))
+    include_sun = d.get("include_sunday", 1)
+    return active_working_days(
+        d.get("start_date"), d.get("end_date"),
+        d.get("day_overrides", "{}"),
+        include_sunday=bool(include_sun)
+    )
 
 
 # ─── Productions ──────────────────────────────────────────────────────────────
@@ -1116,14 +1137,15 @@ def create_boat_assignment(data):
         cur = conn.execute(
             """INSERT INTO boat_assignments
                (boat_function_id, boat_id, boat_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides, pricing_type)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("boat_id"), data.get("boat_name_override"),
              data.get("start_date"), data.get("end_date"),
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
-             data.get("pricing_type", "standard"))
+             data.get("pricing_type", "standard"),
+             data.get("include_sunday", 1))
         )
         new_id = cur.lastrowid
 
@@ -1141,7 +1163,7 @@ def update_boat_assignment(assignment_id, data):
     """Update an existing assignment (dates, status, notes, boat, price)."""
     allowed = ["start_date", "end_date", "price_override", "notes",
                "assignment_status", "day_overrides", "boat_id", "boat_name_override",
-               "pricing_type"]
+               "pricing_type", "include_sunday"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1272,14 +1294,15 @@ def create_picture_boat_assignment(data):
         cur = conn.execute(
             """INSERT INTO picture_boat_assignments
                (boat_function_id, picture_boat_id, boat_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides, pricing_type)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("picture_boat_id"), data.get("boat_name_override"),
              data.get("start_date"), data.get("end_date"),
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
-             data.get("pricing_type", "standard"))
+             data.get("pricing_type", "standard"),
+             data.get("include_sunday", 1))
         )
         return cur.lastrowid
 
@@ -1287,7 +1310,7 @@ def create_picture_boat_assignment(data):
 def update_picture_boat_assignment(assignment_id, data):
     allowed = ["start_date", "end_date", "price_override", "notes",
                "assignment_status", "day_overrides", "picture_boat_id", "boat_name_override",
-               "pricing_type"]
+               "pricing_type", "include_sunday"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1399,14 +1422,15 @@ def create_transport_assignment(data):
         cur = conn.execute(
             """INSERT INTO transport_assignments
                (boat_function_id, vehicle_id, vehicle_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides, pricing_type)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("vehicle_id"), data.get("vehicle_name_override"),
              data.get("start_date"), data.get("end_date"),
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
-             data.get("pricing_type", "standard"))
+             data.get("pricing_type", "standard"),
+             data.get("include_sunday", 1))
         )
         return cur.lastrowid
 
@@ -1414,7 +1438,7 @@ def create_transport_assignment(data):
 def update_transport_assignment(assignment_id, data):
     allowed = ["start_date", "end_date", "price_override", "notes",
                "assignment_status", "day_overrides", "vehicle_id", "vehicle_name_override",
-               "pricing_type"]
+               "pricing_type", "include_sunday"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1630,14 +1654,15 @@ def create_helper_assignment(data):
         cur = conn.execute(
             """INSERT INTO helper_assignments
                (boat_function_id, helper_id, helper_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides, pricing_type)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("helper_id"), data.get("helper_name_override"),
              data.get("start_date"), data.get("end_date"),
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
-             data.get("pricing_type", "standard"))
+             data.get("pricing_type", "standard"),
+             data.get("include_sunday", 1))
         )
         return cur.lastrowid
 
@@ -1645,7 +1670,7 @@ def create_helper_assignment(data):
 def update_helper_assignment(assignment_id, data):
     allowed = ["start_date", "end_date", "price_override", "notes",
                "assignment_status", "day_overrides", "helper_id", "helper_name_override",
-               "pricing_type"]
+               "pricing_type", "include_sunday"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1773,14 +1798,15 @@ def create_guard_camp_assignment(data):
         cur = conn.execute(
             """INSERT INTO guard_camp_assignments
                (boat_function_id, helper_id, helper_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides, pricing_type)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("helper_id"), data.get("helper_name_override"),
              data.get("start_date"), data.get("end_date"),
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
-             data.get("pricing_type", "standard"))
+             data.get("pricing_type", "standard"),
+             data.get("include_sunday", 1))
         )
         return cur.lastrowid
 
@@ -1788,7 +1814,7 @@ def create_guard_camp_assignment(data):
 def update_guard_camp_assignment(assignment_id, data):
     allowed = ["boat_function_id", "helper_id", "helper_name_override",
                "start_date", "end_date", "price_override", "notes",
-               "assignment_status", "day_overrides", "pricing_type"]
+               "assignment_status", "day_overrides", "pricing_type", "include_sunday"]
     set_parts = []
     vals = []
     for k in allowed:
@@ -1900,14 +1926,15 @@ def create_security_boat_assignment(data):
         cur = conn.execute(
             """INSERT INTO security_boat_assignments
                (boat_function_id, security_boat_id, boat_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides, pricing_type)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("security_boat_id"), data.get("boat_name_override"),
              data.get("start_date"), data.get("end_date"),
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
-             data.get("pricing_type", "standard"))
+             data.get("pricing_type", "standard"),
+             data.get("include_sunday", 1))
         )
         return cur.lastrowid
 
@@ -1915,7 +1942,7 @@ def create_security_boat_assignment(data):
 def update_security_boat_assignment(assignment_id, data):
     allowed = ["start_date", "end_date", "price_override", "notes",
                "assignment_status", "day_overrides", "security_boat_id", "boat_name_override",
-               "pricing_type"]
+               "pricing_type", "include_sunday"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return

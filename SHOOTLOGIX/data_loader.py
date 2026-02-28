@@ -736,32 +736,32 @@ BOAT_UPDATE_FEB27_DATA = [
 
 # ─── Mar Update: Updated boat schedule with vendor + Sunday info ──────────────
 BOAT_UPDATE_MAR_DATA = [
-    {'function': 'UNIT GAMES 2',      'boat': 'BONGO 2',              'vendor': 'BONGO YACHT CLUB',  'price': 481.50, 'start': '2026-03-02', 'end': '2026-04-28', 'pricing': 'standard',  'group': 'Games'},
-    {'function': 'UNIT REALITY',      'boat': 'SEÑORA YOLITZA',       'vendor': 'JOSEPH MENDIETA',   'price': 300.00, 'start': '2026-03-05', 'end': '2026-04-30', 'pricing': '24_7',      'group': 'Reality'},
-    {'function': 'TAXI',              'boat': 'PCC4',                 'vendor': 'BONGO YACHT CLUB',  'price': 337.05, 'start': '2026-02-20', 'end': '2026-05-04', 'pricing': '24_7',      'group': 'Special'},
-    {'function': 'PREP UNIT (TEMP)',  'boat': 'ULTIMA GAVIOTA',       'vendor': '',                  'price': 300.00, 'start': '2026-02-24', 'end': '2026-02-28', 'pricing': '24_7',      'group': 'Special'},
-    {'function': 'PREP UNIT (TEMP)',  'boat': 'DOÑA CRISTO',          'vendor': 'JOSEPH MENDIETA',   'price': 200.00, 'start': '2026-02-25', 'end': '2026-03-05', 'pricing': '24_7',      'group': 'Special'},
-    {'function': 'SAFETY',            'boat': 'ESMELDA',              'vendor': 'JUAN AROSEMENA',    'price': 321.00, 'start': '2026-03-05', 'end': '2026-04-26', 'pricing': 'standard',  'group': 'Special'},
-    {'function': 'CONSTRUCTIONS 4',   'boat': 'PERICO 1',             'vendor': 'BONGO YACHT CLUB',  'price': 674.10, 'start': '2026-03-12', 'end': '2026-04-27', 'pricing': 'standard',  'group': 'Construction'},
-    {'function': 'CONSTRUCTION 1',    'boat': 'RUGE LEON',            'vendor': 'MIRTA DE URRUTIA',  'price': 300.00, 'start': '2026-03-09', 'end': '2026-04-27', 'pricing': 'standard',  'group': 'Construction'},
-    {'function': 'CONSTRUCTION 3',    'boat': 'BONGO 3',              'vendor': '',                  'price': 481.50, 'start': '2026-03-16', 'end': '2026-04-27', 'pricing': 'standard',  'group': 'Construction'},
-    {'function': 'CONSTRUCTION 2',    'boat': 'NO TE METAS',          'vendor': '',                  'price': 350.00, 'start': '2026-03-12', 'end': '2026-04-27', 'pricing': '24_7',      'group': 'Construction'},
-    {'function': 'BODY DOUBLE',       'boat': 'BONGO 1',              'vendor': '',                  'price': 481.50, 'start': '2026-03-14', 'end': '2026-04-30', 'pricing': '24_7',      'group': 'Special'},
-    {'function': 'VIP',               'boat': 'TBD (Nathan?)',        'vendor': '',                  'price': 700.00, 'start': '2026-03-18', 'end': '2026-04-25', 'pricing': '24_7',      'group': 'Special'},
-    {'function': 'CONTESTANTS 1',     'boat': 'YORIANIS',             'vendor': '',                  'price': 450.00, 'start': '2026-03-19', 'end': '2026-04-26', 'pricing': 'standard',  'group': 'Contestants'},
-    {'function': 'CONTESTANTS 2',     'boat': 'BUENA MAR',            'vendor': '',                  'price': 450.00, 'start': '2026-03-19', 'end': '2026-04-26', 'pricing': 'standard',  'group': 'Contestants'},
-    {'function': 'CONTESTANTS 3',     'boat': 'BOCAS 3',              'vendor': '',                  'price': 450.00, 'start': '2026-03-19', 'end': '2026-04-15', 'pricing': 'standard',  'group': 'Contestants'},
-    {'function': 'UNIT GAMES 1',      'boat': 'BORUCA LANDING CRAFT', 'vendor': '',                  'price': 834.00, 'start': '2026-03-09', 'end': '2026-04-26', 'pricing': '24_7',      'group': 'Games'},
-    {'function': 'CREW GAMES 1',      'boat': 'BOCAS 4',              'vendor': '',                  'price': 450.00, 'start': '2026-03-20', 'end': '2026-04-25', 'pricing': 'standard',  'group': 'Crew'},
-    {'function': 'CREW GAMES 2',      'boat': 'BOCAS 5',              'vendor': '',                  'price': 450.00, 'start': '2026-03-20', 'end': '2026-04-25', 'pricing': 'standard',  'group': 'Crew'},
-    {'function': 'CREW GAMES 3',      'boat': 'PCC3',                 'vendor': '',                  'price': 434.00, 'start': '2026-03-20', 'end': '2026-04-25', 'pricing': 'standard',  'group': 'Crew'},
-    {'function': 'REALITY CREW 1',    'boat': 'GOD IS LOVE',          'vendor': '',                  'price': 337.05, 'start': '2026-03-20', 'end': '2026-04-24', 'pricing': '24_7',      'group': 'Crew'},
-    {'function': 'REALITY CREW 2',    'boat': 'DIOS PERFECTO',        'vendor': '',                  'price': 300.00, 'start': '2026-03-20', 'end': '2026-04-24', 'pricing': '24_7',      'group': 'Crew'},
-    {'function': 'REALITY CREW 3 tbc','boat': 'NIÑA NABELIS',         'vendor': '',                  'price': 300.00, 'start': '2026-03-20', 'end': '2026-04-15', 'pricing': '24_7',      'group': 'Crew'},
-    {'function': 'EVAC',              'boat': 'EVAC',                 'vendor': '',                  'price': 880.00, 'start': '2026-03-22', 'end': '2026-04-26', 'pricing': '24_7',      'group': 'Special'},
-    {'function': 'MEDICAL PREP',      'boat': 'MISHKA',               'vendor': '',                  'price': 321.00, 'start': '2026-03-05', 'end': '2026-03-19', 'pricing': '24_7',      'group': 'Special'},
-    {'function': 'MEDICAL SHOOT',     'boat': 'MISHKA 24/7',          'vendor': '',                  'price': 642.00, 'start': '2026-03-20', 'end': '2026-04-25', 'pricing': '24_7',      'group': 'Special'},
-    {'function': 'MEDICAL WRAP',      'boat': 'MISHKA',               'vendor': '',                  'price': 321.00, 'start': '2026-04-26', 'end': '2026-05-03', 'pricing': '24_7',      'group': 'Special'},
+    {'function': 'UNIT GAMES 2',      'boat': 'BONGO 2',              'vendor': 'BONGO YACHT CLUB',  'price': 481.50, 'start': '2026-03-02', 'end': '2026-04-28', 'sunday': False,  'group': 'Games'},
+    {'function': 'UNIT REALITY',      'boat': 'SEÑORA YOLITZA',       'vendor': 'JOSEPH MENDIETA',   'price': 300.00, 'start': '2026-03-05', 'end': '2026-04-30', 'sunday': True,   'group': 'Reality'},
+    {'function': 'TAXI',              'boat': 'PCC4',                 'vendor': 'BONGO YACHT CLUB',  'price': 337.05, 'start': '2026-02-20', 'end': '2026-05-04', 'sunday': True,   'group': 'Special'},
+    {'function': 'PREP UNIT (TEMP)',  'boat': 'ULTIMA GAVIOTA',       'vendor': '',                  'price': 300.00, 'start': '2026-02-24', 'end': '2026-02-28', 'sunday': True,   'group': 'Special'},
+    {'function': 'PREP UNIT (TEMP)',  'boat': 'DOÑA CRISTO',          'vendor': 'JOSEPH MENDIETA',   'price': 200.00, 'start': '2026-02-25', 'end': '2026-03-05', 'sunday': True,   'group': 'Special'},
+    {'function': 'SAFETY',            'boat': 'ESMELDA',              'vendor': 'JUAN AROSEMENA',    'price': 321.00, 'start': '2026-03-05', 'end': '2026-04-26', 'sunday': False,  'group': 'Special'},
+    {'function': 'CONSTRUCTIONS 4',   'boat': 'PERICO 1',             'vendor': 'BONGO YACHT CLUB',  'price': 674.10, 'start': '2026-03-12', 'end': '2026-04-27', 'sunday': False,  'group': 'Construction'},
+    {'function': 'CONSTRUCTION 1',    'boat': 'RUGE LEON',            'vendor': 'MIRTA DE URRUTIA',  'price': 300.00, 'start': '2026-03-09', 'end': '2026-04-27', 'sunday': False,  'group': 'Construction'},
+    {'function': 'CONSTRUCTION 3',    'boat': 'BONGO 3',              'vendor': '',                  'price': 481.50, 'start': '2026-03-16', 'end': '2026-04-27', 'sunday': False,  'group': 'Construction'},
+    {'function': 'CONSTRUCTION 2',    'boat': 'NO TE METAS',          'vendor': '',                  'price': 350.00, 'start': '2026-03-12', 'end': '2026-04-27', 'sunday': True,   'group': 'Construction'},
+    {'function': 'BODY DOUBLE',       'boat': 'BONGO 1',              'vendor': '',                  'price': 481.50, 'start': '2026-03-14', 'end': '2026-04-30', 'sunday': True,   'group': 'Special'},
+    {'function': 'VIP',               'boat': 'TBD (Nathan?)',        'vendor': '',                  'price': 700.00, 'start': '2026-03-18', 'end': '2026-04-25', 'sunday': True,   'group': 'Special'},
+    {'function': 'CONTESTANTS 1',     'boat': 'YORIANIS',             'vendor': '',                  'price': 450.00, 'start': '2026-03-19', 'end': '2026-04-26', 'sunday': False,  'group': 'Contestants'},
+    {'function': 'CONTESTANTS 2',     'boat': 'BUENA MAR',            'vendor': '',                  'price': 450.00, 'start': '2026-03-19', 'end': '2026-04-26', 'sunday': False,  'group': 'Contestants'},
+    {'function': 'CONTESTANTS 3',     'boat': 'BOCAS 3',              'vendor': '',                  'price': 450.00, 'start': '2026-03-19', 'end': '2026-04-15', 'sunday': False,  'group': 'Contestants'},
+    {'function': 'UNIT GAMES 1',      'boat': 'BORUCA LANDING CRAFT', 'vendor': '',                  'price': 834.00, 'start': '2026-03-09', 'end': '2026-04-26', 'sunday': True,   'group': 'Games'},
+    {'function': 'CREW GAMES 1',      'boat': 'BOCAS 4',              'vendor': '',                  'price': 450.00, 'start': '2026-03-20', 'end': '2026-04-25', 'sunday': False,  'group': 'Crew'},
+    {'function': 'CREW GAMES 2',      'boat': 'BOCAS 5',              'vendor': '',                  'price': 450.00, 'start': '2026-03-20', 'end': '2026-04-25', 'sunday': False,  'group': 'Crew'},
+    {'function': 'CREW GAMES 3',      'boat': 'PCC3',                 'vendor': '',                  'price': 434.00, 'start': '2026-03-20', 'end': '2026-04-25', 'sunday': False,  'group': 'Crew'},
+    {'function': 'REALITY CREW 1',    'boat': 'GOD IS LOVE',          'vendor': '',                  'price': 337.05, 'start': '2026-03-20', 'end': '2026-04-24', 'sunday': True,   'group': 'Crew'},
+    {'function': 'REALITY CREW 2',    'boat': 'DIOS PERFECTO',        'vendor': '',                  'price': 300.00, 'start': '2026-03-20', 'end': '2026-04-24', 'sunday': True,   'group': 'Crew'},
+    {'function': 'REALITY CREW 3 tbc','boat': 'NIÑA NABELIS',         'vendor': '',                  'price': 300.00, 'start': '2026-03-20', 'end': '2026-04-15', 'sunday': True,   'group': 'Crew'},
+    {'function': 'EVAC',              'boat': 'EVAC',                 'vendor': '',                  'price': 880.00, 'start': '2026-03-22', 'end': '2026-04-26', 'sunday': True,   'group': 'Special'},
+    {'function': 'MEDICAL PREP',      'boat': 'MISHKA',               'vendor': '',                  'price': 321.00, 'start': '2026-03-05', 'end': '2026-03-19', 'sunday': True,   'group': 'Special'},
+    {'function': 'MEDICAL SHOOT',     'boat': 'MISHKA 24/7',          'vendor': '',                  'price': 642.00, 'start': '2026-03-20', 'end': '2026-04-25', 'sunday': True,   'group': 'Special'},
+    {'function': 'MEDICAL WRAP',      'boat': 'MISHKA',               'vendor': '',                  'price': 321.00, 'start': '2026-04-26', 'end': '2026-05-03', 'sunday': True,   'group': 'Special'},
 ]
 
 
@@ -1404,7 +1404,7 @@ def _migrate_boat_update_feb27(prod_id):
 def _migrate_boat_update_mar(prod_id):
     """
     March update: Replace ALL boat assignments with updated schedule.
-    Includes vendor info and updated pricing_type based on SUNDAY? column.
+    Includes vendor info and include_sunday based on SUNDAY? column.
     Removes EVAC 2, adds UNIT GAMES 2 and PREP UNIT (TEMP).
     """
     if get_setting("boat_update_mar_v1"):
@@ -1441,7 +1441,7 @@ def _migrate_boat_update_mar(prod_id):
             price = row['price']
             start = row['start']
             end = row['end']
-            pricing = row['pricing']
+            include_sunday = 1 if row['sunday'] else 0
             group = row['group']
             vendor = row.get('vendor', '')
 
@@ -1476,11 +1476,11 @@ def _migrate_boat_update_mar(prod_id):
             conn.execute(
                 """INSERT INTO boat_assignments
                    (boat_function_id, boat_id, start_date, end_date,
-                    price_override, pricing_type, assignment_status, day_overrides)
+                    price_override, include_sunday, assignment_status, day_overrides)
                    VALUES (?, ?, ?, ?, ?, ?, 'confirmed', '{}')""",
-                (func_id, boat_id, start, end, price, pricing)
+                (func_id, boat_id, start, end, price, include_sunday)
             )
-            print(f"    {func_name} -> {boat_name} (${price}/day, {pricing}, {start} to {end})")
+            print(f"    {func_name} -> {boat_name} (${price}/day, sun={'Y' if include_sunday else 'N'}, {start} to {end})")
 
     set_setting("boat_update_mar_v1", "1")
     print("  [Update Mar] Boat schedule update complete.")

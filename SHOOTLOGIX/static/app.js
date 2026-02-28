@@ -151,10 +151,11 @@ const App = (() => {
     return Math.max(0, total);
   }
 
-  /** Count actual active days for an assignment, respecting day_overrides. */
+  /** Count actual active days for an assignment, respecting day_overrides and include_sunday. */
   function activeWorkingDays(asgn) {
     if (!asgn.start_date || !asgn.end_date) return 0;
     const overrides = JSON.parse(asgn.day_overrides || '{}');
+    const includeSunday = asgn.include_sunday !== 0;
     const s = new Date(asgn.start_date.slice(0,10) + 'T00:00:00');
     const e = new Date(asgn.end_date.slice(0,10) + 'T00:00:00');
     let count = 0;
@@ -163,6 +164,8 @@ const App = (() => {
       if (dk in overrides) {
         if (overrides[dk] && overrides[dk] !== 'empty') count++;
       } else {
+        // Skip Sundays if not included
+        if (!includeSunday && d.getDay() === 0) continue;
         count++; // default: day in range is active
       }
     }
@@ -176,17 +179,9 @@ const App = (() => {
     return count;
   }
 
-  /** Compute working days for an assignment based on pricing_type.
-   *  - standard: count actual active days
-   *  - monthly / 24_7: total calendar days
-   */
+  /** Compute working days for an assignment. Uses include_sunday flag. */
   function computeWd(asgn) {
-    // If the server already computed working_days, use that
     if (asgn.working_days != null) return asgn.working_days;
-    const pt = (asgn.pricing_type || 'standard').toLowerCase();
-    if (pt === 'monthly' || pt === '24_7') {
-      return workingDays(asgn.start_date, asgn.end_date); // calendar days
-    }
     return activeWorkingDays(asgn);
   }
 
@@ -1370,7 +1365,7 @@ const App = (() => {
               ${asgn.wave_rating ? `<span class="wave-badge ${wClass}">${waveLabel(asgn.wave_rating)}</span>` : ''}
               <span style="font-weight:600;color:var(--text-0);font-size:.82rem">${esc(boatName)}</span>
               ${asgn.captain ? `<span style="color:var(--text-3);font-size:.7rem">· ${esc(asgn.captain)}</span>` : ''}
-              ${asgn.pricing_type && asgn.pricing_type !== 'standard' ? `<span style="font-size:.6rem;background:var(--orange);color:#000;padding:0 .3rem;border-radius:3px;font-weight:700">${asgn.pricing_type === '24_7' ? '24/7' : 'MONTHLY'}</span>` : ''}
+              ${asgn.include_sunday === 0 ? '<span style="font-size:.6rem;background:var(--orange);color:#000;padding:0 .3rem;border-radius:3px;font-weight:700">NO SUN</span>' : ''}
             </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:.2rem">
@@ -1513,7 +1508,7 @@ const App = (() => {
     $('am-boat-name').textContent = boat.name + (boat.captain ? ` · ${boat.captain}` : '');
     $('am-notes').value = existingAsgn?.notes || '';
     $('am-price-display').textContent = rate > 0 ? `$${rate.toLocaleString()}/day` : 'Rate not set';
-    $('am-pricing-type').value = existingAsgn?.pricing_type || 'standard';
+    $('am-include-sunday').checked = existingAsgn?.include_sunday !== 0;
 
     const datesInfo = $('am-dates-info');
     if (existingAsgn?.start_date) {
@@ -1538,17 +1533,17 @@ const App = (() => {
     const boatId       = parseInt($('am-boat-id').value);
     const assignmentId = $('am-func-id').dataset.assignmentId;
     const notes  = $('am-notes').value;
-    const pricingType = $('am-pricing-type').value || 'standard';
+    const includeSunday = $('am-include-sunday').checked ? 1 : 0;
 
     try {
       if (_assignCtx === 'security') {
         if (assignmentId) {
           await api('PUT', `/api/security-boat-assignments/${assignmentId}`, {
-            security_boat_id: boatId, notes, pricing_type: pricingType,
+            security_boat_id: boatId, notes, include_sunday: includeSunday,
           });
         } else {
           await api('POST', `/api/productions/${state.prodId}/security-boat-assignments`, {
-            boat_function_id: funcId, security_boat_id: boatId, notes, pricing_type: pricingType,
+            boat_function_id: funcId, security_boat_id: boatId, notes, include_sunday: includeSunday,
           });
         }
         closeAssignModal();
@@ -1560,11 +1555,11 @@ const App = (() => {
       } else if (_assignCtx === 'picture') {
         if (assignmentId) {
           await api('PUT', `/api/picture-boat-assignments/${assignmentId}`, {
-            picture_boat_id: boatId, notes, pricing_type: pricingType,
+            picture_boat_id: boatId, notes, include_sunday: includeSunday,
           });
         } else {
           await api('POST', `/api/productions/${state.prodId}/picture-boat-assignments`, {
-            boat_function_id: funcId, picture_boat_id: boatId, notes, pricing_type: pricingType,
+            boat_function_id: funcId, picture_boat_id: boatId, notes, include_sunday: includeSunday,
           });
         }
         closeAssignModal();
@@ -1575,10 +1570,10 @@ const App = (() => {
         toast(assignmentId ? 'Assignment updated' : `${boat?.name || 'Boat'} assigned to ${func?.name || 'function'}`);
       } else if (_assignCtx === 'transport') {
         if (assignmentId) {
-          await api('PUT', `/api/transport-assignments/${assignmentId}`, { vehicle_id: boatId, notes, pricing_type: pricingType });
+          await api('PUT', `/api/transport-assignments/${assignmentId}`, { vehicle_id: boatId, notes, include_sunday: includeSunday });
         } else {
           await api('POST', `/api/productions/${state.prodId}/transport-assignments`, {
-            boat_function_id: funcId, vehicle_id: boatId, notes, pricing_type: pricingType,
+            boat_function_id: funcId, vehicle_id: boatId, notes, include_sunday: includeSunday,
           });
         }
         closeAssignModal();
@@ -1589,10 +1584,10 @@ const App = (() => {
         toast(assignmentId ? 'Assignment updated' : `${vehicle?.name || 'Vehicle'} assigned to ${func?.name || 'function'}`);
       } else if (_assignCtx === 'labour') {
         if (assignmentId) {
-          await api('PUT', `/api/helper-assignments/${assignmentId}`, { helper_id: boatId, notes, pricing_type: pricingType });
+          await api('PUT', `/api/helper-assignments/${assignmentId}`, { helper_id: boatId, notes, include_sunday: includeSunday });
         } else {
           await api('POST', `/api/productions/${state.prodId}/helper-assignments`, {
-            boat_function_id: funcId, helper_id: boatId, notes, pricing_type: pricingType,
+            boat_function_id: funcId, helper_id: boatId, notes, include_sunday: includeSunday,
           });
         }
         closeAssignModal();
@@ -1603,10 +1598,10 @@ const App = (() => {
         toast(assignmentId ? 'Assignment updated' : `${worker?.name || 'Worker'} assigned to ${lfunc?.name || 'function'}`);
       } else if (_assignCtx === 'guard_camp') {
         if (assignmentId) {
-          await api('PUT', `/api/guard-camp-assignments/${assignmentId}`, { helper_id: boatId, notes, pricing_type: pricingType });
+          await api('PUT', `/api/guard-camp-assignments/${assignmentId}`, { helper_id: boatId, notes, include_sunday: includeSunday });
         } else {
           await api('POST', `/api/productions/${state.prodId}/guard-camp-assignments`, {
-            boat_function_id: funcId, helper_id: boatId, notes, pricing_type: pricingType,
+            boat_function_id: funcId, helper_id: boatId, notes, include_sunday: includeSunday,
           });
         }
         closeAssignModal();
@@ -1618,11 +1613,11 @@ const App = (() => {
       } else {
         if (assignmentId) {
           await api('PUT', `/api/assignments/${assignmentId}`, {
-            boat_id: boatId, notes, pricing_type: pricingType,
+            boat_id: boatId, notes, include_sunday: includeSunday,
           });
         } else {
           await api('POST', `/api/productions/${state.prodId}/assignments`, {
-            boat_function_id: funcId, boat_id: boatId, notes, pricing_type: pricingType,
+            boat_function_id: funcId, boat_id: boatId, notes, include_sunday: includeSunday,
           });
         }
         closeAssignModal();
