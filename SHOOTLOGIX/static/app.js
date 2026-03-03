@@ -2027,7 +2027,7 @@ const App = (() => {
       const isLocked = !!state.lockedDays[dk];
       return `<th class="schedule-day-th ${isWE ? 'weekend-col' : ''} ${pdtByDate[dk] ? 'has-pdt' : ''} ${isLocked ? 'day-locked' : ''}"
         data-date="${dk}"
-        onmouseenter="App.showPDTTooltip(event,'${dk}')"
+        onmouseenter="App.showDateTooltip(event,'${dk}')"
         onmouseleave="App.hidePDTTooltip()"
       >${day.getDate()}</th>`;
     }).join('');
@@ -2329,6 +2329,31 @@ const App = (() => {
 
   function hidePDTTooltip() {
     $('pdt-tooltip')?.classList.add('hidden');
+  }
+
+  function showDateTooltip(event, date) {
+    const day = state.shootingDays.find(d => d.date === date);
+    if (!day) return;
+    const events = day.events?.length ? day.events : (day.game_name ? [{ event_type: 'game', name: day.game_name, location: day.location }] : []);
+    if (!events.length && !day.location) return;
+
+    const tip = $('pdt-tooltip');
+    let html = `<div style="font-weight:700;margin-bottom:.25rem;color:var(--text-0)">J${day.day_number || '?'} — ${date}</div>` +
+      events.map(ev => `<div class="pdt-tip-event">
+        <span class="event-badge ev-${ev.event_type || 'game'}" style="font-size:.58rem">${(ev.event_type||'game').toUpperCase()}</span>
+        <span style="color:var(--text-1)">${esc(ev.name || day.game_name || '—')}</span>
+        ${ev.location ? `<span style="color:var(--text-4)">@ ${esc(ev.location)}</span>` : ''}
+      </div>`).join('');
+    const noteLines = [];
+    if (day.notes) noteLines.push(`📝 ${esc(day.notes)}`);
+    events.forEach(ev => { if (ev.notes) noteLines.push(`${(ev.event_type||'game').toUpperCase()}: ${esc(ev.notes)}`); });
+    if (noteLines.length) html += `<div class="pdt-tip-note">${noteLines.join('<br>')}</div>`;
+    tip.innerHTML = html;
+
+    const rect = event.target.getBoundingClientRect();
+    tip.style.left = rect.left + 'px';
+    tip.style.top  = (rect.bottom + 4) + 'px';
+    tip.classList.remove('hidden');
   }
 
   // ── Boat detail modal ──────────────────────────────────────
@@ -2940,7 +2965,7 @@ const App = (() => {
       const isLocked = !!state.pbLockedDays[dk];
       return `<th class="schedule-day-th ${isWE ? 'weekend-col' : ''} ${pdtByDate[dk] ? 'has-pdt' : ''} ${isLocked ? 'day-locked' : ''}"
         data-date="${dk}"
-        onmouseenter="App.showPDTTooltip(event,'${dk}')"
+        onmouseenter="App.showDateTooltip(event,'${dk}')"
         onmouseleave="App.hidePDTTooltip()"
       >${day.getDate()}</th>`;
     }).join('');
@@ -3713,7 +3738,7 @@ const App = (() => {
       const isLocked = !!state.tbLockedDays[dk];
       return `<th class="schedule-day-th ${isWE ? 'weekend-col' : ''} ${pdtByDate[dk] ? 'has-pdt' : ''} ${isLocked ? 'day-locked' : ''}"
         data-date="${dk}"
-        onmouseenter="App.showPDTTooltip(event,'${dk}')"
+        onmouseenter="App.showDateTooltip(event,'${dk}')"
         onmouseleave="App.hidePDTTooltip()"
       >${day.getDate()}</th>`;
     }).join('');
@@ -4391,7 +4416,7 @@ const App = (() => {
       const isLk = !!state.fuelLockedDays[dk];
       return `<th class="schedule-day-th ${isWe ? 'weekend-col' : ''} ${pdtByDate[dk] ? 'has-pdt' : ''} ${isLk ? 'day-locked' : ''}"
     data-date="${dk}"
-    onmouseenter="App.showPDTTooltip(event,'${dk}')"
+    onmouseenter="App.showDateTooltip(event,'${dk}')"
     onmouseleave="App.hidePDTTooltip()"
   >${dLocal.getDate()}</th>`;
     }).join('');
@@ -4625,7 +4650,7 @@ const App = (() => {
       const isLk = !!state.fuelLockedDays[dk];
       return `<th class="schedule-day-th ${isWe ? 'weekend-col' : ''} ${pdtByDate[dk] ? 'has-pdt' : ''} ${isLk ? 'day-locked' : ''}"
     data-date="${dk}"
-    onmouseenter="App.showPDTTooltip(event,'${dk}')"
+    onmouseenter="App.showDateTooltip(event,'${dk}')"
     onmouseleave="App.hidePDTTooltip()"
   >${dLocal.getDate()}</th>`;
     }).join('');
@@ -5544,7 +5569,7 @@ const App = (() => {
       const isLocked = !!state.lbLockedDays[dk];
       return `<th class="schedule-day-th ${isWE ? 'weekend-col' : ''} ${pdtByDate[dk] ? 'has-pdt' : ''} ${isLocked ? 'day-locked' : ''}"
         data-date="${dk}"
-        onmouseenter="App.showPDTTooltip(event,'${dk}')"
+        onmouseenter="App.showDateTooltip(event,'${dk}')"
         onmouseleave="App.hidePDTTooltip()"
       >${day.getDate()}</th>`;
     }).join('');
@@ -6139,7 +6164,7 @@ const App = (() => {
       const isLocked = !!state.sbLockedDays[dk];
       return `<th class="schedule-day-th ${isWE ? 'weekend-col' : ''} ${pdtByDate[dk] ? 'has-pdt' : ''} ${isLocked ? 'day-locked' : ''}"
         data-date="${dk}"
-        onmouseenter="App.showPDTTooltip(event,'${dk}')"
+        onmouseenter="App.showDateTooltip(event,'${dk}')"
         onmouseleave="App.hidePDTTooltip()"
       >${day.getDate()}</th>`;
     }).join('');
@@ -6890,7 +6915,7 @@ const App = (() => {
                 const isLocked = lockedDates.has(d);
                 const hasPdt = !!pdtByDate[d];
                 return `<th class="loc-th-date ${isLocked ? 'loc-locked' : ''} ${hasPdt ? 'loc-has-pdt' : ''}" style="min-width:32px;text-align:center;position:relative"
-                  onmouseenter="App.showPDTTooltip(event,'${d}')"
+                  onmouseenter="App.showDateTooltip(event,'${d}')"
                   onmouseleave="App.hidePDTTooltip()">
                   <div style="font-size:.6rem;color:var(--text-4)">${wd}</div>
                   <div style="font-size:.7rem">${day}</div>
@@ -7549,7 +7574,7 @@ const App = (() => {
                 const hasPdt = !!gdPdtByDate[d];
                 return `<th class="loc-th-date ${hasPdt ? 'loc-has-pdt' : ''}" style="min-width:32px;text-align:center;cursor:pointer;position:relative${isLocked ? ';background:rgba(34,197,94,.15)' : ''}"
                   onclick="App.gdlToggleLock('${d}')"
-                  onmouseenter="App.showPDTTooltip(event,'${d}')"
+                  onmouseenter="App.showDateTooltip(event,'${d}')"
                   onmouseleave="App.hidePDTTooltip()">
                   <div style="font-size:.6rem;color:var(--text-4)">${wd}</div>
                   <div style="font-size:.7rem">${day}</div>
@@ -8364,7 +8389,7 @@ const App = (() => {
       const isLocked = !!state.gcLockedDays[dk];
       return `<th class="schedule-day-th ${isWE ? 'weekend-col' : ''} ${pdtByDate[dk] ? 'has-pdt' : ''} ${isLocked ? 'day-locked' : ''}"
         data-date="${dk}"
-        onmouseenter="App.showPDTTooltip(event,'${dk}')"
+        onmouseenter="App.showDateTooltip(event,'${dk}')"
         onmouseleave="App.hidePDTTooltip()"
       >${day.getDate()}</th>`;
     }).join('');
@@ -9853,7 +9878,7 @@ const App = (() => {
     closeSchedulePopover, assignFromDate,
     editAssignmentById, removeAssignmentById, resetDayOverrides,
     toggleDayLock, pbToggleDayLock,
-    showPDTTooltip, hidePDTTooltip,
+    showPDTTooltip, showDateTooltip, hidePDTTooltip,
     // Boat view popup + detail / edit
     openBoatView, closeBoatView,
     openBoatDetail, closeBoatDetail, saveBoatEdit, triggerPhotoUpload, uploadBoatPhoto,
