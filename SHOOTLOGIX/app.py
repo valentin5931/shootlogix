@@ -3363,26 +3363,46 @@ def api_export_logistics(prod_id):
     if all_dates:
         ws.freeze_panes = "B6"
 
-    # Section B: Base Camp Guards
+    # Section B: Base Camp Guards (matrix)
     ws.append([])
     ws.append([])
     ws.append(["BASE CAMP GUARDS"])
     ws.cell(row=ws.max_row, column=1).font = section_font
-    ws.append(["Group", "Function", "Guard", "Role", "Contact",
-               "Start", "End", "Working Days"])
-    style_header_row(ws, 8)
+
+    gc_header = ["Guard"] + date_headers + ["Total"]
+    ws.append(gc_header)
+    style_header_row(ws, len(gc_header))
+
+    gc_matrix_rows = []
     for r in gc_rows:
         if not r.get("working_days"):
             continue
-        ws.append([
-            r.get("function_group") or r.get("helper_group") or "",
-            r.get("function_name") or "",
-            r.get("helper_name_override") or r.get("helper_name") or "",
-            r.get("helper_role") or "",
-            r.get("helper_contact") or "",
-            r.get("start_date") or "", r.get("end_date") or "",
-            r.get("working_days") or "",
-        ])
+        label = f"{r.get('function_name','') or ''} — {r.get('helper_name_override') or r.get('helper_name') or ''}"
+        day_map = {}
+        for d in all_dates:
+            if _is_date_active(d, r):
+                day_map[d] = 1
+        gc_matrix_rows.append((label, day_map, r.get("working_days", 0)))
+
+    for label, day_map, wd in gc_matrix_rows:
+        row = [label] + [day_map.get(d, "") for d in all_dates] + [wd]
+        ws.append(row)
+        row_num = ws.max_row
+        for col_idx, d in enumerate(all_dates, start=2):
+            cell = ws.cell(row=row_num, column=col_idx)
+            if cell.value == 1:
+                cell.fill = fill_active
+                cell.alignment = Alignment(horizontal='center')
+
+    # Base camp totals per date
+    ws.append([])
+    gc_totals = ["TOTAL / DAY"]
+    for d in all_dates:
+        gc_totals.append(sum(1 for _, dm, _ in gc_matrix_rows if dm.get(d)))
+    gc_totals.append(sum(wd for _, _, wd in gc_matrix_rows))
+    ws.append(gc_totals)
+    ws.cell(row=ws.max_row, column=1).font = subtotal_font
+
     auto_width(ws)
 
     # ── Sheet 10: FNB ────────────────────────────────────────────────────────

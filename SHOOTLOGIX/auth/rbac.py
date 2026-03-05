@@ -97,6 +97,7 @@ EXPORT_TAB_MAP = [
     ("/export/fnb-budget", "fnb"),
     ("/export/guard-camp", "guards"),
     ("/export/budget-global", "budget"),
+    ("/export/logistics", "budget"),
     ("/export/csv", "boats"),
     ("/export/json", "boats"),
 ]

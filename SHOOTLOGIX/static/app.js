@@ -7423,8 +7423,24 @@ const App = (() => {
     else renderGuardCamp();
   }
 
+  function _updateGcBadge() {
+    const btn = $('gd-subtab-basecamp');
+    if (!btn) return;
+    const count = (state.gcAssignments || []).filter(a => a.helper_id).length;
+    const badge = btn.querySelector('.gc-badge');
+    if (count > 0) {
+      if (badge) { badge.textContent = count; }
+      else { btn.insertAdjacentHTML('beforeend', ` <span class="gc-badge" style="background:var(--accent);color:#fff;border-radius:9px;font-size:.6rem;padding:0 .35rem;margin-left:.25rem">${count}</span>`); }
+    } else if (badge) { badge.remove(); }
+  }
+
   async function renderGuards() {
     // Entry point when GUARDS tab is opened
+    // Pre-load base camp data in background so it's ready when sub-tab is clicked
+    if (!state.gcWorkers.length && !state._gcPreloading) {
+      state._gcPreloading = true;
+      _loadAndRenderGuardCamp().catch(() => {}).finally(() => { state._gcPreloading = false; });
+    }
     if (state.guardSubTab === 'basecamp') {
       $('gd-location-panel')?.classList.add('hidden');
       $('gd-basecamp-panel')?.classList.remove('hidden');
@@ -7969,6 +7985,7 @@ const App = (() => {
       state.gcWorkers     = workers;
       state.gcFunctions   = functions;
       state.gcAssignments = assignments;
+      _updateGcBadge();
     } catch(e) { toast('Error loading base camp guards: ' + e.message, 'error'); }
     renderGuardCamp();
   }
