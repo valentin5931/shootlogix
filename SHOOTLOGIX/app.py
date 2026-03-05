@@ -3065,9 +3065,32 @@ def api_export_logistics(prod_id):
     fnb_items = get_fnb_items(prod_id)
     fnb_entries = get_fnb_entries(prod_id)
 
-    # Sorted dates from shooting days
-    all_dates = sorted(set(d.get('date', '') for d in shooting_days if d.get('date')))
+    # Shooting day lookup
     date_to_day = {d.get('date'): d.get('day_number', '') for d in shooting_days}
+
+    def _date_range(min_date, max_date):
+        """Generate all dates from min_date to max_date inclusive (YYYY-MM-DD strings)."""
+        from datetime import timedelta
+        if not min_date or not max_date:
+            return []
+        start = dt.strptime(min_date, "%Y-%m-%d").date()
+        end = dt.strptime(max_date, "%Y-%m-%d").date()
+        return [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range((end - start).days + 1)]
+
+    def _fmt_date_header(d):
+        """Format date header: 'D{num} MM-DD' for shooting days, just 'MM-DD' otherwise."""
+        day_num = date_to_day.get(d)
+        if day_num:
+            return f"D{day_num} {d[5:]}"
+        return d[5:]
+
+    def _assignments_date_range(assignments):
+        """Compute min/max date range from assignment start/end dates."""
+        starts = [r['start_date'] for r in assignments if r.get('start_date') and r.get('working_days')]
+        ends = [r['end_date'] for r in assignments if r.get('end_date') and r.get('working_days')]
+        if not starts or not ends:
+            return []
+        return _date_range(min(starts), max(ends))
 
     # ── Sheet 1: PDT ─────────────────────────────────────────────────────────
     ws = wb.active
@@ -3116,8 +3139,12 @@ def api_export_logistics(prod_id):
     for ls in loc_schedules:
         loc_matrix.setdefault(ls['location_name'], {})[ls['date']] = ls.get('status', '')
 
-    # Header row: Location, Type, then one col per date (show day#)
-    header = ["Location", "Type"] + [f"D{date_to_day.get(dt_str, '?')} {dt_str[5:]}" for dt_str in all_dates] + ["P", "F", "W", "Total"]
+    # Date range: first to last location schedule date
+    loc_all_dates_set = sorted(set(ls['date'] for ls in loc_schedules if ls.get('date')))
+    loc_dates = _date_range(loc_all_dates_set[0], loc_all_dates_set[-1]) if loc_all_dates_set else []
+
+    # Header row: Location, Type, then one col per date
+    header = ["Location", "Type"] + [_fmt_date_header(d) for d in loc_dates] + ["P", "F", "W", "Total"]
     ws.append(header)
     style_header_row(ws, len(header))
     header_row_num = ws.max_row
@@ -3127,7 +3154,7 @@ def api_export_logistics(prod_id):
         site_info = next((s for s in loc_sites if s['name'] == loc_name), {})
         row_data = [loc_name, site_info.get('location_type', '')]
         p_count = f_count = w_count = 0
-        for dt_str in all_dates:
+        for dt_str in loc_dates:
             status = loc_matrix.get(loc_name, {}).get(dt_str, '')
             row_data.append(status)
             if status == 'P': p_count += 1
@@ -3137,7 +3164,7 @@ def api_export_logistics(prod_id):
         ws.append(row_data)
         # Color cells
         row_num = ws.max_row
-        for col_idx, dt_str in enumerate(all_dates, start=3):
+        for col_idx, dt_str in enumerate(loc_dates, start=3):
             cell = ws.cell(row=row_num, column=col_idx)
             if cell.value == 'P': cell.fill = fill_p
             elif cell.value == 'F': cell.fill = fill_f
@@ -3147,31 +3174,35 @@ def api_export_logistics(prod_id):
     # Totals row per date
     ws.append([])
     totals_row = ["TOTAL", ""]
-    for dt_str in all_dates:
+    for dt_str in loc_dates:
         count = sum(1 for ln in loc_names if loc_matrix.get(ln, {}).get(dt_str, '') in ('P', 'F', 'W'))
         totals_row.append(count)
     totals_row += ["", "", "", ""]
     ws.append(totals_row)
     ws.cell(row=ws.max_row, column=1).font = subtotal_font
 
-    if all_dates:
+    if loc_dates:
         ws.freeze_panes = "C5"
     auto_width(ws)
 
     # ── Helper: build assignment matrix ────────────────────────────────────────
-    date_headers = [f"D{date_to_day.get(d, '?')} {d[5:]}" for d in all_dates]
     fill_active = PatternFill(start_color="DBEAFE", end_color="DBEAFE", fill_type="solid")
 
     def _write_assignment_matrix(ws, title, assignments, label_fn):
-        """Write a matrix sheet: rows=assignments, cols=dates, cells=1 if active."""
+        """Write a matrix sheet: rows=assignments, cols=dates, cells=1 if active.
+        Date range = first start_date to last end_date of active assignments."""
         ws.append([f"KLAS 7 - {title}"])
         ws.cell(row=1, column=1).font = title_font
         ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
         ws.append([])
-        header = ["Assignment"] + date_headers + ["Total"]
+
+        # Compute per-module date range
+        sheet_dates = _assignments_date_range(assignments)
+        sheet_headers = [_fmt_date_header(d) for d in sheet_dates]
+
+        header = ["Assignment"] + sheet_headers + ["Total"]
         ws.append(header)
         style_header_row(ws, len(header))
-        header_row = ws.max_row
 
         matrix_rows = []
         for r in assignments:
@@ -3179,16 +3210,16 @@ def api_export_logistics(prod_id):
                 continue
             label = label_fn(r)
             day_map = {}
-            for d in all_dates:
+            for d in sheet_dates:
                 if _is_date_active(d, r):
                     day_map[d] = 1
             matrix_rows.append((label, day_map, r.get("working_days", 0)))
 
         for label, day_map, wd in matrix_rows:
-            row = [label] + [day_map.get(d, "") for d in all_dates] + [wd]
+            row = [label] + [day_map.get(d, "") for d in sheet_dates] + [wd]
             ws.append(row)
             row_num = ws.max_row
-            for col_idx, d in enumerate(all_dates, start=2):
+            for col_idx, d in enumerate(sheet_dates, start=2):
                 cell = ws.cell(row=row_num, column=col_idx)
                 if cell.value == 1:
                     cell.fill = fill_active
@@ -3197,14 +3228,14 @@ def api_export_logistics(prod_id):
         # Totals row
         ws.append([])
         totals = ["TOTAL / DAY"]
-        for d in all_dates:
+        for d in sheet_dates:
             totals.append(sum(1 for _, dm, _ in matrix_rows if dm.get(d)))
         totals.append(sum(wd for _, _, wd in matrix_rows))
         ws.append(totals)
         ws.cell(row=ws.max_row, column=1).font = subtotal_font
-        ws.cell(row=ws.max_row, column=len(all_dates) + 2).font = green_font
+        ws.cell(row=ws.max_row, column=len(sheet_dates) + 2).font = green_font
 
-        if all_dates:
+        if sheet_dates:
             ws.freeze_panes = "B5"
         auto_width(ws)
         return matrix_rows
@@ -3265,7 +3296,11 @@ def api_export_logistics(prod_id):
         date = e.get('date', '')
         fuel_matrix.setdefault(label, {})[date] = fuel_matrix.get(label, {}).get(date, 0) + liters
 
-    header = ["Consumer"] + date_headers + ["Total (L)"]
+    # Fuel date range: first to last fuel entry date
+    fuel_entry_dates = sorted(set(e['date'] for e in fuel_entries if e.get('date')))
+    fuel_dates = _date_range(fuel_entry_dates[0], fuel_entry_dates[-1]) if fuel_entry_dates else []
+
+    header = ["Consumer"] + [_fmt_date_header(d) for d in fuel_dates] + ["Total (L)"]
     ws.append(header)
     style_header_row(ws, len(header))
 
@@ -3276,7 +3311,7 @@ def api_export_logistics(prod_id):
         total_l = sum(day_data.values())
         fuel_grand_liters += total_l
         row = [label]
-        for d in all_dates:
+        for d in fuel_dates:
             val = day_data.get(d, '')
             row.append(round(val, 1) if val else '')
         row.append(round(total_l, 1))
@@ -3285,13 +3320,13 @@ def api_export_logistics(prod_id):
     # Totals row
     ws.append([])
     totals = ["TOTAL / DAY"]
-    for d in all_dates:
+    for d in fuel_dates:
         day_total = sum(fuel_matrix.get(c, {}).get(d, 0) for c in fuel_consumers)
         totals.append(round(day_total, 1) if day_total else '')
     totals.append(round(fuel_grand_liters, 1))
     ws.append(totals)
     ws.cell(row=ws.max_row, column=1).font = subtotal_font
-    ws.cell(row=ws.max_row, column=len(all_dates) + 2).font = green_font
+    ws.cell(row=ws.max_row, column=len(fuel_dates) + 2).font = green_font
 
     # Machinery reference
     if fuel_machinery:
@@ -3306,7 +3341,7 @@ def api_export_logistics(prod_id):
                        m.get('start_date', ''), m.get('end_date', ''),
                        m.get('liters_per_day', '')])
 
-    if all_dates:
+    if fuel_dates:
         ws.freeze_panes = "B5"
     auto_width(ws)
 
@@ -3331,7 +3366,11 @@ def api_export_logistics(prod_id):
         loc_name = gls['location_name']
         guard_matrix.setdefault(loc_name, {})[gls['date']] = gls.get('nb_guards', 1)
 
-    g_header = ["Location"] + [f"D{date_to_day.get(dt_str, '?')} {dt_str[5:]}" for dt_str in all_dates] + ["Total Guard-Days"]
+    # Guard location date range
+    gl_date_set = sorted(set(gls['date'] for gls in guard_loc_data if gls.get('date')))
+    gl_dates = _date_range(gl_date_set[0], gl_date_set[-1]) if gl_date_set else []
+
+    g_header = ["Location"] + [_fmt_date_header(d) for d in gl_dates] + ["Total Guard-Days"]
     ws.append(g_header)
     style_header_row(ws, len(g_header))
 
@@ -3339,7 +3378,7 @@ def api_export_logistics(prod_id):
     for loc_name in gl_locations:
         row_data = [loc_name]
         total_gd = 0
-        for dt_str in all_dates:
+        for dt_str in gl_dates:
             nb = guard_matrix.get(loc_name, {}).get(dt_str, '')
             row_data.append(nb)
             if isinstance(nb, (int, float)):
@@ -3350,7 +3389,7 @@ def api_export_logistics(prod_id):
     # Totals per date
     ws.append([])
     totals_row = ["TOTAL / DAY"]
-    for dt_str in all_dates:
+    for dt_str in gl_dates:
         count = sum(guard_matrix.get(ln, {}).get(dt_str, 0) for ln in gl_locations)
         totals_row.append(count)
     totals_row.append(sum(
@@ -3360,7 +3399,7 @@ def api_export_logistics(prod_id):
     ws.append(totals_row)
     ws.cell(row=ws.max_row, column=1).font = subtotal_font
 
-    if all_dates:
+    if gl_dates:
         ws.freeze_panes = "B6"
 
     # Section B: Base Camp Guards (matrix)
@@ -3369,7 +3408,9 @@ def api_export_logistics(prod_id):
     ws.append(["BASE CAMP GUARDS"])
     ws.cell(row=ws.max_row, column=1).font = section_font
 
-    gc_header = ["Guard"] + date_headers + ["Total"]
+    # Base camp date range from assignments
+    gc_dates = _assignments_date_range(gc_rows)
+    gc_header = ["Guard"] + [_fmt_date_header(d) for d in gc_dates] + ["Total"]
     ws.append(gc_header)
     style_header_row(ws, len(gc_header))
 
@@ -3379,16 +3420,16 @@ def api_export_logistics(prod_id):
             continue
         label = f"{r.get('function_name','') or ''} — {r.get('helper_name_override') or r.get('helper_name') or ''}"
         day_map = {}
-        for d in all_dates:
+        for d in gc_dates:
             if _is_date_active(d, r):
                 day_map[d] = 1
         gc_matrix_rows.append((label, day_map, r.get("working_days", 0)))
 
     for label, day_map, wd in gc_matrix_rows:
-        row = [label] + [day_map.get(d, "") for d in all_dates] + [wd]
+        row = [label] + [day_map.get(d, "") for d in gc_dates] + [wd]
         ws.append(row)
         row_num = ws.max_row
-        for col_idx, d in enumerate(all_dates, start=2):
+        for col_idx, d in enumerate(gc_dates, start=2):
             cell = ws.cell(row=row_num, column=col_idx)
             if cell.value == 1:
                 cell.fill = fill_active
@@ -3397,7 +3438,7 @@ def api_export_logistics(prod_id):
     # Base camp totals per date
     ws.append([])
     gc_totals = ["TOTAL / DAY"]
-    for d in all_dates:
+    for d in gc_dates:
         gc_totals.append(sum(1 for _, dm, _ in gc_matrix_rows if dm.get(d)))
     gc_totals.append(sum(wd for _, _, wd in gc_matrix_rows))
     ws.append(gc_totals)
