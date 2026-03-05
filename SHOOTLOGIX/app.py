@@ -2973,6 +2973,29 @@ def api_export_budget_global(prod_id):
 
 # ─── LOGISTICS EXPORT ─────────────────────────────────────────────────────────
 
+def _is_date_active(date_str, asgn):
+    """Check if date_str is an active working day for an assignment dict."""
+    import json as _json
+    start = asgn.get("start_date", "")
+    end = asgn.get("end_date", "")
+    try:
+        overrides = _json.loads(asgn.get("day_overrides") or "{}")
+    except Exception:
+        overrides = {}
+    include_sun = bool(asgn.get("include_sunday", 1))
+
+    if date_str in overrides:
+        return bool(overrides[date_str]) and overrides[date_str] != 'empty'
+
+    if start and end and start <= date_str <= end:
+        if not include_sun:
+            from datetime import datetime as _dt
+            if _dt.strptime(date_str, "%Y-%m-%d").weekday() == 6:
+                return False
+        return True
+    return False
+
+
 @app.route("/api/productions/<int:prod_id>/export/logistics")
 def api_export_logistics(prod_id):
     """Export full logistics/scheduling data as a multi-sheet Excel file (.xlsx).
@@ -3094,7 +3117,7 @@ def api_export_logistics(prod_id):
         loc_matrix.setdefault(ls['location_name'], {})[ls['date']] = ls.get('status', '')
 
     # Header row: Location, Type, then one col per date (show day#)
-    header = ["Location", "Type"] + [f"D{date_to_day.get(dt_str, '?')}\n{dt_str}" for dt_str in all_dates] + ["P", "F", "W", "Total"]
+    header = ["Location", "Type"] + [f"D{date_to_day.get(dt_str, '?')} {dt_str[5:]}" for dt_str in all_dates] + ["P", "F", "W", "Total"]
     ws.append(header)
     style_header_row(ws, len(header))
     header_row_num = ws.max_row
@@ -3135,137 +3158,78 @@ def api_export_logistics(prod_id):
         ws.freeze_panes = "C5"
     auto_width(ws)
 
-    # ── Sheet 3: BOATS ───────────────────────────────────────────────────────
+    # ── Helper: build assignment matrix ────────────────────────────────────────
+    date_headers = [f"D{date_to_day.get(d, '?')} {d[5:]}" for d in all_dates]
+    fill_active = PatternFill(start_color="DBEAFE", end_color="DBEAFE", fill_type="solid")
+
+    def _write_assignment_matrix(ws, title, assignments, label_fn):
+        """Write a matrix sheet: rows=assignments, cols=dates, cells=1 if active."""
+        ws.append([f"KLAS 7 - {title}"])
+        ws.cell(row=1, column=1).font = title_font
+        ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+        ws.append([])
+        header = ["Assignment"] + date_headers + ["Total"]
+        ws.append(header)
+        style_header_row(ws, len(header))
+        header_row = ws.max_row
+
+        matrix_rows = []
+        for r in assignments:
+            if not r.get("working_days"):
+                continue
+            label = label_fn(r)
+            day_map = {}
+            for d in all_dates:
+                if _is_date_active(d, r):
+                    day_map[d] = 1
+            matrix_rows.append((label, day_map, r.get("working_days", 0)))
+
+        for label, day_map, wd in matrix_rows:
+            row = [label] + [day_map.get(d, "") for d in all_dates] + [wd]
+            ws.append(row)
+            row_num = ws.max_row
+            for col_idx, d in enumerate(all_dates, start=2):
+                cell = ws.cell(row=row_num, column=col_idx)
+                if cell.value == 1:
+                    cell.fill = fill_active
+                    cell.alignment = Alignment(horizontal='center')
+
+        # Totals row
+        ws.append([])
+        totals = ["TOTAL / DAY"]
+        for d in all_dates:
+            totals.append(sum(1 for _, dm, _ in matrix_rows if dm.get(d)))
+        totals.append(sum(wd for _, _, wd in matrix_rows))
+        ws.append(totals)
+        ws.cell(row=ws.max_row, column=1).font = subtotal_font
+        ws.cell(row=ws.max_row, column=len(all_dates) + 2).font = green_font
+
+        if all_dates:
+            ws.freeze_panes = "B5"
+        auto_width(ws)
+        return matrix_rows
+
+    # ── Sheet 3: BOATS (matrix) ─────────────────────────────────────────────
     ws = wb.create_sheet("Boats")
-    ws.append(["KLAS 7 - BOATS ASSIGNMENTS"])
-    ws.cell(row=1, column=1).font = title_font
-    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
-    ws.append([])
-    ws.append(["Department", "Function", "Group", "Boat", "Boat #", "Captain",
-               "Vendor", "Start", "End", "Working Days", "Rate/day", "Total Cost"])
-    style_header_row(ws, 12)
-    grand_total = 0
-    for r in boat_rows:
-        if not r.get("working_days"):
-            continue
-        est = r.get("amount_estimate") or 0
-        grand_total += est
-        ws.append([
-            r.get("department") or "BOATS",
-            r.get("function_name") or "",
-            r.get("function_group") or "",
-            r.get("boat_name_override") or r.get("boat_name") or "",
-            r.get("boat_nr") or "",
-            r.get("captain") or "",
-            r.get("vendor") or "",
-            r.get("start_date") or "", r.get("end_date") or "",
-            r.get("working_days") or "",
-            r.get("price_override") or r.get("boat_daily_rate_estimate") or "",
-            est,
-        ])
-    ws.append([])
-    ws.append(["", "", "", "", "", "", "", "", "", "", "TOTAL", round(grand_total, 2)])
-    ws.cell(row=ws.max_row, column=12).font = green_font
-    auto_width(ws)
+    boat_matrix = _write_assignment_matrix(ws, "BOATS SCHEDULE", boat_rows,
+        lambda r: f"{r.get('function_name','') or ''} — {r.get('boat_name_override') or r.get('boat_name') or ''}")
 
-    # ── Sheet 4: PICTURE BOATS ───────────────────────────────────────────────
+    # ── Sheet 4: PICTURE BOATS (matrix) ─────────────────────────────────────
     ws = wb.create_sheet("Picture Boats")
-    ws.append(["KLAS 7 - PICTURE BOATS ASSIGNMENTS"])
-    ws.cell(row=1, column=1).font = title_font
-    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
-    ws.append([])
-    ws.append(["Function", "Group", "Boat", "Boat #", "Captain",
-               "Vendor", "Start", "End", "Working Days", "Rate/day", "Total Cost"])
-    style_header_row(ws, 11)
-    grand_total = 0
-    for r in pb_rows:
-        if not r.get("working_days"):
-            continue
-        est = r.get("amount_estimate") or 0
-        grand_total += est
-        ws.append([
-            r.get("function_name") or "",
-            r.get("function_group") or "",
-            r.get("boat_name_override") or r.get("boat_name") or "",
-            r.get("boat_nr") or "",
-            r.get("captain") or "",
-            r.get("vendor") or "",
-            r.get("start_date") or "", r.get("end_date") or "",
-            r.get("working_days") or "",
-            r.get("price_override") or r.get("boat_daily_rate_estimate") or "",
-            est,
-        ])
-    ws.append([])
-    ws.append(["", "", "", "", "", "", "", "", "", "TOTAL", round(grand_total, 2)])
-    ws.cell(row=ws.max_row, column=11).font = green_font
-    auto_width(ws)
+    pb_matrix = _write_assignment_matrix(ws, "PICTURE BOATS SCHEDULE", pb_rows,
+        lambda r: f"{r.get('function_name','') or ''} — {r.get('boat_name_override') or r.get('boat_name') or ''}")
 
-    # ── Sheet 5: SECURITY BOATS ──────────────────────────────────────────────
+    # ── Sheet 5: SECURITY BOATS (matrix) ────────────────────────────────────
     ws = wb.create_sheet("Security Boats")
-    ws.append(["KLAS 7 - SECURITY BOATS ASSIGNMENTS"])
-    ws.cell(row=1, column=1).font = title_font
-    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
-    ws.append([])
-    ws.append(["Function", "Group", "Boat", "Boat #", "Captain",
-               "Vendor", "Start", "End", "Working Days", "Rate/day", "Total Cost"])
-    style_header_row(ws, 11)
-    grand_total = 0
-    for r in sb_rows:
-        if not r.get("working_days"):
-            continue
-        est = r.get("amount_estimate") or 0
-        grand_total += est
-        ws.append([
-            r.get("function_name") or "",
-            r.get("function_group") or "",
-            r.get("boat_name_override") or r.get("boat_name") or "",
-            r.get("boat_nr") or "",
-            r.get("captain") or "",
-            r.get("vendor") or "",
-            r.get("start_date") or "", r.get("end_date") or "",
-            r.get("working_days") or "",
-            r.get("price_override") or r.get("boat_daily_rate_estimate") or "",
-            est,
-        ])
-    ws.append([])
-    ws.append(["", "", "", "", "", "", "", "", "", "TOTAL", round(grand_total, 2)])
-    ws.cell(row=ws.max_row, column=11).font = green_font
-    auto_width(ws)
+    sb_matrix = _write_assignment_matrix(ws, "SECURITY BOATS SCHEDULE", sb_rows,
+        lambda r: f"{r.get('function_name','') or ''} — {r.get('boat_name_override') or r.get('boat_name') or ''}")
 
-    # ── Sheet 6: TRANSPORT ───────────────────────────────────────────────────
+    # ── Sheet 6: TRANSPORT (matrix) ─────────────────────────────────────────
     ws = wb.create_sheet("Transport")
-    ws.append(["KLAS 7 - TRANSPORT ASSIGNMENTS"])
-    ws.cell(row=1, column=1).font = title_font
-    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
-    ws.append([])
-    ws.append(["Function", "Group", "Vehicle", "Vehicle #", "Type", "Driver",
-               "Vendor", "Start", "End", "Working Days", "Rate/day", "Total Cost"])
-    style_header_row(ws, 12)
-    grand_total = 0
-    for r in transport_rows:
-        if not r.get("working_days"):
-            continue
-        est = r.get("amount_estimate") or 0
-        grand_total += est
-        ws.append([
-            r.get("function_name") or "",
-            r.get("function_group") or "",
-            r.get("vehicle_name_override") or r.get("vehicle_name") or "",
-            r.get("vehicle_nr") or "",
-            r.get("vehicle_type") or "",
-            r.get("driver") or "",
-            r.get("vendor") or "",
-            r.get("start_date") or "", r.get("end_date") or "",
-            r.get("working_days") or "",
-            r.get("price_override") or r.get("vehicle_daily_rate_estimate") or "",
-            est,
-        ])
-    ws.append([])
-    ws.append(["", "", "", "", "", "", "", "", "", "", "TOTAL", round(grand_total, 2)])
-    ws.cell(row=ws.max_row, column=12).font = green_font
-    auto_width(ws)
+    tr_matrix = _write_assignment_matrix(ws, "TRANSPORT SCHEDULE", transport_rows,
+        lambda r: f"{r.get('function_name','') or ''} — {r.get('vehicle_name_override') or r.get('vehicle_name') or ''}")
 
-    # ── Sheet 7: FUEL (Summary + Detail) ─────────────────────────────────────
+    # ── Sheet 7: FUEL (matrix: consumer × date → liters) ───────────────────
     ws = wb.create_sheet("Fuel")
     ws.append(["KLAS 7 - FUEL CONSUMPTION"])
     ws.cell(row=1, column=1).font = title_font
@@ -3288,79 +3252,52 @@ def api_export_logistics(prod_id):
             )
     machinery_names = {m['id']: m['name'] for m in fuel_machinery}
 
-    # Section A: Summary by consumer
-    ws.append(["SUMMARY BY CONSUMER"])
-    ws.cell(row=ws.max_row, column=1).font = section_font
-    ws.append(["Source", "Name", "Function", "Fuel Type", "Total Liters",
-               "Avg Price/L", "Total Cost"])
-    style_header_row(ws, 7)
-
-    consumers = {}
+    # Build fuel matrix: {consumer_label: {date: liters}}
+    fuel_matrix = {}
     for e in fuel_entries:
         if e['source_type'] == 'machinery':
-            m_name = machinery_names.get(e['assignment_id'], f"Machine #{e['assignment_id']}")
-            key = ('MACHINERY', m_name, '')
-        else:
-            name_info = asgn_map.get((e['source_type'], e['assignment_id']), (f"#{e['assignment_id']}", '?'))
-            key = (e['source_type'].upper(), name_info[0], name_info[1])
-
-        ft = e.get('fuel_type', 'DIESEL')
-        liters = e.get('liters', 0) or 0
-        date = e.get('date', '')
-        if date in locked_prices:
-            price = locked_prices[date]['diesel_price'] if ft == 'DIESEL' else locked_prices[date]['petrol_price']
-        else:
-            price = cur_diesel if ft == 'DIESEL' else cur_petrol
-        cost = liters * price
-
-        ck = (*key, ft)
-        if ck not in consumers:
-            consumers[ck] = {'liters': 0, 'cost': 0}
-        consumers[ck]['liters'] += liters
-        consumers[ck]['cost'] += cost
-
-    fuel_grand_liters = 0
-    fuel_grand_cost = 0
-    for (src, name, func, ft), data in sorted(consumers.items()):
-        avg_p = data['cost'] / data['liters'] if data['liters'] > 0 else 0
-        ws.append([src, name, func, ft, round(data['liters'], 1),
-                   round(avg_p, 4), round(data['cost'], 2)])
-        fuel_grand_liters += data['liters']
-        fuel_grand_cost += data['cost']
-    ws.append([])
-    ws.append(["", "", "", "TOTAL", round(fuel_grand_liters, 1), "", round(fuel_grand_cost, 2)])
-    ws.cell(row=ws.max_row, column=7).font = green_font
-
-    # Section B: Detail day by day
-    ws.append([])
-    ws.append([])
-    ws.append(["DETAIL BY DAY"])
-    ws.cell(row=ws.max_row, column=1).font = section_font
-    ws.append(["Date", "Source Type", "Entity", "Function", "Fuel Type",
-               "Liters", "Price/L", "Cost"])
-    style_header_row(ws, 8)
-    for e in sorted(fuel_entries, key=lambda x: (x.get('date', ''), x.get('source_type', ''))):
-        if e['source_type'] == 'machinery':
-            ename = machinery_names.get(e['assignment_id'], f"Machine #{e['assignment_id']}")
-            efunc = ''
+            mid = e['assignment_id']
+            label = f"MACHINERY — {machinery_names.get(mid, f'#{mid}')}"
         else:
             info = asgn_map.get((e['source_type'], e['assignment_id']), (f"#{e['assignment_id']}", '?'))
-            ename, efunc = info
-        ft = e.get('fuel_type', 'DIESEL')
+            label = f"{e['source_type'].upper()} — {info[0]}"
         liters = e.get('liters', 0) or 0
         date = e.get('date', '')
-        if date in locked_prices:
-            price = locked_prices[date]['diesel_price'] if ft == 'DIESEL' else locked_prices[date]['petrol_price']
-        else:
-            price = cur_diesel if ft == 'DIESEL' else cur_petrol
-        ws.append([date, e['source_type'].upper(), ename, efunc, ft,
-                   round(liters, 1), round(price, 4), round(liters * price, 2)])
+        fuel_matrix.setdefault(label, {})[date] = fuel_matrix.get(label, {}).get(date, 0) + liters
 
-    # Section C: Machinery
+    header = ["Consumer"] + date_headers + ["Total (L)"]
+    ws.append(header)
+    style_header_row(ws, len(header))
+
+    fuel_grand_liters = 0
+    fuel_consumers = sorted(fuel_matrix.keys())
+    for label in fuel_consumers:
+        day_data = fuel_matrix[label]
+        total_l = sum(day_data.values())
+        fuel_grand_liters += total_l
+        row = [label]
+        for d in all_dates:
+            val = day_data.get(d, '')
+            row.append(round(val, 1) if val else '')
+        row.append(round(total_l, 1))
+        ws.append(row)
+
+    # Totals row
+    ws.append([])
+    totals = ["TOTAL / DAY"]
+    for d in all_dates:
+        day_total = sum(fuel_matrix.get(c, {}).get(d, 0) for c in fuel_consumers)
+        totals.append(round(day_total, 1) if day_total else '')
+    totals.append(round(fuel_grand_liters, 1))
+    ws.append(totals)
+    ws.cell(row=ws.max_row, column=1).font = subtotal_font
+    ws.cell(row=ws.max_row, column=len(all_dates) + 2).font = green_font
+
+    # Machinery reference
     if fuel_machinery:
         ws.append([])
         ws.append([])
-        ws.append(["MACHINERY"])
+        ws.append(["MACHINERY REFERENCE"])
         ws.cell(row=ws.max_row, column=1).font = section_font
         ws.append(["Name", "Fuel Type", "Start", "End", "Liters/Day"])
         style_header_row(ws, 5)
@@ -3369,48 +3306,14 @@ def api_export_logistics(prod_id):
                        m.get('start_date', ''), m.get('end_date', ''),
                        m.get('liters_per_day', '')])
 
+    if all_dates:
+        ws.freeze_panes = "B5"
     auto_width(ws)
 
-    # ── Sheet 8: LABOUR ──────────────────────────────────────────────────────
+    # ── Sheet 8: LABOUR (matrix) ────────────────────────────────────────────
     ws = wb.create_sheet("Labour")
-    ws.append(["KLAS 7 - LABOUR ASSIGNMENTS"])
-    ws.cell(row=1, column=1).font = title_font
-    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
-    ws.append([])
-    ws.append(["Function", "Group", "Helper", "Role", "Contact",
-               "Start", "End", "Working Days", "Rate/day", "Total Cost"])
-    style_header_row(ws, 10)
-    by_group = OrderedDict()
-    for r in helper_rows:
-        if not r.get("working_days"):
-            continue
-        g = r.get("function_group") or r.get("helper_group") or "GENERAL"
-        by_group.setdefault(g, []).append(r)
-    grand_total = 0
-    for group_name, group_rows in by_group.items():
-        group_total = 0
-        for r in group_rows:
-            est = r.get("amount_estimate") or 0
-            group_total += est
-            ws.append([
-                r.get("function_name") or "",
-                group_name,
-                r.get("helper_name_override") or r.get("helper_name") or "",
-                r.get("helper_role") or "",
-                r.get("helper_contact") or "",
-                r.get("start_date") or "", r.get("end_date") or "",
-                r.get("working_days") or "",
-                r.get("price_override") or r.get("helper_daily_rate_estimate") or "",
-                est,
-            ])
-        ws.append(["", "", "", "", "", "", f"SUB-TOTAL {group_name}", "", "",
-                   round(group_total, 2)])
-        ws.cell(row=ws.max_row, column=10).font = subtotal_font
-        ws.append([])
-        grand_total += group_total
-    ws.append(["", "", "", "", "", "", "GRAND TOTAL", "", "", round(grand_total, 2)])
-    ws.cell(row=ws.max_row, column=10).font = green_font
-    auto_width(ws)
+    lb_matrix = _write_assignment_matrix(ws, "LABOUR SCHEDULE", helper_rows,
+        lambda r: f"{r.get('function_name','') or ''} — {r.get('helper_name_override') or r.get('helper_name') or ''}")
 
     # ── Sheet 9: GUARDS (matrix + base camp) ─────────────────────────────────
     ws = wb.create_sheet("Guards")
@@ -3428,7 +3331,7 @@ def api_export_logistics(prod_id):
         loc_name = gls['location_name']
         guard_matrix.setdefault(loc_name, {})[gls['date']] = gls.get('nb_guards', 1)
 
-    g_header = ["Location"] + [f"D{date_to_day.get(dt_str, '?')}\n{dt_str}" for dt_str in all_dates] + ["Total Guard-Days"]
+    g_header = ["Location"] + [f"D{date_to_day.get(dt_str, '?')} {dt_str[5:]}" for dt_str in all_dates] + ["Total Guard-Days"]
     ws.append(g_header)
     style_header_row(ws, len(g_header))
 
@@ -3548,11 +3451,11 @@ def api_export_logistics(prod_id):
     ws_summary.append(["Module", "Items / Assignments", "Details"])
     style_header_row(ws_summary, 3)
 
-    active_boats = len([r for r in boat_rows if r.get("working_days")])
-    active_pb = len([r for r in pb_rows if r.get("working_days")])
-    active_sb = len([r for r in sb_rows if r.get("working_days")])
-    active_transport = len([r for r in transport_rows if r.get("working_days")])
-    active_helpers = len([r for r in helper_rows if r.get("working_days")])
+    active_boats = len(boat_matrix)
+    active_pb = len(pb_matrix)
+    active_sb = len(sb_matrix)
+    active_transport = len(tr_matrix)
+    active_helpers = len(lb_matrix)
     active_gc = len([r for r in gc_rows if r.get("working_days")])
 
     ws_summary.append(["PDT", len(shooting_days), f"{len(shooting_days)} shooting days"])
