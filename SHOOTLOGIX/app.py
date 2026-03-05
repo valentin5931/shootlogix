@@ -2971,6 +2971,616 @@ def api_export_budget_global(prod_id):
     )
 
 
+# ─── LOGISTICS EXPORT ─────────────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/export/logistics")
+def api_export_logistics(prod_id):
+    """Export full logistics/scheduling data as a multi-sheet Excel file (.xlsx).
+    Filename: KLAS7_LOGISTICS_YYMMDD.xlsx
+    """
+    from datetime import datetime as dt
+    from collections import OrderedDict
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    prod_or_404(prod_id)
+
+    wb = Workbook()
+
+    # -- Style constants (same as budget export) --
+    header_font = Font(bold=True, color="FFFFFF", size=10)
+    header_fill = PatternFill(start_color="2D2D2D", end_color="2D2D2D", fill_type="solid")
+    title_font = Font(bold=True, size=12)
+    subtotal_font = Font(bold=True, size=10)
+    section_font = Font(bold=True, size=11, color="3B82F6")
+    money_fmt = '#,##0'
+    money_fmt_dec = '#,##0.00'
+    green_font = Font(bold=True, color="22C55E")
+    thin_border = Border(bottom=Side(style='thin', color='CCCCCC'))
+
+    fill_p = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")  # green
+    fill_f = PatternFill(start_color="FEF9C3", end_color="FEF9C3", fill_type="solid")  # yellow
+    fill_w = PatternFill(start_color="DBEAFE", end_color="DBEAFE", fill_type="solid")  # blue
+
+    def style_header_row(ws, num_cols):
+        for col in range(1, num_cols + 1):
+            cell = ws.cell(row=ws.max_row, column=col)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center')
+
+    def auto_width(ws):
+        for col in ws.columns:
+            max_len = 0
+            col_letter = get_column_letter(col[0].column)
+            for cell in col:
+                try:
+                    if cell.value:
+                        max_len = max(max_len, len(str(cell.value)))
+                except:
+                    pass
+            ws.column_dimensions[col_letter].width = min(max(max_len + 2, 8), 40)
+
+    # -- Load all data upfront (read-only) --
+    shooting_days = get_shooting_days(prod_id)
+    loc_sites = get_location_sites(prod_id)
+    loc_schedules = get_location_schedules(prod_id)
+    boat_rows = get_boat_assignments(prod_id, context='boats')
+    pb_rows = get_picture_boat_assignments(prod_id)
+    sb_rows = get_security_boat_assignments(prod_id)
+    transport_rows = get_transport_assignments(prod_id)
+    fuel_entries = get_fuel_entries(prod_id)
+    fuel_machinery = get_fuel_machinery(prod_id)
+    locked_prices = get_fuel_locked_prices()
+    cur_diesel = float(get_setting("fuel_price_diesel", "0"))
+    cur_petrol = float(get_setting("fuel_price_petrol", "0"))
+    helper_rows = get_helper_assignments(prod_id)
+    guard_loc_data = get_guard_location_schedules(prod_id)
+    gc_rows = get_guard_camp_assignments(prod_id)
+    fnb_cats = get_fnb_categories(prod_id)
+    fnb_items = get_fnb_items(prod_id)
+    fnb_entries = get_fnb_entries(prod_id)
+
+    # Sorted dates from shooting days
+    all_dates = sorted(set(d.get('date', '') for d in shooting_days if d.get('date')))
+    date_to_day = {d.get('date'): d.get('day_number', '') for d in shooting_days}
+
+    # ── Sheet 1: PDT ─────────────────────────────────────────────────────────
+    ws = wb.active
+    ws.title = "PDT"
+    ws.append(["KLAS 7 - SHOOTING SCHEDULE (PDT)"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Day #", "Date", "Status", "Location", "Game",
+               "Rehearsal", "Animateur", "Game Time",
+               "Candidats Depart", "Tide Height", "Tide Status",
+               "Nb Candidats", "Reward", "Conseil", "Events", "Notes"])
+    style_header_row(ws, 16)
+    for d in shooting_days:
+        evts = d.get('events', [])
+        evt_str = ", ".join(f"{e.get('event_type','')}: {e.get('event_name','')}" for e in evts) if evts else ""
+        ws.append([
+            d.get('day_number', ''),
+            d.get('date', ''),
+            d.get('status', ''),
+            d.get('location', ''),
+            d.get('game_name', ''),
+            d.get('heure_rehearsal', ''),
+            d.get('heure_animateur', ''),
+            d.get('heure_game', ''),
+            d.get('heure_depart_candidats', ''),
+            d.get('maree_hauteur', ''),
+            d.get('maree_statut', ''),
+            d.get('nb_candidats', ''),
+            d.get('recompense', ''),
+            d.get('conseil_soir', ''),
+            evt_str,
+            d.get('notes', ''),
+        ])
+    auto_width(ws)
+
+    # ── Sheet 2: LOCATIONS (matrix) ──────────────────────────────────────────
+    ws = wb.create_sheet("Locations")
+    ws.append(["KLAS 7 - LOCATIONS SCHEDULE"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+
+    # Build schedule matrix: {loc_name: {date: status}}
+    loc_matrix = {}
+    for ls in loc_schedules:
+        loc_matrix.setdefault(ls['location_name'], {})[ls['date']] = ls.get('status', '')
+
+    # Header row: Location, Type, then one col per date (show day#)
+    header = ["Location", "Type"] + [f"D{date_to_day.get(dt_str, '?')}\n{dt_str}" for dt_str in all_dates] + ["P", "F", "W", "Total"]
+    ws.append(header)
+    style_header_row(ws, len(header))
+    header_row_num = ws.max_row
+
+    loc_names = sorted(loc_matrix.keys())
+    for loc_name in loc_names:
+        site_info = next((s for s in loc_sites if s['name'] == loc_name), {})
+        row_data = [loc_name, site_info.get('location_type', '')]
+        p_count = f_count = w_count = 0
+        for dt_str in all_dates:
+            status = loc_matrix.get(loc_name, {}).get(dt_str, '')
+            row_data.append(status)
+            if status == 'P': p_count += 1
+            elif status == 'F': f_count += 1
+            elif status == 'W': w_count += 1
+        row_data += [p_count, f_count, w_count, p_count + f_count + w_count]
+        ws.append(row_data)
+        # Color cells
+        row_num = ws.max_row
+        for col_idx, dt_str in enumerate(all_dates, start=3):
+            cell = ws.cell(row=row_num, column=col_idx)
+            if cell.value == 'P': cell.fill = fill_p
+            elif cell.value == 'F': cell.fill = fill_f
+            elif cell.value == 'W': cell.fill = fill_w
+            cell.alignment = Alignment(horizontal='center')
+
+    # Totals row per date
+    ws.append([])
+    totals_row = ["TOTAL", ""]
+    for dt_str in all_dates:
+        count = sum(1 for ln in loc_names if loc_matrix.get(ln, {}).get(dt_str, '') in ('P', 'F', 'W'))
+        totals_row.append(count)
+    totals_row += ["", "", "", ""]
+    ws.append(totals_row)
+    ws.cell(row=ws.max_row, column=1).font = subtotal_font
+
+    if all_dates:
+        ws.freeze_panes = "C5"
+    auto_width(ws)
+
+    # ── Sheet 3: BOATS ───────────────────────────────────────────────────────
+    ws = wb.create_sheet("Boats")
+    ws.append(["KLAS 7 - BOATS ASSIGNMENTS"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Department", "Function", "Group", "Boat", "Boat #", "Captain",
+               "Vendor", "Start", "End", "Working Days", "Rate/day", "Total Cost"])
+    style_header_row(ws, 12)
+    grand_total = 0
+    for r in boat_rows:
+        if not r.get("working_days"):
+            continue
+        est = r.get("amount_estimate") or 0
+        grand_total += est
+        ws.append([
+            r.get("department") or "BOATS",
+            r.get("function_name") or "",
+            r.get("function_group") or "",
+            r.get("boat_name_override") or r.get("boat_name") or "",
+            r.get("boat_nr") or "",
+            r.get("captain") or "",
+            r.get("vendor") or "",
+            r.get("start_date") or "", r.get("end_date") or "",
+            r.get("working_days") or "",
+            r.get("price_override") or r.get("boat_daily_rate_estimate") or "",
+            est,
+        ])
+    ws.append([])
+    ws.append(["", "", "", "", "", "", "", "", "", "", "TOTAL", round(grand_total, 2)])
+    ws.cell(row=ws.max_row, column=12).font = green_font
+    auto_width(ws)
+
+    # ── Sheet 4: PICTURE BOATS ───────────────────────────────────────────────
+    ws = wb.create_sheet("Picture Boats")
+    ws.append(["KLAS 7 - PICTURE BOATS ASSIGNMENTS"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Function", "Group", "Boat", "Boat #", "Captain",
+               "Vendor", "Start", "End", "Working Days", "Rate/day", "Total Cost"])
+    style_header_row(ws, 11)
+    grand_total = 0
+    for r in pb_rows:
+        if not r.get("working_days"):
+            continue
+        est = r.get("amount_estimate") or 0
+        grand_total += est
+        ws.append([
+            r.get("function_name") or "",
+            r.get("function_group") or "",
+            r.get("boat_name_override") or r.get("boat_name") or "",
+            r.get("boat_nr") or "",
+            r.get("captain") or "",
+            r.get("vendor") or "",
+            r.get("start_date") or "", r.get("end_date") or "",
+            r.get("working_days") or "",
+            r.get("price_override") or r.get("boat_daily_rate_estimate") or "",
+            est,
+        ])
+    ws.append([])
+    ws.append(["", "", "", "", "", "", "", "", "", "TOTAL", round(grand_total, 2)])
+    ws.cell(row=ws.max_row, column=11).font = green_font
+    auto_width(ws)
+
+    # ── Sheet 5: SECURITY BOATS ──────────────────────────────────────────────
+    ws = wb.create_sheet("Security Boats")
+    ws.append(["KLAS 7 - SECURITY BOATS ASSIGNMENTS"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Function", "Group", "Boat", "Boat #", "Captain",
+               "Vendor", "Start", "End", "Working Days", "Rate/day", "Total Cost"])
+    style_header_row(ws, 11)
+    grand_total = 0
+    for r in sb_rows:
+        if not r.get("working_days"):
+            continue
+        est = r.get("amount_estimate") or 0
+        grand_total += est
+        ws.append([
+            r.get("function_name") or "",
+            r.get("function_group") or "",
+            r.get("boat_name_override") or r.get("boat_name") or "",
+            r.get("boat_nr") or "",
+            r.get("captain") or "",
+            r.get("vendor") or "",
+            r.get("start_date") or "", r.get("end_date") or "",
+            r.get("working_days") or "",
+            r.get("price_override") or r.get("boat_daily_rate_estimate") or "",
+            est,
+        ])
+    ws.append([])
+    ws.append(["", "", "", "", "", "", "", "", "", "TOTAL", round(grand_total, 2)])
+    ws.cell(row=ws.max_row, column=11).font = green_font
+    auto_width(ws)
+
+    # ── Sheet 6: TRANSPORT ───────────────────────────────────────────────────
+    ws = wb.create_sheet("Transport")
+    ws.append(["KLAS 7 - TRANSPORT ASSIGNMENTS"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Function", "Group", "Vehicle", "Vehicle #", "Type", "Driver",
+               "Vendor", "Start", "End", "Working Days", "Rate/day", "Total Cost"])
+    style_header_row(ws, 12)
+    grand_total = 0
+    for r in transport_rows:
+        if not r.get("working_days"):
+            continue
+        est = r.get("amount_estimate") or 0
+        grand_total += est
+        ws.append([
+            r.get("function_name") or "",
+            r.get("function_group") or "",
+            r.get("vehicle_name_override") or r.get("vehicle_name") or "",
+            r.get("vehicle_nr") or "",
+            r.get("vehicle_type") or "",
+            r.get("driver") or "",
+            r.get("vendor") or "",
+            r.get("start_date") or "", r.get("end_date") or "",
+            r.get("working_days") or "",
+            r.get("price_override") or r.get("vehicle_daily_rate_estimate") or "",
+            est,
+        ])
+    ws.append([])
+    ws.append(["", "", "", "", "", "", "", "", "", "", "TOTAL", round(grand_total, 2)])
+    ws.cell(row=ws.max_row, column=12).font = green_font
+    auto_width(ws)
+
+    # ── Sheet 7: FUEL (Summary + Detail) ─────────────────────────────────────
+    ws = wb.create_sheet("Fuel")
+    ws.append(["KLAS 7 - FUEL CONSUMPTION"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+
+    # Build assignment name map for fuel
+    asgn_map = {}
+    for ctx, fetcher in [
+        ('boats', lambda: boat_rows),
+        ('picture_boats', lambda: pb_rows),
+        ('security_boats', lambda: sb_rows),
+        ('transport', lambda: transport_rows),
+    ]:
+        for a in fetcher():
+            asgn_map[(ctx, a['id'])] = (
+                a.get('boat_name_override') or a.get('boat_name') or
+                a.get('vehicle_name_override') or a.get('vehicle_name') or '?',
+                a.get('function_name') or '?'
+            )
+    machinery_names = {m['id']: m['name'] for m in fuel_machinery}
+
+    # Section A: Summary by consumer
+    ws.append(["SUMMARY BY CONSUMER"])
+    ws.cell(row=ws.max_row, column=1).font = section_font
+    ws.append(["Source", "Name", "Function", "Fuel Type", "Total Liters",
+               "Avg Price/L", "Total Cost"])
+    style_header_row(ws, 7)
+
+    consumers = {}
+    for e in fuel_entries:
+        if e['source_type'] == 'machinery':
+            m_name = machinery_names.get(e['assignment_id'], f"Machine #{e['assignment_id']}")
+            key = ('MACHINERY', m_name, '')
+        else:
+            name_info = asgn_map.get((e['source_type'], e['assignment_id']), (f"#{e['assignment_id']}", '?'))
+            key = (e['source_type'].upper(), name_info[0], name_info[1])
+
+        ft = e.get('fuel_type', 'DIESEL')
+        liters = e.get('liters', 0) or 0
+        date = e.get('date', '')
+        if date in locked_prices:
+            price = locked_prices[date]['diesel_price'] if ft == 'DIESEL' else locked_prices[date]['petrol_price']
+        else:
+            price = cur_diesel if ft == 'DIESEL' else cur_petrol
+        cost = liters * price
+
+        ck = (*key, ft)
+        if ck not in consumers:
+            consumers[ck] = {'liters': 0, 'cost': 0}
+        consumers[ck]['liters'] += liters
+        consumers[ck]['cost'] += cost
+
+    fuel_grand_liters = 0
+    fuel_grand_cost = 0
+    for (src, name, func, ft), data in sorted(consumers.items()):
+        avg_p = data['cost'] / data['liters'] if data['liters'] > 0 else 0
+        ws.append([src, name, func, ft, round(data['liters'], 1),
+                   round(avg_p, 4), round(data['cost'], 2)])
+        fuel_grand_liters += data['liters']
+        fuel_grand_cost += data['cost']
+    ws.append([])
+    ws.append(["", "", "", "TOTAL", round(fuel_grand_liters, 1), "", round(fuel_grand_cost, 2)])
+    ws.cell(row=ws.max_row, column=7).font = green_font
+
+    # Section B: Detail day by day
+    ws.append([])
+    ws.append([])
+    ws.append(["DETAIL BY DAY"])
+    ws.cell(row=ws.max_row, column=1).font = section_font
+    ws.append(["Date", "Source Type", "Entity", "Function", "Fuel Type",
+               "Liters", "Price/L", "Cost"])
+    style_header_row(ws, 8)
+    for e in sorted(fuel_entries, key=lambda x: (x.get('date', ''), x.get('source_type', ''))):
+        if e['source_type'] == 'machinery':
+            ename = machinery_names.get(e['assignment_id'], f"Machine #{e['assignment_id']}")
+            efunc = ''
+        else:
+            info = asgn_map.get((e['source_type'], e['assignment_id']), (f"#{e['assignment_id']}", '?'))
+            ename, efunc = info
+        ft = e.get('fuel_type', 'DIESEL')
+        liters = e.get('liters', 0) or 0
+        date = e.get('date', '')
+        if date in locked_prices:
+            price = locked_prices[date]['diesel_price'] if ft == 'DIESEL' else locked_prices[date]['petrol_price']
+        else:
+            price = cur_diesel if ft == 'DIESEL' else cur_petrol
+        ws.append([date, e['source_type'].upper(), ename, efunc, ft,
+                   round(liters, 1), round(price, 4), round(liters * price, 2)])
+
+    # Section C: Machinery
+    if fuel_machinery:
+        ws.append([])
+        ws.append([])
+        ws.append(["MACHINERY"])
+        ws.cell(row=ws.max_row, column=1).font = section_font
+        ws.append(["Name", "Fuel Type", "Start", "End", "Liters/Day"])
+        style_header_row(ws, 5)
+        for m in fuel_machinery:
+            ws.append([m.get('name', ''), m.get('fuel_type', ''),
+                       m.get('start_date', ''), m.get('end_date', ''),
+                       m.get('liters_per_day', '')])
+
+    auto_width(ws)
+
+    # ── Sheet 8: LABOUR ──────────────────────────────────────────────────────
+    ws = wb.create_sheet("Labour")
+    ws.append(["KLAS 7 - LABOUR ASSIGNMENTS"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Function", "Group", "Helper", "Role", "Contact",
+               "Start", "End", "Working Days", "Rate/day", "Total Cost"])
+    style_header_row(ws, 10)
+    by_group = OrderedDict()
+    for r in helper_rows:
+        if not r.get("working_days"):
+            continue
+        g = r.get("function_group") or r.get("helper_group") or "GENERAL"
+        by_group.setdefault(g, []).append(r)
+    grand_total = 0
+    for group_name, group_rows in by_group.items():
+        group_total = 0
+        for r in group_rows:
+            est = r.get("amount_estimate") or 0
+            group_total += est
+            ws.append([
+                r.get("function_name") or "",
+                group_name,
+                r.get("helper_name_override") or r.get("helper_name") or "",
+                r.get("helper_role") or "",
+                r.get("helper_contact") or "",
+                r.get("start_date") or "", r.get("end_date") or "",
+                r.get("working_days") or "",
+                r.get("price_override") or r.get("helper_daily_rate_estimate") or "",
+                est,
+            ])
+        ws.append(["", "", "", "", "", "", f"SUB-TOTAL {group_name}", "", "",
+                   round(group_total, 2)])
+        ws.cell(row=ws.max_row, column=10).font = subtotal_font
+        ws.append([])
+        grand_total += group_total
+    ws.append(["", "", "", "", "", "", "GRAND TOTAL", "", "", round(grand_total, 2)])
+    ws.cell(row=ws.max_row, column=10).font = green_font
+    auto_width(ws)
+
+    # ── Sheet 9: GUARDS (matrix + base camp) ─────────────────────────────────
+    ws = wb.create_sheet("Guards")
+    ws.append(["KLAS 7 - GUARDS SCHEDULE"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+
+    # Section A: Location guards matrix
+    ws.append(["LOCATION GUARDS"])
+    ws.cell(row=ws.max_row, column=1).font = section_font
+
+    guard_matrix = {}
+    for gls in guard_loc_data:
+        loc_name = gls['location_name']
+        guard_matrix.setdefault(loc_name, {})[gls['date']] = gls.get('nb_guards', 1)
+
+    g_header = ["Location"] + [f"D{date_to_day.get(dt_str, '?')}\n{dt_str}" for dt_str in all_dates] + ["Total Guard-Days"]
+    ws.append(g_header)
+    style_header_row(ws, len(g_header))
+
+    gl_locations = sorted(guard_matrix.keys())
+    for loc_name in gl_locations:
+        row_data = [loc_name]
+        total_gd = 0
+        for dt_str in all_dates:
+            nb = guard_matrix.get(loc_name, {}).get(dt_str, '')
+            row_data.append(nb)
+            if isinstance(nb, (int, float)):
+                total_gd += nb
+        row_data.append(total_gd)
+        ws.append(row_data)
+
+    # Totals per date
+    ws.append([])
+    totals_row = ["TOTAL / DAY"]
+    for dt_str in all_dates:
+        count = sum(guard_matrix.get(ln, {}).get(dt_str, 0) for ln in gl_locations)
+        totals_row.append(count)
+    totals_row.append(sum(
+        sum(v for v in guard_matrix.get(ln, {}).values() if isinstance(v, (int, float)))
+        for ln in gl_locations
+    ))
+    ws.append(totals_row)
+    ws.cell(row=ws.max_row, column=1).font = subtotal_font
+
+    if all_dates:
+        ws.freeze_panes = "B6"
+
+    # Section B: Base Camp Guards
+    ws.append([])
+    ws.append([])
+    ws.append(["BASE CAMP GUARDS"])
+    ws.cell(row=ws.max_row, column=1).font = section_font
+    ws.append(["Group", "Function", "Guard", "Role", "Contact",
+               "Start", "End", "Working Days"])
+    style_header_row(ws, 8)
+    for r in gc_rows:
+        if not r.get("working_days"):
+            continue
+        ws.append([
+            r.get("function_group") or r.get("helper_group") or "",
+            r.get("function_name") or "",
+            r.get("helper_name_override") or r.get("helper_name") or "",
+            r.get("helper_role") or "",
+            r.get("helper_contact") or "",
+            r.get("start_date") or "", r.get("end_date") or "",
+            r.get("working_days") or "",
+        ])
+    auto_width(ws)
+
+    # ── Sheet 10: FNB ────────────────────────────────────────────────────────
+    ws = wb.create_sheet("FNB")
+    ws.append(["KLAS 7 - FOOD & BEVERAGE"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws.append([])
+    ws.append(["Category", "Item", "Unit", "Unit Price",
+               "Purchased Qty", "Consumed Qty", "Purchase Cost", "Consumption Cost"])
+    style_header_row(ws, 8)
+
+    # Build item-level aggregation
+    item_totals = {}
+    for e in fnb_entries:
+        iid = e.get('item_id')
+        if iid is None:
+            continue
+        item_totals.setdefault(iid, {'purchase': 0, 'consumption': 0})
+        etype = e.get('entry_type', '')
+        qty = e.get('quantity', 0) or 0
+        if etype in item_totals[iid]:
+            item_totals[iid][etype] += qty
+
+    # Group items by category
+    cat_map = {c['id']: c['name'] for c in fnb_cats}
+    grand_purchase_cost = 0
+    grand_consumption_cost = 0
+    for cat in fnb_cats:
+        cat_items = [it for it in fnb_items if it.get('category_id') == cat['id']]
+        for it in cat_items:
+            iid = it['id']
+            totals = item_totals.get(iid, {'purchase': 0, 'consumption': 0})
+            unit_price = it.get('unit_price', 0) or 0
+            p_cost = round(totals['purchase'] * unit_price, 2)
+            c_cost = round(totals['consumption'] * unit_price, 2)
+            grand_purchase_cost += p_cost
+            grand_consumption_cost += c_cost
+            ws.append([
+                cat['name'],
+                it.get('name', ''),
+                it.get('unit', ''),
+                unit_price,
+                round(totals['purchase'], 2) if totals['purchase'] else "",
+                round(totals['consumption'], 2) if totals['consumption'] else "",
+                p_cost if p_cost else "",
+                c_cost if c_cost else "",
+            ])
+    ws.append([])
+    ws.append(["", "", "", "TOTAL", "", "", round(grand_purchase_cost, 2), round(grand_consumption_cost, 2)])
+    ws.cell(row=ws.max_row, column=7).font = green_font
+    auto_width(ws)
+
+    # ── Insert Summary sheet at position 0 ───────────────────────────────────
+    ws_summary = wb.create_sheet("Summary", 0)
+    ws_summary.append(["KLAS 7 - LOGISTICS OVERVIEW"])
+    ws_summary.cell(row=1, column=1).font = Font(bold=True, size=14)
+    ws_summary.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws_summary.append([])
+
+    # Date range
+    if all_dates:
+        ws_summary.append([f"Production dates: {all_dates[0]} to {all_dates[-1]}"])
+    ws_summary.append([])
+
+    ws_summary.append(["Module", "Items / Assignments", "Details"])
+    style_header_row(ws_summary, 3)
+
+    active_boats = len([r for r in boat_rows if r.get("working_days")])
+    active_pb = len([r for r in pb_rows if r.get("working_days")])
+    active_sb = len([r for r in sb_rows if r.get("working_days")])
+    active_transport = len([r for r in transport_rows if r.get("working_days")])
+    active_helpers = len([r for r in helper_rows if r.get("working_days")])
+    active_gc = len([r for r in gc_rows if r.get("working_days")])
+
+    ws_summary.append(["PDT", len(shooting_days), f"{len(shooting_days)} shooting days"])
+    ws_summary.append(["LOCATIONS", len(loc_sites), f"{len(loc_names)} locations with schedules"])
+    ws_summary.append(["BOATS", active_boats, f"{active_boats} active assignments"])
+    ws_summary.append(["PICTURE BOATS", active_pb, f"{active_pb} active assignments"])
+    ws_summary.append(["SECURITY BOATS", active_sb, f"{active_sb} active assignments"])
+    ws_summary.append(["TRANSPORT", active_transport, f"{active_transport} active assignments"])
+    ws_summary.append(["FUEL", len(fuel_entries), f"{round(fuel_grand_liters, 0)} total liters logged"])
+    ws_summary.append(["LABOUR", active_helpers, f"{active_helpers} active assignments"])
+    ws_summary.append(["GUARDS", len(gl_locations), f"{len(gl_locations)} guard locations + {active_gc} base camp"])
+    ws_summary.append(["FNB", len(fnb_items), f"{len(fnb_cats)} categories, {len(fnb_items)} items"])
+
+    auto_width(ws_summary)
+
+    # Save to bytes
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    fname = f"KLAS7_LOGISTICS_{dt.now().strftime('%y%m%d')}.xlsx"
+    return Response(
+        output.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
+    )
+
+
 # ─── Bootstrap ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

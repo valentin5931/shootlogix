@@ -3471,6 +3471,10 @@ const App = (() => {
     authDownload(`/api/productions/${state.prodId}/export/budget-global`);
   }
 
+  function logisticsExportXlsx() {
+    authDownload(`/api/productions/${state.prodId}/export/logistics`);
+  }
+
   // ═══════════════════════════════════════════════════════════
   //  TRANSPORT
   // ═══════════════════════════════════════════════════════════
@@ -9882,7 +9886,7 @@ const App = (() => {
     // Boat view popup + detail / edit
     openBoatView, closeBoatView,
     openBoatDetail, closeBoatDetail, saveBoatEdit, triggerPhotoUpload, uploadBoatPhoto,
-    undoBoat, toggleExport, exportCSV, exportJSON, budgetExportXlsx,
+    undoBoat, toggleExport, exportCSV, exportJSON, budgetExportXlsx, logisticsExportXlsx,
     showConfirm, cancelConfirm,
     // Picture Boats
     pbSetBoatView, pbFilterBoats, pbOpenBoatView,
