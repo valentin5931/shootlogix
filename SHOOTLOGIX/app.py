@@ -3504,9 +3504,10 @@ def api_export_logistics(prod_id):
     ws_summary.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
     ws_summary.append([])
 
-    # Date range
-    if all_dates:
-        ws_summary.append([f"Production dates: {all_dates[0]} to {all_dates[-1]}"])
+    # Date range from shooting days
+    pdt_dates = sorted(set(d.get('date', '') for d in shooting_days if d.get('date')))
+    if pdt_dates:
+        ws_summary.append([f"Production dates: {pdt_dates[0]} to {pdt_dates[-1]}"])
     ws_summary.append([])
 
     ws_summary.append(["Module", "Items / Assignments", "Details"])
