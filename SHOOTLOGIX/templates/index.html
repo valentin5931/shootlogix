@@ -28,6 +28,10 @@
   <nav id="topbar">
     <div class="topbar-brand">Shoot<span>Logix</span></div>
     <div class="topbar-sep"></div>
+    <button class="tab-btn" data-tab="dashboard"          onclick="App.setTab('dashboard')">
+      <span class="dot" style="background:#22C55E"></span>DASHBOARD
+    </button>
+    <div class="topbar-sep"></div>
     <button class="tab-btn active" data-tab="pdt"           onclick="App.setTab('pdt')">
       <span class="dot" style="background:#94A3B8"></span>PDT
     </button>
@@ -466,6 +470,11 @@
 
     <!-- LOCATIONS ── -->
     <div id="view-locations" class="view-panel">
+    </div>
+
+    <!-- DASHBOARD ── -->
+    <div id="view-dashboard" class="view-panel">
+      <div id="dashboard-content" style="padding:1rem"></div>
     </div>
 
     <!-- BUDGET ── -->

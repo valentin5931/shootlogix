@@ -217,13 +217,73 @@ const App = (() => {
 
   // ── Toast ──────────────────────────────────────────────────
   let toastTimer;
-  function toast(msg, type = 'success') {
+  function toast(msg, type = 'success', undoHistoryId = null) {
     $('toast-icon').textContent = type === 'error' ? '✕' : type === 'info' ? 'ℹ' : '✓';
-    $('toast-msg').textContent = msg;
+    const msgEl = $('toast-msg');
+    if (undoHistoryId) {
+      msgEl.innerHTML = `${esc(msg)} <button class="toast-undo-btn" onclick="App._undoFromToast(${undoHistoryId})">UNDO</button>`;
+    } else {
+      msgEl.textContent = msg;
+    }
     $('toast-inner').className = type;
     $('toast').classList.remove('hidden');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => $('toast').classList.add('hidden'), 3200);
+    toastTimer = setTimeout(() => $('toast').classList.add('hidden'), undoHistoryId ? 10000 : 3200);
+  }
+
+  async function _undoFromToast(historyId) {
+    try {
+      await api('POST', `/api/history/${historyId}/undo`);
+      $('toast').classList.add('hidden');
+      toast('Undone', 'success');
+      // Reload current tab data
+      setTab(state.tab);
+    } catch (e) {
+      toast('Undo failed: ' + e.message, 'error');
+    }
+  }
+
+  // ── Virtual Schedule (column windowing) ─────────────────────
+  // Only renders visible date columns + buffer to avoid rendering 80+ columns
+  const VCOL_WIDTH = 26; // px per column (matches .schedule-cell width)
+  const VCOL_BUFFER = 10; // extra columns rendered on each side
+
+  function _virtualScheduleSetup(wrapEl, totalCols) {
+    if (!wrapEl) return null;
+    const viewWidth = wrapEl.clientWidth;
+    const funcColWidth = 130; // role-name-cell width
+    const visibleCols = Math.ceil((viewWidth - funcColWidth) / VCOL_WIDTH);
+    return {
+      totalCols,
+      visibleCols,
+      funcColWidth,
+    };
+  }
+
+  function _getVisibleColRange(wrapEl, totalCols) {
+    if (!wrapEl) return { start: 0, end: totalCols };
+    const scrollLeft = wrapEl.scrollLeft;
+    const viewWidth = wrapEl.clientWidth;
+    const funcColWidth = 130;
+    const effectiveScroll = Math.max(0, scrollLeft);
+    const startCol = Math.max(0, Math.floor(effectiveScroll / VCOL_WIDTH) - VCOL_BUFFER);
+    const endCol = Math.min(totalCols, Math.ceil((effectiveScroll + viewWidth) / VCOL_WIDTH) + VCOL_BUFFER);
+    return { start: startCol, end: endCol };
+  }
+
+  // ── Smooth DOM update (preserves scroll, avoids full re-render when possible) ──
+  function _morphHTML(container, newHTML) {
+    if (!container) return;
+    const saved = _saveScheduleScroll(container);
+    container.innerHTML = newHTML;
+    _restoreScheduleScroll(container, saved);
+  }
+
+  // ── Debounce render calls to avoid multiple rapid DOM rebuilds ──
+  const _renderTimers = {};
+  function _debouncedRender(key, fn, delay = 50) {
+    clearTimeout(_renderTimers[key]);
+    _renderTimers[key] = setTimeout(fn, delay);
   }
 
   // ── Auth helpers ─────────────────────────────────────────────
@@ -304,10 +364,10 @@ const App = (() => {
 
   // ── Auth: permissions & UI restrictions ──────────────────
   const ROLE_ALLOWED_TABS = {
-    ADMIN:   ['pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
-    UNIT:    ['pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
-    TRANSPO: ['boats','picture-boats','security-boats','transport','fuel'],
-    READER:  ['pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
+    ADMIN:   ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
+    UNIT:    ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
+    TRANSPO: ['dashboard','boats','picture-boats','security-boats','transport','fuel'],
+    READER:  ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
   };
 
   function _canViewTab(tab) {
@@ -511,15 +571,128 @@ const App = (() => {
   }
 
   // ── API ────────────────────────────────────────────────────
+  // ── Client cache (ETag-based) ────────────────────────────
+  const _cache = {};  // { path: { data, etag, ts } }
+  const CACHE_TTL = 30000; // 30s - use cache without revalidation
+
+  // ── Offline mutation queue ──────────────────────────────────
+  let _offlineQueue = [];
+  try {
+    _offlineQueue = JSON.parse(localStorage.getItem('offline_queue') || '[]');
+  } catch (e) { _offlineQueue = []; }
+
+  function _saveOfflineQueue() {
+    try { localStorage.setItem('offline_queue', JSON.stringify(_offlineQueue)); } catch (e) {}
+  }
+
+  async function _flushOfflineQueue() {
+    if (_offlineQueue.length === 0) return;
+    const queue = [..._offlineQueue];
+    _offlineQueue = [];
+    _saveOfflineQueue();
+    let succeeded = 0;
+    for (const item of queue) {
+      try {
+        await api(item.method, item.path, item.body);
+        succeeded++;
+      } catch (e) {
+        console.warn('Offline queue replay failed:', e);
+      }
+    }
+    if (succeeded > 0) {
+      toast(`${succeeded} offline change(s) synced`, 'success');
+      setTab(state.tab); // Refresh current view
+    }
+  }
+
+  // Listen for online event to flush queue
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online', () => {
+      setTimeout(_flushOfflineQueue, 1000);
+    });
+  }
+
+  function _invalidateCache(pathPattern) {
+    for (const key of Object.keys(_cache)) {
+      if (key.includes(pathPattern)) delete _cache[key];
+    }
+  }
+
   async function api(method, path, body) {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
     if (body !== undefined) opts.body = JSON.stringify(body);
+
+    // Offline handling for mutations
+    if (!navigator.onLine && method !== 'GET') {
+      _offlineQueue.push({ method, path, body, ts: Date.now() });
+      _saveOfflineQueue();
+      toast('Saved offline - will sync when back online', 'info');
+      return body || {};
+    }
+
+    // For GET requests, use ETag cache
+    if (method === 'GET' && _cache[path]) {
+      const cached = _cache[path];
+      // If fresh enough, return from cache immediately (no network)
+      if (Date.now() - cached.ts < CACHE_TTL) {
+        return cached.data;
+      }
+      // Otherwise, revalidate with ETag
+      if (cached.etag) {
+        opts.headers['If-None-Match'] = cached.etag;
+      }
+    }
+
     const res = await authFetch(path, opts);
+
+    // 304 Not Modified: use cached data
+    if (res.status === 304 && _cache[path]) {
+      _cache[path].ts = Date.now();
+      return _cache[path].data;
+    }
+
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
+      // Handle validation errors with field details
+      if (res.status === 422 && err.fields) {
+        const msgs = Object.values(err.fields).join(', ');
+        throw new Error(msgs);
+      }
       throw new Error(err.error || `HTTP ${res.status}`);
     }
-    return res.json();
+
+    const data = await res.json();
+
+    // Cache GET responses with ETags
+    if (method === 'GET') {
+      const etag = res.headers.get('ETag');
+      if (etag) {
+        _cache[path] = { data, etag, ts: Date.now() };
+      }
+    }
+
+    // Invalidate relevant caches on mutations
+    if (method !== 'GET') {
+      // Extract the resource type from path to invalidate related caches
+      const parts = path.split('/');
+      // Invalidate production-level list caches
+      if (state.prodId) {
+        const prodPrefix = `/api/productions/${state.prodId}`;
+        // Specific invalidation patterns
+        if (path.includes('assignment')) _invalidateCache(prodPrefix);
+        else if (path.includes('boat')) _invalidateCache(prodPrefix);
+        else if (path.includes('helper')) _invalidateCache(prodPrefix);
+        else if (path.includes('transport')) _invalidateCache(prodPrefix);
+        else if (path.includes('fuel')) _invalidateCache(prodPrefix);
+        else if (path.includes('shooting-day')) _invalidateCache(prodPrefix);
+        else if (path.includes('guard')) _invalidateCache(prodPrefix);
+        else if (path.includes('location')) _invalidateCache(prodPrefix);
+        else if (path.includes('fnb')) _invalidateCache(prodPrefix);
+        else _invalidateCache(prodPrefix);
+      }
+    }
+
+    return data;
   }
 
   // ── Data loading ───────────────────────────────────────────
@@ -566,6 +739,7 @@ const App = (() => {
     const panel = $(`view-${tab}`);
     if (panel) panel.classList.add('active');
 
+    if (tab === 'dashboard')       renderDashboard();
     if (tab === 'pdt')             renderPDT();
     if (tab === 'boats')           { _tabCtx = 'boats';     renderBoats(); }
     if (tab === 'picture-boats')   { _tabCtx = 'picture';   renderPictureBoats(); }
@@ -3467,12 +3641,41 @@ const App = (() => {
 
   // ── Global Budget Export (KLAS7_BUDGET_YYMMDD.xlsx) ──────────────────────
 
+  async function _asyncExport(asyncUrl, fallbackUrl) {
+    try {
+      toast('Export in progress...', 'info');
+      const { job_id } = await api('POST', asyncUrl);
+      // Poll for completion
+      const poll = async () => {
+        const status = await api('GET', `/api/exports/${job_id}`);
+        if (status.status === 'done') {
+          toast('Export ready - downloading', 'success');
+          authDownload(status.download_url);
+        } else if (status.status === 'error') {
+          toast('Export failed: ' + (status.error || 'unknown'), 'error');
+        } else {
+          setTimeout(poll, 2000);
+        }
+      };
+      setTimeout(poll, 2000);
+    } catch (e) {
+      // Fallback to sync export
+      authDownload(fallbackUrl);
+    }
+  }
+
   function budgetExportXlsx() {
-    authDownload(`/api/productions/${state.prodId}/export/budget-global`);
+    _asyncExport(
+      `/api/productions/${state.prodId}/export/budget-global/async`,
+      `/api/productions/${state.prodId}/export/budget-global`
+    );
   }
 
   function logisticsExportXlsx() {
-    authDownload(`/api/productions/${state.prodId}/export/logistics`);
+    _asyncExport(
+      `/api/productions/${state.prodId}/export/logistics/async`,
+      `/api/productions/${state.prodId}/export/logistics`
+    );
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -9364,6 +9567,241 @@ const App = (() => {
     _applyTheme(next);
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  DASHBOARD VIEW
+  // ═══════════════════════════════════════════════════════════
+
+  async function renderDashboard() {
+    const container = $('dashboard-content');
+    if (!container) return;
+    container.innerHTML = '<div style="color:var(--text-3);padding:2rem;text-align:center">Loading dashboard...</div>';
+
+    try {
+      const data = await api('GET', `/api/productions/${state.prodId}/dashboard`);
+      const { departments, total_estimate, total_actual, kpis, alerts } = data;
+
+      const deptNames = {
+        locations: 'Locations', boats: 'Boats', picture_boats: 'Picture Boats',
+        security_boats: 'Security Boats', transport: 'Transport',
+        fuel: 'Fuel', labour: 'Labour', guards: 'Guards (Camp)', fnb: 'FNB'
+      };
+      const deptColors = {
+        locations: '#22C55E', boats: '#3B82F6', picture_boats: '#8B5CF6',
+        security_boats: '#EF4444', transport: '#22C55E',
+        fuel: '#F59E0B', labour: '#F59E0B', guards: '#06B6D4', fnb: '#F97316'
+      };
+
+      // KPI cards
+      const kpiHTML = `
+        <div class="dash-kpis">
+          <div class="dash-kpi">
+            <div class="dash-kpi-value">${fmtMoney(total_estimate)}</div>
+            <div class="dash-kpi-label">Total Budget Estimate</div>
+          </div>
+          <div class="dash-kpi">
+            <div class="dash-kpi-value">${fmtMoney(total_actual)}</div>
+            <div class="dash-kpi-label">Total Actual</div>
+          </div>
+          <div class="dash-kpi">
+            <div class="dash-kpi-value">${kpis.days_elapsed} / ${kpis.shooting_days_total}</div>
+            <div class="dash-kpi-label">Shooting Days Elapsed</div>
+          </div>
+          <div class="dash-kpi">
+            <div class="dash-kpi-value">${kpis.days_remaining}</div>
+            <div class="dash-kpi-label">Days Remaining</div>
+          </div>
+          <div class="dash-kpi">
+            <div class="dash-kpi-value">${fmtMoney(kpis.burn_rate_per_day)}</div>
+            <div class="dash-kpi-label">Burn Rate / Day</div>
+          </div>
+          <div class="dash-kpi">
+            <div class="dash-kpi-value">${kpis.fuel_liters?.toLocaleString() || 0} L</div>
+            <div class="dash-kpi-label">Total Fuel</div>
+          </div>
+        </div>`;
+
+      // Alerts
+      let alertsHTML = '';
+      if (alerts.length > 0) {
+        alertsHTML = `<div class="dash-alerts">
+          <h3 style="color:var(--text-1);font-size:.85rem;margin-bottom:.5rem">Alerts</h3>
+          ${alerts.map(a => `
+            <div class="dash-alert ${a.type === 'over_budget' ? 'dash-alert-red' : 'dash-alert-amber'}">
+              <span class="dash-alert-icon">${a.type === 'over_budget' ? '!!' : '!'}</span>
+              <span>${esc(a.msg)}</span>
+            </div>`).join('')}
+        </div>`;
+      }
+
+      // Department budget bars
+      const barsHTML = Object.entries(departments).map(([key, dept]) => {
+        const name = deptNames[key] || key;
+        const color = deptColors[key] || '#6b7280';
+        const est = dept.estimate || 0;
+        const act = dept.actual || 0;
+        const pct = est > 0 ? Math.min(Math.round(act / est * 100), 150) : 0;
+        const barWidth = Math.min(pct, 100);
+        const overBudget = pct > 100;
+        return `
+          <div class="dash-dept-row">
+            <div class="dash-dept-name" style="color:${color}">${name}</div>
+            <div class="dash-dept-bar-wrap">
+              <div class="dash-dept-bar" style="width:${barWidth}%;background:${overBudget ? 'var(--red)' : color}"></div>
+            </div>
+            <div class="dash-dept-values">
+              <span class="dash-dept-actual">${fmtMoney(act)}</span>
+              <span class="dash-dept-est">/ ${fmtMoney(est)}</span>
+              <span class="dash-dept-pct ${overBudget ? 'dash-over' : ''}">${pct}%</span>
+            </div>
+          </div>`;
+      }).join('');
+
+      // Next arena
+      const arenaHTML = kpis.next_arena
+        ? `<div style="margin-top:1rem;padding:.5rem .8rem;background:var(--bg-card);border-radius:8px;border:1px solid var(--border)">
+            <span style="color:var(--text-3);font-size:.75rem">Next Arena:</span>
+            <strong style="color:var(--amber);margin-left:.4rem">${fmtDateLong(kpis.next_arena)}</strong>
+          </div>`
+        : '';
+
+      container.innerHTML = `
+        ${kpiHTML}
+        ${arenaHTML}
+        ${alertsHTML}
+        <div class="dash-depts">
+          <h3 style="color:var(--text-1);font-size:.85rem;margin-bottom:.5rem">Budget by Department</h3>
+          ${barsHTML}
+        </div>`;
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--red);padding:2rem">${esc(e.message)}</div>`;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  GLOBAL SEARCH (Cmd+K)
+  // ═══════════════════════════════════════════════════════════
+
+  let _searchOpen = false;
+
+  function _openSearch() {
+    if (_searchOpen) return;
+    _searchOpen = true;
+    let overlay = $('search-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'search-overlay';
+      overlay.className = 'search-overlay';
+      overlay.innerHTML = `
+        <div class="search-modal">
+          <input type="text" id="search-input" class="search-input" placeholder="Search boats, vehicles, helpers, guards, locations..." autocomplete="off">
+          <div id="search-results" class="search-results"></div>
+        </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', e => { if (e.target === overlay) _closeSearch(); });
+    }
+    overlay.classList.remove('hidden');
+    overlay.style.display = 'flex';
+    const input = $('search-input');
+    input.value = '';
+    input.focus();
+    $('search-results').innerHTML = '<div style="color:var(--text-4);padding:1rem;text-align:center;font-size:.8rem">Start typing to search...</div>';
+
+    input.oninput = () => {
+      clearTimeout(input._debounce);
+      input._debounce = setTimeout(() => _doSearch(input.value.trim()), 150);
+    };
+    input.onkeydown = e => {
+      if (e.key === 'Escape') _closeSearch();
+      if (e.key === 'Enter') {
+        const first = $('search-results')?.querySelector('.search-result-item');
+        if (first) first.click();
+      }
+    };
+  }
+
+  function _closeSearch() {
+    _searchOpen = false;
+    const overlay = $('search-overlay');
+    if (overlay) {
+      overlay.classList.add('hidden');
+      overlay.style.display = 'none';
+    }
+  }
+
+  function _doSearch(query) {
+    const container = $('search-results');
+    if (!container) return;
+    if (!query || query.length < 2) {
+      container.innerHTML = '<div style="color:var(--text-4);padding:1rem;text-align:center;font-size:.8rem">Start typing to search...</div>';
+      return;
+    }
+
+    const q = query.toLowerCase();
+    const results = [];
+
+    // Search boats
+    (state.boats || []).forEach(b => {
+      if ((b.name || '').toLowerCase().includes(q) || (b.vendor || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Boat', name: b.name, detail: b.vendor || '', tab: 'boats', id: b.id });
+      }
+    });
+
+    // Search picture boats
+    (state.pictureBoats || []).forEach(b => {
+      if ((b.name || '').toLowerCase().includes(q) || (b.vendor || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Picture Boat', name: b.name, detail: b.vendor || '', tab: 'picture-boats', id: b.id });
+      }
+    });
+
+    // Search transport vehicles
+    (state.transportVehicles || []).forEach(v => {
+      if ((v.name || '').toLowerCase().includes(q) || (v.vehicle_type || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Vehicle', name: v.name, detail: v.vehicle_type || '', tab: 'transport', id: v.id });
+      }
+    });
+
+    // Search helpers/labour
+    (state.lbWorkers || []).forEach(h => {
+      if ((h.name || '').toLowerCase().includes(q) || (h.role || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Worker', name: h.name, detail: h.role || '', tab: 'labour', id: h.id });
+      }
+    });
+
+    // Search security boats
+    (state.securityBoats || []).forEach(b => {
+      if ((b.name || '').toLowerCase().includes(q) || (b.vendor || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Security Boat', name: b.name, detail: b.vendor || '', tab: 'security-boats', id: b.id });
+      }
+    });
+
+    // Search shooting days
+    (state.shootingDays || []).forEach(d => {
+      const dayName = d.game_name || d.location || d.notes || '';
+      if (dayName.toLowerCase().includes(q) || (d.date || '').includes(q)) {
+        results.push({ type: 'Day', name: `Day ${d.day_number || '?'} - ${d.date}`, detail: dayName, tab: 'pdt', id: d.id });
+      }
+    });
+
+    // Search functions/roles
+    (state.functions || []).forEach(f => {
+      if ((f.name || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Function', name: f.name, detail: f.function_group || '', tab: 'boats', id: f.id });
+      }
+    });
+
+    if (results.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-4);padding:1rem;text-align:center;font-size:.8rem">No results</div>';
+      return;
+    }
+
+    container.innerHTML = results.slice(0, 20).map(r => `
+      <div class="search-result-item" onclick="App.setTab('${r.tab}');App._closeSearch()">
+        <span class="search-result-type">${esc(r.type)}</span>
+        <span class="search-result-name">${esc(r.name)}</span>
+        <span class="search-result-detail">${esc(r.detail)}</span>
+      </div>`).join('');
+  }
+
   async function init() {
     // Apply saved theme
     _applyTheme(localStorage.getItem('theme') || 'dark');
@@ -9486,6 +9924,10 @@ const App = (() => {
           renderLbWorkerList();
           renderLbRoleCards();
         }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        _openSearch();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && state.tab === 'boats') {
         e.preventDefault();
@@ -9986,8 +10428,35 @@ const App = (() => {
     adminRenameProject, adminArchiveProject,
     adminChangeRole, adminRemoveMember,
     toggleTheme,
+    // Dashboard
+    renderDashboard,
+    // Search
+    _openSearch, _closeSearch,
+    // History undo
+    _undoFromToast,
     init,
   };
 })();
 
 document.addEventListener('DOMContentLoaded', App.init);
+
+// ── Service Worker registration ──────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js')
+    .then(reg => console.log('SW registered:', reg.scope))
+    .catch(err => console.log('SW registration failed:', err));
+}
+
+// ── Offline/Online detection ─────────────────────────────────
+window.addEventListener('offline', () => {
+  const banner = document.createElement('div');
+  banner.id = 'offline-banner';
+  banner.className = 'offline-banner';
+  banner.textContent = 'You are offline - changes will sync when connection returns';
+  document.body.prepend(banner);
+});
+
+window.addEventListener('online', () => {
+  const banner = document.getElementById('offline-banner');
+  if (banner) banner.remove();
+});

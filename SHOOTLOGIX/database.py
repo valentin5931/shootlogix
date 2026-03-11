@@ -631,6 +631,42 @@ CREATE TABLE IF NOT EXISTS fuel_locked_prices (
     petrol_price  REAL DEFAULT 0,
     locked_at     TEXT DEFAULT (datetime('now'))
 );
+
+-- ═══════════════════════════════════════════════
+-- INDEXES FOR PERFORMANCE
+-- ═══════════════════════════════════════════════
+CREATE INDEX IF NOT EXISTS idx_boat_assignments_boat ON boat_assignments(boat_id);
+CREATE INDEX IF NOT EXISTS idx_boat_assignments_func ON boat_assignments(boat_function_id);
+CREATE INDEX IF NOT EXISTS idx_boat_assignments_prod ON boat_assignments(production_id);
+CREATE INDEX IF NOT EXISTS idx_picture_boat_assignments_boat ON picture_boat_assignments(picture_boat_id);
+CREATE INDEX IF NOT EXISTS idx_picture_boat_assignments_func ON picture_boat_assignments(boat_function_id);
+CREATE INDEX IF NOT EXISTS idx_security_boat_assignments_boat ON security_boat_assignments(security_boat_id);
+CREATE INDEX IF NOT EXISTS idx_security_boat_assignments_func ON security_boat_assignments(boat_function_id);
+CREATE INDEX IF NOT EXISTS idx_transport_assignments_vehicle ON transport_assignments(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_fuel_entries_assignment ON fuel_entries(assignment_id);
+CREATE INDEX IF NOT EXISTS idx_fuel_entries_date ON fuel_entries(date);
+CREATE INDEX IF NOT EXISTS idx_fuel_logs_vehicle ON fuel_logs(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_fuel_logs_date ON fuel_logs(date);
+CREATE INDEX IF NOT EXISTS idx_shooting_days_prod ON shooting_days(production_id);
+CREATE INDEX IF NOT EXISTS idx_shooting_days_date ON shooting_days(date);
+CREATE INDEX IF NOT EXISTS idx_helper_assignments_func ON helper_assignments(boat_function_id);
+CREATE INDEX IF NOT EXISTS idx_helper_assignments_helper ON helper_assignments(helper_id);
+CREATE INDEX IF NOT EXISTS idx_helper_schedules_helper ON helper_schedules(helper_id);
+CREATE INDEX IF NOT EXISTS idx_helper_schedules_date ON helper_schedules(date);
+CREATE INDEX IF NOT EXISTS idx_guard_schedules_guard ON guard_schedules(guard_id);
+CREATE INDEX IF NOT EXISTS idx_guard_schedules_date ON guard_schedules(date);
+CREATE INDEX IF NOT EXISTS idx_guard_location_schedules_guard ON guard_location_schedules(guard_id);
+CREATE INDEX IF NOT EXISTS idx_guard_location_schedules_date ON guard_location_schedules(date);
+CREATE INDEX IF NOT EXISTS idx_guard_camp_assignments_worker ON guard_camp_assignments(worker_id);
+CREATE INDEX IF NOT EXISTS idx_location_schedules_location ON location_schedules(location_id);
+CREATE INDEX IF NOT EXISTS idx_location_schedules_date ON location_schedules(date);
+CREATE INDEX IF NOT EXISTS idx_fnb_entries_service ON fnb_entries(service_id);
+CREATE INDEX IF NOT EXISTS idx_fnb_daily_tracking_service ON fnb_daily_tracking(service_id);
+CREATE INDEX IF NOT EXISTS idx_fnb_daily_tracking_date ON fnb_daily_tracking(date);
+CREATE INDEX IF NOT EXISTS idx_history_table_record ON history(table_name, record_id);
+CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at);
+CREATE INDEX IF NOT EXISTS idx_budget_lines_prod ON budget_lines(production_id);
+CREATE INDEX IF NOT EXISTS idx_documents_prod ON documents(production_id);
         """)
 
     print("Database initialized — ShootLogix schema v1")
@@ -3000,13 +3036,69 @@ def get_budget(prod_id):
 
 # ─── History / Undo ───────────────────────────────────────────────────────────
 
-def get_history(prod_id, limit=50):
-    """Return recent history entries — filtered by production via boat_functions join."""
+def get_history(prod_id, limit=50, entity_type=None, entity_id=None):
+    """Return recent history entries with optional filtering."""
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM history ORDER BY id DESC LIMIT ?", (limit,)
-        ).fetchall()
+        query = "SELECT * FROM history"
+        params = []
+        conditions = []
+        if entity_type:
+            conditions.append("table_name = ?")
+            params.append(entity_type)
+        if entity_id:
+            conditions.append("record_id = ?")
+            params.append(entity_id)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
+
+
+def undo_history_entry(history_id):
+    """Generic undo: restore old_data for a given history entry."""
+    with get_db() as conn:
+        entry = conn.execute("SELECT * FROM history WHERE id=?", (history_id,)).fetchone()
+        if not entry:
+            return {"message": "History entry not found"}
+        entry = dict(entry)
+        table = entry["table_name"]
+        record_id = entry["record_id"]
+        action = entry["action"]
+        old_data = json.loads(entry["old_data"]) if entry["old_data"] else None
+
+        # Validate table name to prevent injection
+        allowed_tables = {
+            "boat_assignments", "picture_boat_assignments", "security_boat_assignments",
+            "transport_assignments", "helper_assignments", "guard_camp_assignments",
+            "boats", "picture_boats", "security_boats", "transport_vehicles",
+            "helpers", "guard_camp_workers", "fuel_entries", "shooting_days",
+        }
+        if table not in allowed_tables:
+            return {"message": f"Undo not supported for table: {table}"}
+
+        if action == "create":
+            # Undo create = delete
+            conn.execute(f"DELETE FROM {table} WHERE id=?", (record_id,))
+        elif action == "update" and old_data:
+            # Undo update = restore old values
+            cols = [k for k in old_data.keys() if k != 'id']
+            set_clause = ", ".join(f"{k}=?" for k in cols)
+            vals = [old_data[k] for k in cols]
+            vals.append(record_id)
+            conn.execute(f"UPDATE {table} SET {set_clause} WHERE id=?", vals)
+        elif action == "delete" and old_data:
+            # Undo delete = re-insert
+            cols = list(old_data.keys())
+            placeholders = ", ".join("?" for _ in cols)
+            col_names = ", ".join(cols)
+            vals = [old_data[k] for k in cols]
+            conn.execute(f"INSERT OR REPLACE INTO {table} ({col_names}) VALUES ({placeholders})", vals)
+
+        # Remove the history entry
+        conn.execute("DELETE FROM history WHERE id=?", (history_id,))
+        return {"message": "Undo successful", "action": action, "table": table, "restored": old_data}
 
 
 def undo_last_boat_assignment(prod_id):

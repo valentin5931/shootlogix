@@ -4,11 +4,13 @@ Flask REST API for the full production logistics SPA.
 Run: python3 app.py  →  http://localhost:5002
 """
 import csv
+import hashlib
 import io
 import json
 import os
 import tempfile
-from flask import Flask, jsonify, request, render_template, abort, Response, g
+import threading
+from flask import Flask, jsonify, request, render_template, abort, Response, g, make_response
 
 from database import (
     init_db, get_db,
@@ -44,7 +46,7 @@ from database import (
     get_transport_schedules,
     get_guard_schedules,
     get_budget,
-    get_history, undo_last_boat_assignment,
+    get_history, undo_last_boat_assignment, undo_history_entry,
     get_setting, set_setting,
     working_days,
     # New modules
@@ -74,7 +76,84 @@ from database import (
     delete_guard_camp_assignment_by_function,
 )
 
+from validation import ValidationError, validate_assignment, validate_fuel_entry, validate_shooting_day, validate_date_range, validate_positive_number, validate_required
+
 app = Flask(__name__)
+
+# ─── Background Export System ─────────────────────────────────────────────────
+import uuid
+import time as _time
+
+_export_jobs = {}  # { job_id: { status, path, filename, created_at, error } }
+_EXPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'exports')
+os.makedirs(_EXPORT_DIR, exist_ok=True)
+
+
+def _cleanup_old_exports():
+    """Remove exports older than 1 hour."""
+    now = _time.time()
+    to_remove = []
+    for job_id, job in _export_jobs.items():
+        if now - job.get("created_at", 0) > 3600:
+            to_remove.append(job_id)
+            if job.get("path") and os.path.exists(job["path"]):
+                try:
+                    os.unlink(job["path"])
+                except OSError:
+                    pass
+    for jid in to_remove:
+        del _export_jobs[jid]
+
+
+@app.route("/api/exports/<job_id>", methods=["GET"])
+def api_export_status(job_id):
+    """Check export job status. Returns download link when ready."""
+    job = _export_jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Export not found"}), 404
+    if job["status"] == "done":
+        return jsonify({
+            "status": "done",
+            "download_url": f"/api/exports/{job_id}/download",
+            "filename": job["filename"],
+        })
+    elif job["status"] == "error":
+        return jsonify({"status": "error", "error": job.get("error", "Unknown error")})
+    return jsonify({"status": "processing"})
+
+
+@app.route("/api/exports/<job_id>/download", methods=["GET"])
+def api_export_download(job_id):
+    """Download completed export file."""
+    job = _export_jobs.get(job_id)
+    if not job or job["status"] != "done" or not job.get("path"):
+        return jsonify({"error": "Export not ready"}), 404
+    from flask import send_file
+    return send_file(
+        job["path"],
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=job["filename"],
+    )
+
+
+@app.errorhandler(ValidationError)
+def handle_validation_error(e):
+    return jsonify({"error": "Validation failed", "fields": e.errors}), 422
+
+
+def jsonify_cached(data):
+    """Return a JSON response with ETag. If client sends matching If-None-Match, return 304."""
+    body = json.dumps(data, separators=(',', ':'), sort_keys=True)
+    etag = '"' + hashlib.md5(body.encode()).hexdigest() + '"'
+    if_none_match = request.headers.get('If-None-Match')
+    if if_none_match == etag:
+        return Response(status=304)
+    resp = make_response(body)
+    resp.headers['Content-Type'] = 'application/json'
+    resp.headers['ETag'] = etag
+    resp.headers['Cache-Control'] = 'private, no-cache'
+    return resp
 
 # ─── Auth: Register blueprint & protect all /api/ routes ─────────────────────
 from auth.routes import auth_bp
@@ -240,7 +319,7 @@ def api_departments(prod_id):
 @app.route("/api/productions/<int:prod_id>/shooting-days", methods=["GET"])
 def api_shooting_days(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_shooting_days(prod_id))
+    return jsonify_cached(get_shooting_days(prod_id))
 
 
 @app.route("/api/productions/<int:prod_id>/shooting-days", methods=["POST"])
@@ -250,6 +329,7 @@ def api_create_shooting_day(prod_id):
     data["production_id"] = prod_id
     if not data.get("date"):
         return jsonify({"error": "date required"}), 400
+    validate_shooting_day(data)
     day_id = create_shooting_day(data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM shooting_days WHERE id=?", (day_id,)).fetchone()
@@ -268,7 +348,9 @@ def api_get_shooting_day(prod_id, day_id):
 @app.route("/api/productions/<int:prod_id>/shooting-days/<int:day_id>", methods=["PUT"])
 def api_update_shooting_day(prod_id, day_id):
     prod_or_404(prod_id)
-    update_shooting_day(day_id, request.json or {})
+    data = request.json or {}
+    validate_shooting_day(data)
+    update_shooting_day(day_id, data)
     day = get_shooting_day(day_id)
     if not day:
         abort(404)
@@ -434,7 +516,7 @@ def api_upload_pdt(prod_id):
 @app.route("/api/productions/<int:prod_id>/boats", methods=["GET"])
 def api_boats(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_boats(prod_id))
+    return jsonify_cached(get_boats(prod_id))
 
 
 @app.route("/api/productions/<int:prod_id>/boats", methods=["POST"])
@@ -496,7 +578,7 @@ def api_upload_boat_image(boat_id):
 def api_boat_functions(prod_id):
     prod_or_404(prod_id)
     context = request.args.get('context')
-    return jsonify(get_boat_functions(prod_id, context=context))
+    return jsonify_cached(get_boat_functions(prod_id, context=context))
 
 
 @app.route("/api/productions/<int:prod_id>/boat-functions", methods=["POST"])
@@ -532,7 +614,7 @@ def api_delete_boat_function(func_id):
 def api_assignments(prod_id):
     prod_or_404(prod_id)
     context = request.args.get('context')
-    return jsonify(get_boat_assignments(prod_id, context=context))
+    return jsonify_cached(get_boat_assignments(prod_id, context=context))
 
 
 @app.route("/api/productions/<int:prod_id>/assignments", methods=["POST"])
@@ -541,6 +623,7 @@ def api_create_assignment(prod_id):
     data = request.json or {}
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
+    validate_assignment(data)
     assignment_id = create_boat_assignment(data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM boat_assignments WHERE id=?", (assignment_id,)).fetchone()
@@ -549,7 +632,9 @@ def api_create_assignment(prod_id):
 
 @app.route("/api/assignments/<int:assignment_id>", methods=["PUT"])
 def api_update_assignment(assignment_id):
-    update_boat_assignment(assignment_id, request.json or {})
+    data = request.json or {}
+    validate_assignment(data)
+    update_boat_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM boat_assignments WHERE id=?", (assignment_id,)).fetchone()
     return jsonify(dict(row)) if row else ("", 404)
@@ -573,7 +658,7 @@ def api_delete_assignment_by_function(prod_id, func_id):
 @app.route("/api/productions/<int:prod_id>/picture-boats", methods=["GET"])
 def api_picture_boats(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_picture_boats(prod_id))
+    return jsonify_cached(get_picture_boats(prod_id))
 
 
 @app.route("/api/productions/<int:prod_id>/picture-boats", methods=["POST"])
@@ -634,7 +719,7 @@ def api_upload_picture_boat_image(pb_id):
 @app.route("/api/productions/<int:prod_id>/picture-boat-assignments", methods=["GET"])
 def api_picture_boat_assignments(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_picture_boat_assignments(prod_id))
+    return jsonify_cached(get_picture_boat_assignments(prod_id))
 
 
 @app.route("/api/productions/<int:prod_id>/picture-boat-assignments", methods=["POST"])
@@ -643,6 +728,7 @@ def api_create_picture_boat_assignment(prod_id):
     data = request.json or {}
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
+    validate_assignment(data)
     assignment_id = create_picture_boat_assignment(data)
     with get_db() as conn:
         row = conn.execute(
@@ -653,7 +739,9 @@ def api_create_picture_boat_assignment(prod_id):
 
 @app.route("/api/picture-boat-assignments/<int:assignment_id>", methods=["PUT"])
 def api_update_picture_boat_assignment(assignment_id):
-    update_picture_boat_assignment(assignment_id, request.json or {})
+    data = request.json or {}
+    validate_assignment(data)
+    update_picture_boat_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM picture_boat_assignments WHERE id=?", (assignment_id,)
@@ -680,7 +768,7 @@ def api_delete_picture_boat_assignment_by_function(prod_id, func_id):
 @app.route("/api/productions/<int:prod_id>/helpers", methods=["GET"])
 def api_helpers(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_helpers(prod_id))
+    return jsonify_cached(get_helpers(prod_id))
 
 
 @app.route("/api/productions/<int:prod_id>/helpers", methods=["POST"])
@@ -739,7 +827,7 @@ def api_upload_helper_image(helper_id):
 @app.route("/api/productions/<int:prod_id>/helper-assignments", methods=["GET"])
 def api_helper_assignments(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_helper_assignments(prod_id))
+    return jsonify_cached(get_helper_assignments(prod_id))
 
 
 @app.route("/api/productions/<int:prod_id>/helper-assignments", methods=["POST"])
@@ -748,6 +836,7 @@ def api_create_helper_assignment(prod_id):
     data = request.json or {}
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
+    validate_assignment(data)
     aid = create_helper_assignment(data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM helper_assignments WHERE id=?", (aid,)).fetchone()
@@ -756,7 +845,9 @@ def api_create_helper_assignment(prod_id):
 
 @app.route("/api/helper-assignments/<int:assignment_id>", methods=["PUT"])
 def api_update_helper_assignment(assignment_id):
-    update_helper_assignment(assignment_id, request.json or {})
+    data = request.json or {}
+    validate_assignment(data)
+    update_helper_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM helper_assignments WHERE id=?", (assignment_id,)).fetchone()
     return jsonify(dict(row)) if row else ("", 404)
@@ -847,7 +938,7 @@ def api_export_helpers_csv(prod_id):
 @app.route("/api/productions/<int:prod_id>/security-boats", methods=["GET"])
 def api_security_boats(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_security_boats(prod_id))
+    return jsonify_cached(get_security_boats(prod_id))
 
 
 @app.route("/api/productions/<int:prod_id>/security-boats", methods=["POST"])
@@ -906,7 +997,7 @@ def api_upload_security_boat_image(sb_id):
 @app.route("/api/productions/<int:prod_id>/security-boat-assignments", methods=["GET"])
 def api_security_boat_assignments(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_security_boat_assignments(prod_id))
+    return jsonify_cached(get_security_boat_assignments(prod_id))
 
 
 @app.route("/api/productions/<int:prod_id>/security-boat-assignments", methods=["POST"])
@@ -915,6 +1006,7 @@ def api_create_security_boat_assignment(prod_id):
     data = request.json or {}
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
+    validate_assignment(data)
     aid = create_security_boat_assignment(data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM security_boat_assignments WHERE id=?", (aid,)).fetchone()
@@ -923,7 +1015,9 @@ def api_create_security_boat_assignment(prod_id):
 
 @app.route("/api/security-boat-assignments/<int:assignment_id>", methods=["PUT"])
 def api_update_security_boat_assignment(assignment_id):
-    update_security_boat_assignment(assignment_id, request.json or {})
+    data = request.json or {}
+    validate_assignment(data)
+    update_security_boat_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM security_boat_assignments WHERE id=?", (assignment_id,)).fetchone()
     return jsonify(dict(row)) if row else ("", 404)
@@ -1033,7 +1127,7 @@ def api_guards(prod_id):
 @app.route("/api/productions/<int:prod_id>/budget", methods=["GET"])
 def api_budget(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_budget(prod_id))
+    return jsonify_cached(get_budget(prod_id))
 
 
 # ─── History / Undo ───────────────────────────────────────────────────────────
@@ -1042,13 +1136,22 @@ def api_budget(prod_id):
 def api_history(prod_id):
     prod_or_404(prod_id)
     limit = int(request.args.get("limit", 50))
-    return jsonify(get_history(prod_id, limit))
+    entity_type = request.args.get("entity_type")
+    entity_id = request.args.get("entity_id")
+    if entity_id:
+        entity_id = int(entity_id)
+    return jsonify(get_history(prod_id, limit, entity_type=entity_type, entity_id=entity_id))
 
 
 @app.route("/api/productions/<int:prod_id>/undo", methods=["POST"])
 def api_undo(prod_id):
     prod_or_404(prod_id)
     return jsonify(undo_last_boat_assignment(prod_id))
+
+
+@app.route("/api/history/<int:history_id>/undo", methods=["POST"])
+def api_undo_history(history_id):
+    return jsonify(undo_history_entry(history_id))
 
 
 # ─── Working days util ────────────────────────────────────────────────────────
@@ -1174,7 +1277,7 @@ def api_export_pb_json(prod_id):
 @app.route("/api/productions/<int:prod_id>/transport-vehicles", methods=["GET"])
 def api_transport_vehicles(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_transport_vehicles(prod_id))
+    return jsonify_cached(get_transport_vehicles(prod_id))
 
 
 @app.route("/api/productions/<int:prod_id>/transport-vehicles", methods=["POST"])
@@ -1233,7 +1336,7 @@ def api_upload_transport_vehicle_image(vehicle_id):
 @app.route("/api/productions/<int:prod_id>/transport-assignments", methods=["GET"])
 def api_transport_assignments(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_transport_assignments(prod_id))
+    return jsonify_cached(get_transport_assignments(prod_id))
 
 
 @app.route("/api/productions/<int:prod_id>/transport-assignments", methods=["POST"])
@@ -1242,6 +1345,7 @@ def api_create_transport_assignment(prod_id):
     data = request.json or {}
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
+    validate_assignment(data)
     aid = create_transport_assignment(data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM transport_assignments WHERE id=?", (aid,)).fetchone()
@@ -1250,7 +1354,9 @@ def api_create_transport_assignment(prod_id):
 
 @app.route("/api/transport-assignments/<int:assignment_id>", methods=["PUT"])
 def api_update_transport_assignment(assignment_id):
-    update_transport_assignment(assignment_id, request.json or {})
+    data = request.json or {}
+    validate_assignment(data)
+    update_transport_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM transport_assignments WHERE id=?", (assignment_id,)).fetchone()
     return jsonify(dict(row)) if row else ("", 404)
@@ -1330,7 +1436,7 @@ def api_export_transport_json(prod_id):
 def api_get_fuel_entries(prod_id):
     prod_or_404(prod_id)
     source = request.args.get('source')
-    return jsonify(get_fuel_entries(prod_id, source_type=source or None))
+    return jsonify_cached(get_fuel_entries(prod_id, source_type=source or None))
 
 
 @app.route("/api/productions/<int:prod_id>/fuel-entries", methods=["POST"])
@@ -1338,6 +1444,7 @@ def api_upsert_fuel_entry(prod_id):
     prod_or_404(prod_id)
     data = request.json or {}
     data['production_id'] = prod_id
+    validate_fuel_entry(data)
     entry = upsert_fuel_entry(data)
     return jsonify(entry or {}), 200
 
@@ -2152,6 +2259,7 @@ def api_create_guard_camp_assignment(prod_id):
     data = request.json or {}
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
+    validate_assignment(data)
     assignment_id = create_guard_camp_assignment(data)
     assignments = get_guard_camp_assignments(prod_id)
     asgn = next((a for a in assignments if a["id"] == assignment_id), None)
@@ -2161,6 +2269,7 @@ def api_create_guard_camp_assignment(prod_id):
 @app.route("/api/guard-camp-assignments/<int:assignment_id>", methods=["PUT"])
 def api_update_guard_camp_assignment(assignment_id):
     data = request.json or {}
+    validate_assignment(data)
     update_guard_camp_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM guard_camp_assignments WHERE id=?", (assignment_id,)).fetchone()
@@ -3544,6 +3653,265 @@ def api_export_logistics(prod_id):
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={fname}"}
     )
+
+
+# ─── Async Exports ───────────────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/export/budget-global/async", methods=["POST"])
+def api_export_budget_global_async(prod_id):
+    """Start budget XLSX export in background. Returns job_id for polling."""
+    prod_or_404(prod_id)
+    _cleanup_old_exports()
+
+    job_id = str(uuid.uuid4())[:8]
+    _export_jobs[job_id] = {"status": "processing", "created_at": _time.time(), "path": None, "filename": None}
+
+    def _do_export():
+        try:
+            # Call the sync export function within app context
+            with app.test_request_context():
+                resp = api_export_budget_global(prod_id)
+                data = resp.get_data()
+                fname = resp.headers.get("Content-Disposition", "").split("filename=")[-1] or "export.xlsx"
+                fpath = os.path.join(_EXPORT_DIR, f"{job_id}.xlsx")
+                with open(fpath, "wb") as f:
+                    f.write(data)
+                _export_jobs[job_id]["status"] = "done"
+                _export_jobs[job_id]["path"] = fpath
+                _export_jobs[job_id]["filename"] = fname
+        except Exception as e:
+            _export_jobs[job_id]["status"] = "error"
+            _export_jobs[job_id]["error"] = str(e)
+
+    t = threading.Thread(target=_do_export, daemon=True)
+    t.start()
+    return jsonify({"job_id": job_id, "status": "processing"}), 202
+
+
+@app.route("/api/productions/<int:prod_id>/export/logistics/async", methods=["POST"])
+def api_export_logistics_async(prod_id):
+    """Start logistics XLSX export in background. Returns job_id for polling."""
+    prod_or_404(prod_id)
+    _cleanup_old_exports()
+
+    job_id = str(uuid.uuid4())[:8]
+    _export_jobs[job_id] = {"status": "processing", "created_at": _time.time(), "path": None, "filename": None}
+
+    def _do_export():
+        try:
+            with app.test_request_context():
+                resp = api_export_logistics(prod_id)
+                data = resp.get_data()
+                fname = resp.headers.get("Content-Disposition", "").split("filename=")[-1] or "export.xlsx"
+                fpath = os.path.join(_EXPORT_DIR, f"{job_id}.xlsx")
+                with open(fpath, "wb") as f:
+                    f.write(data)
+                _export_jobs[job_id]["status"] = "done"
+                _export_jobs[job_id]["path"] = fpath
+                _export_jobs[job_id]["filename"] = fname
+        except Exception as e:
+            _export_jobs[job_id]["status"] = "error"
+            _export_jobs[job_id]["error"] = str(e)
+
+    t = threading.Thread(target=_do_export, daemon=True)
+    t.start()
+    return jsonify({"job_id": job_id, "status": "processing"}), 202
+
+
+# ─── Dashboard ───────────────────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/dashboard", methods=["GET"])
+def api_dashboard(prod_id):
+    """Return budget summary, KPIs, and alerts for the dashboard."""
+    prod_or_404(prod_id)
+    from datetime import datetime as dt
+
+    shooting_days = get_shooting_days(prod_id)
+    budget = get_budget(prod_id)
+
+    # Gather all department totals
+    departments = {}
+
+    # Boats
+    boat_rows = [r for r in get_boat_assignments(prod_id, context='boats') if r.get("working_days")]
+    departments["boats"] = {
+        "estimate": sum(r.get("amount_estimate") or 0 for r in boat_rows),
+        "actual": sum(r.get("amount_actual") or 0 for r in boat_rows),
+        "count": len(boat_rows),
+    }
+
+    # Picture boats
+    pb_rows = [r for r in get_picture_boat_assignments(prod_id) if r.get("working_days")]
+    departments["picture_boats"] = {
+        "estimate": sum(r.get("amount_estimate") or 0 for r in pb_rows),
+        "actual": sum(r.get("amount_actual") or 0 for r in pb_rows),
+        "count": len(pb_rows),
+    }
+
+    # Security boats
+    sb_rows = [r for r in get_security_boat_assignments(prod_id) if r.get("working_days")]
+    departments["security_boats"] = {
+        "estimate": sum(r.get("amount_estimate") or 0 for r in sb_rows),
+        "actual": sum(r.get("amount_actual") or 0 for r in sb_rows),
+        "count": len(sb_rows),
+    }
+
+    # Transport
+    tr_rows = [r for r in get_transport_assignments(prod_id) if r.get("working_days")]
+    departments["transport"] = {
+        "estimate": sum(r.get("amount_estimate") or 0 for r in tr_rows),
+        "actual": sum(r.get("amount_actual") or 0 for r in tr_rows),
+        "count": len(tr_rows),
+    }
+
+    # Labour
+    lb_rows = [r for r in get_helper_assignments(prod_id) if r.get("working_days")]
+    departments["labour"] = {
+        "estimate": sum(r.get("amount_estimate") or 0 for r in lb_rows),
+        "actual": sum(r.get("amount_actual") or 0 for r in lb_rows),
+        "count": len(lb_rows),
+    }
+
+    # Guards (base camp)
+    gc_rows = get_guard_camp_assignments(prod_id)
+    gc_active = [r for r in gc_rows if r.get("working_days")]
+    departments["guards"] = {
+        "estimate": sum(r.get("amount_estimate") or 0 for r in gc_active),
+        "actual": sum(r.get("amount_actual") or 0 for r in gc_active),
+        "count": len(gc_active),
+    }
+
+    # Fuel
+    fuel_entries = get_fuel_entries(prod_id)
+    cur_diesel = float(get_setting("fuel_price_diesel", "0"))
+    cur_petrol = float(get_setting("fuel_price_petrol", "0"))
+    locked_prices = get_fuel_locked_prices()
+    fuel_total = 0
+    fuel_liters = 0
+    for e in fuel_entries:
+        liters = e.get("liters", 0) or 0
+        fuel_liters += liters
+        ft = e.get("fuel_type", "DIESEL")
+        date = e.get("date", "")
+        if date in locked_prices:
+            price = locked_prices[date]["diesel_price"] if ft == "DIESEL" else locked_prices[date]["petrol_price"]
+        else:
+            price = cur_diesel if ft == "DIESEL" else cur_petrol
+        fuel_total += liters * price
+    departments["fuel"] = {
+        "estimate": fuel_total,
+        "actual": fuel_total,
+        "count": len(fuel_entries),
+        "liters": round(fuel_liters, 0),
+    }
+
+    # Locations
+    loc_schedules = get_location_schedules(prod_id)
+    loc_sites = get_location_sites(prod_id)
+    site_pricing = {}
+    for s in loc_sites:
+        site_pricing[s["name"]] = {
+            "price_p": s.get("price_p") or 0,
+            "price_f": s.get("price_f") or 0,
+            "price_w": s.get("price_w") or 0,
+            "global_deal": s.get("global_deal"),
+        }
+    loc_day_counts = {}
+    for ls in loc_schedules:
+        loc_name = ls["location_name"]
+        loc_day_counts.setdefault(loc_name, {"P": 0, "F": 0, "W": 0})
+        if ls["status"] in ("P", "F", "W"):
+            loc_day_counts[loc_name][ls["status"]] += 1
+    loc_total = 0
+    for loc_name, counts in loc_day_counts.items():
+        pricing = site_pricing.get(loc_name, {"price_p": 0, "price_f": 0, "price_w": 0, "global_deal": None})
+        if pricing["global_deal"] and pricing["global_deal"] > 0:
+            loc_total += pricing["global_deal"]
+        else:
+            loc_total += (counts["P"] * pricing["price_p"] +
+                         counts["F"] * pricing["price_f"] +
+                         counts["W"] * pricing["price_w"])
+    departments["locations"] = {
+        "estimate": loc_total,
+        "actual": loc_total,
+        "count": len(loc_sites),
+    }
+
+    # FNB
+    fnb_budget = get_fnb_budget_data(prod_id)
+    fnb_total = 0
+    for cat in fnb_budget.get("categories", []):
+        fnb_total += (cat.get("consumption_total", 0) or 0) + (cat.get("purchase_total", 0) or 0)
+    departments["fnb"] = {
+        "estimate": fnb_total,
+        "actual": fnb_total,
+        "count": len(fnb_budget.get("categories", [])),
+    }
+
+    # Compute grand totals
+    total_estimate = sum(d["estimate"] for d in departments.values())
+    total_actual = sum(d["actual"] for d in departments.values())
+
+    # Compute KPIs
+    pdt_dates = sorted(set(d.get("date", "") for d in shooting_days if d.get("date")))
+    days_elapsed = 0
+    days_remaining = 0
+    today = dt.now().strftime("%Y-%m-%d")
+    if pdt_dates:
+        days_elapsed = sum(1 for d in pdt_dates if d <= today)
+        days_remaining = sum(1 for d in pdt_dates if d > today)
+
+    burn_rate = total_actual / max(days_elapsed, 1)
+
+    # Alerts
+    alerts = []
+    for dept_name, dept_data in departments.items():
+        est = dept_data["estimate"]
+        act = dept_data["actual"]
+        if est > 0 and act > 0:
+            pct = round(act / est * 100)
+            if pct >= 100:
+                alerts.append({
+                    "type": "over_budget",
+                    "dept": dept_name,
+                    "pct": pct,
+                    "msg": f"{dept_name.replace('_', ' ').title()} is at {pct}% of estimate"
+                })
+            elif pct >= 90:
+                alerts.append({
+                    "type": "warning",
+                    "dept": dept_name,
+                    "pct": pct,
+                    "msg": f"{dept_name.replace('_', ' ').title()} approaching budget ({pct}%)"
+                })
+
+    # Next arena day
+    next_arena = None
+    for day in shooting_days:
+        if day.get("date", "") > today:
+            # Check if it has arena events
+            events = get_events_for_day(day["id"])
+            for ev in events:
+                if ev.get("event_type") == "arena":
+                    next_arena = day["date"]
+                    break
+            if next_arena:
+                break
+
+    return jsonify_cached({
+        "departments": departments,
+        "total_estimate": round(total_estimate, 2),
+        "total_actual": round(total_actual, 2),
+        "kpis": {
+            "shooting_days_total": len(shooting_days),
+            "days_elapsed": days_elapsed,
+            "days_remaining": days_remaining,
+            "burn_rate_per_day": round(burn_rate, 2),
+            "next_arena": next_arena,
+            "fuel_liters": round(fuel_liters, 0),
+        },
+        "alerts": alerts,
+    })
 
 
 # ─── Bootstrap ────────────────────────────────────────────────────────────────
