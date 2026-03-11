@@ -26,7 +26,7 @@ from database import (
     create_location_site, create_guard_post,
     create_fnb_category, get_fnb_categories,
     create_shooting_day, create_event, get_shooting_days,
-    working_days,
+    working_days, active_working_days,
     sync_pdt_day_to_locations,
 )
 
@@ -180,7 +180,8 @@ def _compute_bateaux_reference_total():
     src = sqlite3.connect(BATEAUX_DB)
     src.row_factory = sqlite3.Row
     rows = src.execute("""
-        SELECT a.start_date, a.end_date, b.daily_price
+        SELECT a.start_date, a.end_date, a.day_overrides, a.include_sunday,
+               b.daily_price
         FROM assignments a
         LEFT JOIN boats b ON a.boat_id = b.id
     """).fetchall()
@@ -188,7 +189,9 @@ def _compute_bateaux_reference_total():
     total = 0.0
     for r in rows:
         s, e, p = r["start_date"], r["end_date"], r["daily_price"] or 0
-        total += working_days(s, e) * p
+        overrides = r["day_overrides"] if "day_overrides" in r.keys() else '{}'
+        inc_sun = r["include_sunday"] if "include_sunday" in r.keys() else 1
+        total += active_working_days(s, e, overrides, bool(inc_sun)) * p
     return total
 
 
@@ -197,6 +200,7 @@ def _compute_shootlogix_total(prod_id):
     with get_db() as conn:
         rows = conn.execute("""
             SELECT ba.start_date, ba.end_date, ba.price_override,
+                   ba.day_overrides, ba.include_sunday,
                    b.daily_rate_estimate
             FROM boat_assignments ba
             LEFT JOIN boats b ON ba.boat_id = b.id
@@ -207,7 +211,9 @@ def _compute_shootlogix_total(prod_id):
     for r in rows:
         r = dict(r)
         rate = r.get("price_override") or r.get("daily_rate_estimate") or 0
-        total += working_days(r["start_date"], r["end_date"]) * rate
+        overrides = r.get("day_overrides", '{}')
+        inc_sun = r.get("include_sunday", 1)
+        total += active_working_days(r["start_date"], r["end_date"], overrides, bool(inc_sun)) * rate
     return total
 
 
