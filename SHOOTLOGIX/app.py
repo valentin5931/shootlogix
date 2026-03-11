@@ -76,7 +76,7 @@ from database import (
     delete_guard_camp_assignment_by_function,
 )
 
-from validation import ValidationError, validate_assignment, validate_fuel_entry, validate_shooting_day, validate_date_range, validate_positive_number, validate_required
+from validation import ValidationError, validate_assignment, validate_fuel_entry, validate_shooting_day, validate_date_range, validate_positive_number, validate_required, validate_guard_schedule, validate_assignment_overlap
 
 app = Flask(__name__)
 
@@ -624,6 +624,9 @@ def api_create_assignment(prod_id):
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
     validate_assignment(data)
+    if data.get("boat_id") and data.get("start_date") and data.get("end_date"):
+        validate_assignment_overlap('boat_assignments', 'boat_id', data['boat_id'],
+                                    data['start_date'], data['end_date'])
     assignment_id = create_boat_assignment(data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM boat_assignments WHERE id=?", (assignment_id,)).fetchone()
@@ -634,6 +637,9 @@ def api_create_assignment(prod_id):
 def api_update_assignment(assignment_id):
     data = request.json or {}
     validate_assignment(data)
+    if data.get("boat_id") and data.get("start_date") and data.get("end_date"):
+        validate_assignment_overlap('boat_assignments', 'boat_id', data['boat_id'],
+                                    data['start_date'], data['end_date'], exclude_id=assignment_id)
     update_boat_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM boat_assignments WHERE id=?", (assignment_id,)).fetchone()
@@ -729,6 +735,9 @@ def api_create_picture_boat_assignment(prod_id):
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
     validate_assignment(data)
+    if data.get("picture_boat_id") and data.get("start_date") and data.get("end_date"):
+        validate_assignment_overlap('picture_boat_assignments', 'picture_boat_id', data['picture_boat_id'],
+                                    data['start_date'], data['end_date'])
     assignment_id = create_picture_boat_assignment(data)
     with get_db() as conn:
         row = conn.execute(
@@ -741,6 +750,9 @@ def api_create_picture_boat_assignment(prod_id):
 def api_update_picture_boat_assignment(assignment_id):
     data = request.json or {}
     validate_assignment(data)
+    if data.get("picture_boat_id") and data.get("start_date") and data.get("end_date"):
+        validate_assignment_overlap('picture_boat_assignments', 'picture_boat_id', data['picture_boat_id'],
+                                    data['start_date'], data['end_date'], exclude_id=assignment_id)
     update_picture_boat_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute(
@@ -837,6 +849,9 @@ def api_create_helper_assignment(prod_id):
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
     validate_assignment(data)
+    if data.get("helper_id") and data.get("start_date") and data.get("end_date"):
+        validate_assignment_overlap('helper_assignments', 'helper_id', data['helper_id'],
+                                    data['start_date'], data['end_date'])
     aid = create_helper_assignment(data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM helper_assignments WHERE id=?", (aid,)).fetchone()
@@ -847,6 +862,9 @@ def api_create_helper_assignment(prod_id):
 def api_update_helper_assignment(assignment_id):
     data = request.json or {}
     validate_assignment(data)
+    if data.get("helper_id") and data.get("start_date") and data.get("end_date"):
+        validate_assignment_overlap('helper_assignments', 'helper_id', data['helper_id'],
+                                    data['start_date'], data['end_date'], exclude_id=assignment_id)
     update_helper_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM helper_assignments WHERE id=?", (assignment_id,)).fetchone()
@@ -1007,6 +1025,9 @@ def api_create_security_boat_assignment(prod_id):
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
     validate_assignment(data)
+    if data.get("security_boat_id") and data.get("start_date") and data.get("end_date"):
+        validate_assignment_overlap('security_boat_assignments', 'security_boat_id', data['security_boat_id'],
+                                    data['start_date'], data['end_date'])
     aid = create_security_boat_assignment(data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM security_boat_assignments WHERE id=?", (aid,)).fetchone()
@@ -1017,6 +1038,9 @@ def api_create_security_boat_assignment(prod_id):
 def api_update_security_boat_assignment(assignment_id):
     data = request.json or {}
     validate_assignment(data)
+    if data.get("security_boat_id") and data.get("start_date") and data.get("end_date"):
+        validate_assignment_overlap('security_boat_assignments', 'security_boat_id', data['security_boat_id'],
+                                    data['start_date'], data['end_date'], exclude_id=assignment_id)
     update_security_boat_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM security_boat_assignments WHERE id=?", (assignment_id,)).fetchone()
@@ -1346,6 +1370,9 @@ def api_create_transport_assignment(prod_id):
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
     validate_assignment(data)
+    if data.get("vehicle_id") and data.get("start_date") and data.get("end_date"):
+        validate_assignment_overlap('transport_assignments', 'vehicle_id', data['vehicle_id'],
+                                    data['start_date'], data['end_date'])
     aid = create_transport_assignment(data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM transport_assignments WHERE id=?", (aid,)).fetchone()
@@ -1356,6 +1383,9 @@ def api_create_transport_assignment(prod_id):
 def api_update_transport_assignment(assignment_id):
     data = request.json or {}
     validate_assignment(data)
+    if data.get("vehicle_id") and data.get("start_date") and data.get("end_date"):
+        validate_assignment_overlap('transport_assignments', 'vehicle_id', data['vehicle_id'],
+                                    data['start_date'], data['end_date'], exclude_id=assignment_id)
     update_transport_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM transport_assignments WHERE id=?", (assignment_id,)).fetchone()
@@ -2184,9 +2214,8 @@ def api_update_guard_location_nb_guards(prod_id):
     data = request.json or {}
     if not data.get('location_name') or not data.get('date'):
         return jsonify({"error": "location_name and date required"}), 400
+    validate_guard_schedule(data)
     nb_guards = int(data.get('nb_guards', 0))
-    if nb_guards < 0:
-        return jsonify({"error": "nb_guards must be >= 0"}), 400
     result = update_guard_location_nb_guards(prod_id, data['location_name'], data['date'], nb_guards)
     return jsonify(result or {})
 
@@ -2260,6 +2289,9 @@ def api_create_guard_camp_assignment(prod_id):
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
     validate_assignment(data)
+    if data.get("helper_id") and data.get("start_date") and data.get("end_date"):
+        validate_assignment_overlap('guard_camp_assignments', 'helper_id', data['helper_id'],
+                                    data['start_date'], data['end_date'])
     assignment_id = create_guard_camp_assignment(data)
     assignments = get_guard_camp_assignments(prod_id)
     asgn = next((a for a in assignments if a["id"] == assignment_id), None)
@@ -2270,6 +2302,9 @@ def api_create_guard_camp_assignment(prod_id):
 def api_update_guard_camp_assignment(assignment_id):
     data = request.json or {}
     validate_assignment(data)
+    if data.get("helper_id") and data.get("start_date") and data.get("end_date"):
+        validate_assignment_overlap('guard_camp_assignments', 'helper_id', data['helper_id'],
+                                    data['start_date'], data['end_date'], exclude_id=assignment_id)
     update_guard_camp_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM guard_camp_assignments WHERE id=?", (assignment_id,)).fetchone()

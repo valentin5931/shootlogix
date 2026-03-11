@@ -3,6 +3,8 @@ validation.py — ShootLogix
 Server-side validation for all incoming data.
 """
 import re
+import sqlite3
+import json
 from datetime import datetime
 
 
@@ -154,6 +156,32 @@ def validate_shooting_day(data):
 
     if errors:
         raise ValidationError(errors)
+
+
+def validate_assignment_overlap(table_name, entity_col, entity_id, start_date, end_date, exclude_id=None):
+    """Check that an entity (boat, vehicle, helper) is not double-booked on overlapping dates.
+    table_name: e.g. 'boat_assignments'
+    entity_col: e.g. 'boat_id'
+    entity_id: the ID of the entity being assigned
+    start_date, end_date: date range of the new/updated assignment
+    exclude_id: assignment ID to exclude (for updates)
+    """
+    if not entity_id or not start_date or not end_date:
+        return
+    from database import get_db
+    with get_db() as conn:
+        query = f"""SELECT id, start_date, end_date FROM {table_name}
+                    WHERE {entity_col} = ? AND assignment_status != 'cancelled'
+                    AND start_date <= ? AND end_date >= ?"""
+        params = [entity_id, end_date, start_date]
+        if exclude_id:
+            query += " AND id != ?"
+            params.append(exclude_id)
+        conflicts = conn.execute(query, params).fetchall()
+        if conflicts:
+            raise ValidationError({
+                "date_overlap": f"This entity is already assigned during {start_date} - {end_date} (conflicts with assignment(s): {', '.join(str(c['id']) for c in conflicts)})"
+            })
 
 
 def validate_guard_schedule(data):

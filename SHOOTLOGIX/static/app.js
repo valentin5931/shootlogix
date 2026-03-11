@@ -271,12 +271,106 @@ const App = (() => {
     return { start: startCol, end: endCol };
   }
 
-  // ── Smooth DOM update (preserves scroll, avoids full re-render when possible) ──
+  // ── Smooth DOM update (morphs existing DOM instead of full innerHTML replace) ──
   function _morphHTML(container, newHTML) {
     if (!container) return;
     const saved = _saveScheduleScroll(container);
-    container.innerHTML = newHTML;
+
+    // Parse new HTML into a temporary container
+    const temp = document.createElement(container.tagName || 'div');
+    temp.innerHTML = newHTML;
+
+    // Morph children: match by id or position, update only what changed
+    _morphChildren(container, temp);
     _restoreScheduleScroll(container, saved);
+  }
+
+  function _morphChildren(existing, incoming) {
+    const existingNodes = Array.from(existing.childNodes);
+    const incomingNodes = Array.from(incoming.childNodes);
+
+    // Build id map from existing children for fast lookup
+    const existingById = {};
+    existingNodes.forEach(n => {
+      if (n.id) existingById[n.id] = n;
+    });
+
+    let ei = 0;
+    for (let ii = 0; ii < incomingNodes.length; ii++) {
+      const newNode = incomingNodes[ii];
+      let oldNode = null;
+
+      // Try to match by id first
+      if (newNode.id && existingById[newNode.id]) {
+        oldNode = existingById[newNode.id];
+        // Move it into position if needed
+        if (oldNode !== existing.childNodes[ei]) {
+          existing.insertBefore(oldNode, existing.childNodes[ei] || null);
+        }
+      } else if (ei < existingNodes.length) {
+        oldNode = existingNodes[ei];
+        // Only reuse if same tag and no conflicting ids
+        if (oldNode.nodeType !== newNode.nodeType ||
+            (oldNode.nodeType === 1 && oldNode.tagName !== newNode.tagName) ||
+            (newNode.id && oldNode.id !== newNode.id)) {
+          oldNode = null;
+        }
+      }
+
+      if (!oldNode) {
+        // Insert new node
+        const clone = newNode.cloneNode(true);
+        existing.insertBefore(clone, existing.childNodes[ei] || null);
+        ei++;
+        continue;
+      }
+
+      // Text nodes: update if different
+      if (oldNode.nodeType === 3) {
+        if (oldNode.textContent !== newNode.textContent) {
+          oldNode.textContent = newNode.textContent;
+        }
+        ei++;
+        continue;
+      }
+
+      // Element nodes: update attributes, then recurse into children
+      if (oldNode.nodeType === 1) {
+        _morphAttributes(oldNode, newNode);
+        // For input/select/textarea, preserve focus but sync value
+        if (oldNode.tagName === 'INPUT' || oldNode.tagName === 'SELECT' || oldNode.tagName === 'TEXTAREA') {
+          if (document.activeElement !== oldNode && oldNode.value !== newNode.value) {
+            oldNode.value = newNode.value || '';
+          }
+        } else {
+          // Recurse for non-input elements
+          _morphChildren(oldNode, newNode);
+        }
+      }
+      ei++;
+    }
+
+    // Remove extra old nodes
+    while (existing.childNodes.length > incomingNodes.length) {
+      existing.removeChild(existing.lastChild);
+    }
+  }
+
+  function _morphAttributes(oldEl, newEl) {
+    // Remove old attributes not in new
+    const oldAttrs = Array.from(oldEl.attributes);
+    for (const attr of oldAttrs) {
+      if (!newEl.hasAttribute(attr.name)) {
+        oldEl.removeAttribute(attr.name);
+      }
+    }
+    // Set/update new attributes
+    const newAttrs = Array.from(newEl.attributes);
+    for (const attr of newAttrs) {
+      if (oldEl.getAttribute(attr.name) !== attr.value) {
+        oldEl.setAttribute(attr.name, attr.value);
+      }
+    }
   }
 
   // ── Debounce render calls to avoid multiple rapid DOM rebuilds ──
@@ -2173,6 +2267,10 @@ const App = (() => {
     const d = new Date(SCHEDULE_START);
     while (d <= SCHEDULE_END) { days.push(new Date(d)); d.setDate(d.getDate() + 1); }
 
+    // Column windowing: determine visible range from current scroll
+    const wrapEl = container.querySelector('.schedule-wrap');
+    const { start: vColStart, end: vColEnd } = _getVisibleColRange(wrapEl, days.length);
+
     const pdtByDate = {};
     state.shootingDays.forEach(day => { pdtByDate[day.date] = day; });
 
@@ -2239,11 +2337,17 @@ const App = (() => {
         <div class="${boatLabel ? 'rn-boat' : 'rn-empty'}">${esc(boatLabel ? boatLabel + multiSuffix : func.name)}</div>
       </td>`;
 
-      // Date cells: pure click-to-cycle, no text
-      days.forEach(day => {
+      // Date cells: pure click-to-cycle, no text (windowed)
+      days.forEach((day, colIdx) => {
         const dk = _localDk(day);
         const isWE = day.getDay() === 0 || day.getDay() === 6;
         const weClass = isWE ? 'weekend-col' : '';
+
+        // Skip full rendering for off-screen columns
+        if (colIdx < vColStart || colIdx >= vColEnd) {
+          cells += `<td class="schedule-cell ${weClass}"></td>`;
+          return;
+        }
 
         // Find first assignment with a non-null status for this day
         let filledAsgn = null, filledStatus = null;
@@ -2287,8 +2391,7 @@ const App = (() => {
       </td>`;
     }).join('');
 
-    const _scrollSaved = _saveScheduleScroll(container);
-    container.innerHTML = `
+    const schedHTML = `
       <div class="schedule-wrap"><table class="schedule-table">
         <thead>
           <tr>${monthRow}</tr>
@@ -2302,11 +2405,16 @@ const App = (() => {
       <div class="schedule-lock-outer"><table class="schedule-table">
         <tbody><tr class="schedule-lock-row">${lockCells}</tr></tbody>
       </table></div>`;
-    // Sync lock footer scroll with the main horizontal scroll
+    _morphHTML(container, schedHTML);
+    // Sync lock footer scroll + re-render on scroll for column windowing
     const _sw = container.querySelector('.schedule-wrap');
     const _sl = container.querySelector('.schedule-lock-outer');
-    _sw.addEventListener('scroll', () => { _sl.scrollLeft = _sw.scrollLeft; });
-    _restoreScheduleScroll(container, _scrollSaved);
+    if (_sw && _sl) {
+      _sw.addEventListener('scroll', () => {
+        _sl.scrollLeft = _sw.scrollLeft;
+        _debouncedRender('schedule-vscroll', renderSchedule, 100);
+      });
+    }
   }
 
   // ── Schedule cell interactions ─────────────────────────────
@@ -3116,6 +3224,8 @@ const App = (() => {
     const days = [];
     const d = new Date(SCHEDULE_START);
     while (d <= SCHEDULE_END) { days.push(new Date(d)); d.setDate(d.getDate() + 1); }
+    const wrapEl = container.querySelector('.schedule-wrap');
+    const { start: vColStart, end: vColEnd } = _getVisibleColRange(wrapEl, days.length);
     const pdtByDate = {};
     state.shootingDays.forEach(day => { pdtByDate[day.date] = day; });
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -3168,10 +3278,14 @@ const App = (() => {
         <div class="rn-group" style="color:${color}">${esc(func.function_group || 'YELLOW')}</div>
         <div class="${boatLabel ? 'rn-boat' : 'rn-empty'}">${esc(boatLabel ? boatLabel + multiSuffix : func.name)}</div>
       </td>`;
-      days.forEach(day => {
+      days.forEach((day, colIdx) => {
         const dk = _localDk(day);
         const isWE = day.getDay() === 0 || day.getDay() === 6;
         const weClass = isWE ? 'weekend-col' : '';
+        if (colIdx < vColStart || colIdx >= vColEnd) {
+          cells += `<td class="schedule-cell ${weClass}"></td>`;
+          return;
+        }
         let filledAsgn = null, filledStatus = null;
         for (const asgn of funcAsgns) {
           const st = effectiveStatus(asgn, dk);
@@ -3207,8 +3321,7 @@ const App = (() => {
           title="${isLocked ? 'Unlock' : 'Lock this day'}">
       </td>`;
     }).join('');
-    const _scrollSaved = _saveScheduleScroll(container);
-    container.innerHTML = `
+    const pbSchedHTML = `
       <div class="schedule-wrap"><table class="schedule-table">
         <thead><tr>${monthRow}</tr><tr>${dayRow}</tr></thead>
         <tbody>${rowsHTML}<tr class="schedule-count-row">${countCells}</tr></tbody>
@@ -3216,11 +3329,15 @@ const App = (() => {
       <div class="schedule-lock-outer"><table class="schedule-table">
         <tbody><tr class="schedule-lock-row">${lockCells}</tr></tbody>
       </table></div>`;
-    // Sync lock footer scroll with the main horizontal scroll
+    _morphHTML(container, pbSchedHTML);
     const _sw = container.querySelector('.schedule-wrap');
     const _sl = container.querySelector('.schedule-lock-outer');
-    _sw.addEventListener('scroll', () => { _sl.scrollLeft = _sw.scrollLeft; });
-    _restoreScheduleScroll(container, _scrollSaved);
+    if (_sw && _sl) {
+      _sw.addEventListener('scroll', () => {
+        _sl.scrollLeft = _sw.scrollLeft;
+        _debouncedRender('pb-schedule-vscroll', renderPbSchedule, 100);
+      });
+    }
   }
 
   async function pbOnDateCellClick(event, funcId, assignmentId, date) {
@@ -3922,6 +4039,8 @@ const App = (() => {
     const days = [];
     const d = new Date(SCHEDULE_START);
     while (d <= SCHEDULE_END) { days.push(new Date(d)); d.setDate(d.getDate() + 1); }
+    const wrapEl = container.querySelector('.schedule-wrap');
+    const { start: vColStart, end: vColEnd } = _getVisibleColRange(wrapEl, days.length);
     const pdtByDate = {};
     state.shootingDays.forEach(day => { pdtByDate[day.date] = day; });
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -3974,10 +4093,14 @@ const App = (() => {
         <div class="rn-group" style="color:${color}">${esc(func.function_group || 'UNIT')}</div>
         <div class="${vLabel ? 'rn-boat' : 'rn-empty'}">${esc(vLabel ? vLabel + multiSuffix : func.name)}</div>
       </td>`;
-      days.forEach(day => {
+      days.forEach((day, colIdx) => {
         const dk = _localDk(day);
         const isWE = day.getDay() === 0 || day.getDay() === 6;
         const weClass = isWE ? 'weekend-col' : '';
+        if (colIdx < vColStart || colIdx >= vColEnd) {
+          cells += `<td class="schedule-cell ${weClass}"></td>`;
+          return;
+        }
         let filledAsgn = null, filledStatus = null;
         for (const asgn of funcAsgns) {
           const st = effectiveStatus(asgn, dk);
@@ -4012,8 +4135,7 @@ const App = (() => {
           title="${isLocked ? 'Unlock' : 'Lock this day'}">
       </td>`;
     }).join('');
-    const _scrollSaved = _saveScheduleScroll(container);
-    container.innerHTML = `
+    const tbSchedHTML = `
       <div class="schedule-wrap"><table class="schedule-table">
         <thead><tr>${monthRow}</tr><tr>${dayRow}</tr></thead>
         <tbody>${rowsHTML}<tr class="schedule-count-row">${countCells}</tr></tbody>
@@ -4021,10 +4143,15 @@ const App = (() => {
       <div class="schedule-lock-outer"><table class="schedule-table">
         <tbody><tr class="schedule-lock-row">${lockCells}</tr></tbody>
       </table></div>`;
+    _morphHTML(container, tbSchedHTML);
     const _sw = container.querySelector('.schedule-wrap');
     const _sl = container.querySelector('.schedule-lock-outer');
-    if (_sw && _sl) _sw.addEventListener('scroll', () => { _sl.scrollLeft = _sw.scrollLeft; });
-    _restoreScheduleScroll(container, _scrollSaved);
+    if (_sw && _sl) {
+      _sw.addEventListener('scroll', () => {
+        _sl.scrollLeft = _sw.scrollLeft;
+        _debouncedRender('tb-schedule-vscroll', renderTbSchedule, 100);
+      });
+    }
   }
 
   async function tbOnDateCellClick(event, funcId, assignmentId, date) {
@@ -5753,6 +5880,8 @@ const App = (() => {
     const days = [];
     const d = new Date(SCHEDULE_START);
     while (d <= SCHEDULE_END) { days.push(new Date(d)); d.setDate(d.getDate() + 1); }
+    const wrapEl = container.querySelector('.schedule-wrap');
+    const { start: vColStart, end: vColEnd } = _getVisibleColRange(wrapEl, days.length);
     const pdtByDate = {};
     state.shootingDays.forEach(day => { pdtByDate[day.date] = day; });
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -5808,10 +5937,14 @@ const App = (() => {
         <div class="rn-group" style="color:${color}">${esc(func.function_group || 'GENERAL')}</div>
         <div class="${wLabel ? 'rn-boat' : 'rn-empty'}" style="display:flex;align-items:baseline;gap:0">${esc(wLabel ? wLabel + multiSuffix : func.name)}${rateHint}</div>
       </td>`;
-      days.forEach(day => {
+      days.forEach((day, colIdx) => {
         const dk = _localDk(day);
         const isWE = day.getDay() === 0 || day.getDay() === 6;
         const weClass = isWE ? 'weekend-col' : '';
+        if (colIdx < vColStart || colIdx >= vColEnd) {
+          cells += `<td class="schedule-cell ${weClass}"></td>`;
+          return;
+        }
         let filledAsgn = null, filledStatus = null;
         for (const asgn of funcAsgns) {
           const st = effectiveStatus(asgn, dk);
@@ -5846,8 +5979,7 @@ const App = (() => {
           title="${isLocked ? 'Unlock' : 'Lock this day'}">
       </td>`;
     }).join('');
-    const _scrollSaved = _saveScheduleScroll(container);
-    container.innerHTML = `
+    const lbSchedHTML = `
       <div class="schedule-wrap"><table class="schedule-table">
         <thead><tr>${monthRow}</tr><tr>${dayRow}</tr></thead>
         <tbody>${rowsHTML}<tr class="schedule-count-row">${countCells}</tr></tbody>
@@ -5855,10 +5987,15 @@ const App = (() => {
       <div class="schedule-lock-outer"><table class="schedule-table">
         <tbody><tr class="schedule-lock-row">${lockCells}</tr></tbody>
       </table></div>`;
+    _morphHTML(container, lbSchedHTML);
     const _sw = container.querySelector('.schedule-wrap');
     const _sl = container.querySelector('.schedule-lock-outer');
-    if (_sw && _sl) _sw.addEventListener('scroll', () => { _sl.scrollLeft = _sw.scrollLeft; });
-    _restoreScheduleScroll(container, _scrollSaved);
+    if (_sw && _sl) {
+      _sw.addEventListener('scroll', () => {
+        _sl.scrollLeft = _sw.scrollLeft;
+        _debouncedRender('lb-schedule-vscroll', renderLbSchedule, 100);
+      });
+    }
   }
 
   // ── Schedule cell click (toggle day on/off) ──────────────────
@@ -6348,6 +6485,8 @@ const App = (() => {
     const days = [];
     const d = new Date(SCHEDULE_START);
     while (d <= SCHEDULE_END) { days.push(new Date(d)); d.setDate(d.getDate() + 1); }
+    const wrapEl = container.querySelector('.schedule-wrap');
+    const { start: vColStart, end: vColEnd } = _getVisibleColRange(wrapEl, days.length);
     const pdtByDate = {};
     state.shootingDays.forEach(day => { pdtByDate[day.date] = day; });
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -6400,10 +6539,14 @@ const App = (() => {
         <div class="rn-group" style="color:${color}">${esc(func.function_group || 'SAFETY')}</div>
         <div class="${boatLabel ? 'rn-boat' : 'rn-empty'}">${esc(boatLabel ? boatLabel + multiSuffix : func.name)}</div>
       </td>`;
-      days.forEach(day => {
+      days.forEach((day, colIdx) => {
         const dk = _localDk(day);
         const isWE = day.getDay() === 0 || day.getDay() === 6;
         const weClass = isWE ? 'weekend-col' : '';
+        if (colIdx < vColStart || colIdx >= vColEnd) {
+          cells += `<td class="schedule-cell ${weClass}"></td>`;
+          return;
+        }
         let filledAsgn = null, filledStatus = null;
         for (const asgn of funcAsgns) {
           const st = effectiveStatus(asgn, dk);
@@ -6439,8 +6582,7 @@ const App = (() => {
           title="${isLocked ? 'Unlock' : 'Lock this day'}">
       </td>`;
     }).join('');
-    const _scrollSaved = _saveScheduleScroll(container);
-    container.innerHTML = `
+    const sbSchedHTML = `
       <div class="schedule-wrap"><table class="schedule-table">
         <thead><tr>${monthRow}</tr><tr>${dayRow}</tr></thead>
         <tbody>${rowsHTML}<tr class="schedule-count-row">${countCells}</tr></tbody>
@@ -6448,11 +6590,15 @@ const App = (() => {
       <div class="schedule-lock-outer"><table class="schedule-table">
         <tbody><tr class="schedule-lock-row">${lockCells}</tr></tbody>
       </table></div>`;
-    // Sync lock footer scroll with the main horizontal scroll
+    _morphHTML(container, sbSchedHTML);
     const _sw = container.querySelector('.schedule-wrap');
     const _sl = container.querySelector('.schedule-lock-outer');
-    if (_sw && _sl) _sw.addEventListener('scroll', () => { _sl.scrollLeft = _sw.scrollLeft; });
-    _restoreScheduleScroll(container, _scrollSaved);
+    if (_sw && _sl) {
+      _sw.addEventListener('scroll', () => {
+        _sl.scrollLeft = _sw.scrollLeft;
+        _debouncedRender('sb-schedule-vscroll', renderSbSchedule, 100);
+      });
+    }
   }
 
   // ── Security Boats Schedule cell interactions ───────────────
@@ -9786,6 +9932,27 @@ const App = (() => {
     (state.functions || []).forEach(f => {
       if ((f.name || '').toLowerCase().includes(q)) {
         results.push({ type: 'Function', name: f.name, detail: f.function_group || '', tab: 'boats', id: f.id });
+      }
+    });
+
+    // Search guard camp workers
+    (state.gcWorkers || []).forEach(g => {
+      if ((g.name || '').toLowerCase().includes(q) || (g.role || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Guard', name: g.name, detail: g.role || '', tab: 'guards', id: g.id });
+      }
+    });
+
+    // Search guard posts
+    (state.guardPosts || []).forEach(p => {
+      if ((p.name || '').toLowerCase().includes(q) || (p.location || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Guard Post', name: p.name, detail: p.location || '', tab: 'guards', id: p.id });
+      }
+    });
+
+    // Search location sites
+    (state.locationSites || []).forEach(l => {
+      if ((l.name || '').toLowerCase().includes(q) || (l.location_type || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Location', name: l.name, detail: l.location_type || '', tab: 'locations', id: l.id });
       }
     });
 

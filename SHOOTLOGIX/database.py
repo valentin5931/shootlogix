@@ -31,6 +31,19 @@ def get_db():
         conn.close()
 
 
+def _log_history(conn, table_name, record_id, action, old_data=None, new_data=None):
+    """Generic history logger. Call within an existing get_db() context."""
+    conn.execute(
+        """INSERT INTO history (table_name, record_id, action, old_data, new_data)
+           VALUES (?, ?, ?, ?, ?)""",
+        (table_name,
+         record_id,
+         action,
+         json.dumps(dict(old_data)) if old_data else None,
+         json.dumps(dict(new_data)) if new_data else None)
+    )
+
+
 def init_db():
     with get_db() as conn:
         conn.executescript("""
@@ -940,7 +953,10 @@ def create_shooting_day(data):
             f"INSERT INTO shooting_days ({col_names}) VALUES ({placeholders})",
             list(fields.values())
         )
-        return cur.lastrowid
+        new_id = cur.lastrowid
+        new = conn.execute("SELECT * FROM shooting_days WHERE id=?", (new_id,)).fetchone()
+        _log_history(conn, 'shooting_days', new_id, 'create', new_data=new)
+        return new_id
 
 
 def update_shooting_day(day_id, data):
@@ -954,11 +970,18 @@ def update_shooting_day(day_id, data):
     sets = ", ".join(f"{k}=?" for k in fields)
     vals = list(fields.values()) + [day_id]
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM shooting_days WHERE id=?", (day_id,)).fetchone()
         conn.execute(f"UPDATE shooting_days SET {sets} WHERE id=?", vals)
+        new = conn.execute("SELECT * FROM shooting_days WHERE id=?", (day_id,)).fetchone()
+        if old:
+            _log_history(conn, 'shooting_days', day_id, 'update', old, new)
 
 
 def delete_shooting_day(day_id):
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM shooting_days WHERE id=?", (day_id,)).fetchone()
+        if old:
+            _log_history(conn, 'shooting_days', day_id, 'delete', old)
         conn.execute("DELETE FROM shooting_days WHERE id=?", (day_id,))
 
 
@@ -1185,14 +1208,8 @@ def create_boat_assignment(data):
              data.get("include_sunday", 1))
         )
         new_id = cur.lastrowid
-
-        # Write history
         new = conn.execute("SELECT * FROM boat_assignments WHERE id=?", (new_id,)).fetchone()
-        conn.execute(
-            """INSERT INTO history (table_name, record_id, action, old_data, new_data)
-               VALUES ('boat_assignments', ?, 'create', NULL, ?)""",
-            (new_id, json.dumps(dict(new)))
-        )
+        _log_history(conn, 'boat_assignments', new_id, 'create', new_data=new)
         return new_id
 
 
@@ -1220,24 +1237,14 @@ def update_boat_assignment(assignment_id, data):
         conn.execute(f"UPDATE boat_assignments SET {', '.join(set_parts)} WHERE id=?", vals)
         new = conn.execute("SELECT * FROM boat_assignments WHERE id=?", (assignment_id,)).fetchone()
         if old:
-            conn.execute(
-                """INSERT INTO history (table_name, record_id, action, old_data, new_data)
-                   VALUES ('boat_assignments', ?, 'update', ?, ?)""",
-                (assignment_id, json.dumps(dict(old)), json.dumps(dict(new)) if new else None)
-            )
+            _log_history(conn, 'boat_assignments', assignment_id, 'update', old, new)
 
 
 def delete_boat_assignment(assignment_id):
     with get_db() as conn:
-        old = conn.execute(
-            "SELECT * FROM boat_assignments WHERE id=?", (assignment_id,)
-        ).fetchone()
+        old = conn.execute("SELECT * FROM boat_assignments WHERE id=?", (assignment_id,)).fetchone()
         if old:
-            conn.execute(
-                """INSERT INTO history (table_name, record_id, action, old_data, new_data)
-                   VALUES ('boat_assignments', ?, 'delete', ?, NULL)""",
-                (assignment_id, json.dumps(dict(old)))
-            )
+            _log_history(conn, 'boat_assignments', assignment_id, 'delete', old)
         conn.execute("DELETE FROM boat_assignments WHERE id=?", (assignment_id,))
 
 
@@ -1341,7 +1348,10 @@ def create_picture_boat_assignment(data):
              data.get("pricing_type", "standard"),
              data.get("include_sunday", 1))
         )
-        return cur.lastrowid
+        new_id = cur.lastrowid
+        new = conn.execute("SELECT * FROM picture_boat_assignments WHERE id=?", (new_id,)).fetchone()
+        _log_history(conn, 'picture_boat_assignments', new_id, 'create', new_data=new)
+        return new_id
 
 
 def update_picture_boat_assignment(assignment_id, data):
@@ -1359,13 +1369,20 @@ def update_picture_boat_assignment(assignment_id, data):
     set_parts.append("updated_at=datetime('now')")
     vals.append(assignment_id)
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM picture_boat_assignments WHERE id=?", (assignment_id,)).fetchone()
         conn.execute(
             f"UPDATE picture_boat_assignments SET {', '.join(set_parts)} WHERE id=?", vals
         )
+        new = conn.execute("SELECT * FROM picture_boat_assignments WHERE id=?", (assignment_id,)).fetchone()
+        if old:
+            _log_history(conn, 'picture_boat_assignments', assignment_id, 'update', old, new)
 
 
 def delete_picture_boat_assignment(assignment_id):
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM picture_boat_assignments WHERE id=?", (assignment_id,)).fetchone()
+        if old:
+            _log_history(conn, 'picture_boat_assignments', assignment_id, 'delete', old)
         conn.execute("DELETE FROM picture_boat_assignments WHERE id=?", (assignment_id,))
 
 
@@ -1469,7 +1486,10 @@ def create_transport_assignment(data):
              data.get("pricing_type", "standard"),
              data.get("include_sunday", 1))
         )
-        return cur.lastrowid
+        new_id = cur.lastrowid
+        new = conn.execute("SELECT * FROM transport_assignments WHERE id=?", (new_id,)).fetchone()
+        _log_history(conn, 'transport_assignments', new_id, 'create', new_data=new)
+        return new_id
 
 
 def update_transport_assignment(assignment_id, data):
@@ -1487,13 +1507,20 @@ def update_transport_assignment(assignment_id, data):
     set_parts.append("updated_at=datetime('now')")
     vals.append(assignment_id)
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM transport_assignments WHERE id=?", (assignment_id,)).fetchone()
         conn.execute(
             f"UPDATE transport_assignments SET {', '.join(set_parts)} WHERE id=?", vals
         )
+        new = conn.execute("SELECT * FROM transport_assignments WHERE id=?", (assignment_id,)).fetchone()
+        if old:
+            _log_history(conn, 'transport_assignments', assignment_id, 'update', old, new)
 
 
 def delete_transport_assignment(assignment_id):
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM transport_assignments WHERE id=?", (assignment_id,)).fetchone()
+        if old:
+            _log_history(conn, 'transport_assignments', assignment_id, 'delete', old)
         conn.execute("DELETE FROM transport_assignments WHERE id=?", (assignment_id,))
 
 
@@ -1523,6 +1550,10 @@ def upsert_fuel_entry(data):
     cols = ['production_id', 'source_type', 'assignment_id', 'date', 'liters', 'fuel_type']
     vals = [data.get(c) for c in cols]
     with get_db() as conn:
+        old = conn.execute(
+            "SELECT * FROM fuel_entries WHERE source_type=? AND assignment_id=? AND date=?",
+            (data.get('source_type'), data.get('assignment_id'), data.get('date'))
+        ).fetchone()
         conn.execute(
             f"INSERT OR REPLACE INTO fuel_entries ({', '.join(cols)}) VALUES ({', '.join(['?']*len(cols))})",
             vals
@@ -1531,11 +1562,17 @@ def upsert_fuel_entry(data):
             "SELECT * FROM fuel_entries WHERE source_type=? AND assignment_id=? AND date=?",
             (data['source_type'], data['assignment_id'], data['date'])
         ).fetchone()
+        if row:
+            action = 'update' if old else 'create'
+            _log_history(conn, 'fuel_entries', row['id'], action, old, row)
         return dict(row) if row else None
 
 
 def delete_fuel_entry(entry_id):
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM fuel_entries WHERE id=?", (entry_id,)).fetchone()
+        if old:
+            _log_history(conn, 'fuel_entries', entry_id, 'delete', old)
         conn.execute("DELETE FROM fuel_entries WHERE id=?", (entry_id,))
 
 
@@ -1564,7 +1601,10 @@ def create_fuel_machinery(data):
             f"INSERT INTO fuel_machinery ({', '.join(cols)}) VALUES ({', '.join(['?']*len(cols))})",
             vals
         )
-        return cur.lastrowid
+        new_id = cur.lastrowid
+        new = conn.execute("SELECT * FROM fuel_machinery WHERE id=?", (new_id,)).fetchone()
+        _log_history(conn, 'fuel_machinery', new_id, 'create', new_data=new)
+        return new_id
 
 
 def update_fuel_machinery(machinery_id, data):
@@ -1578,11 +1618,18 @@ def update_fuel_machinery(machinery_id, data):
         return
     vals.append(machinery_id)
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM fuel_machinery WHERE id=?", (machinery_id,)).fetchone()
         conn.execute(f"UPDATE fuel_machinery SET {', '.join(sets)} WHERE id=?", vals)
+        new = conn.execute("SELECT * FROM fuel_machinery WHERE id=?", (machinery_id,)).fetchone()
+        if old:
+            _log_history(conn, 'fuel_machinery', machinery_id, 'update', old, new)
 
 
 def delete_fuel_machinery(machinery_id):
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM fuel_machinery WHERE id=?", (machinery_id,)).fetchone()
+        if old:
+            _log_history(conn, 'fuel_machinery', machinery_id, 'delete', old)
         conn.execute("DELETE FROM fuel_machinery WHERE id=?", (machinery_id,))
 
 
@@ -1701,7 +1748,10 @@ def create_helper_assignment(data):
              data.get("pricing_type", "standard"),
              data.get("include_sunday", 1))
         )
-        return cur.lastrowid
+        new_id = cur.lastrowid
+        new = conn.execute("SELECT * FROM helper_assignments WHERE id=?", (new_id,)).fetchone()
+        _log_history(conn, 'helper_assignments', new_id, 'create', new_data=new)
+        return new_id
 
 
 def update_helper_assignment(assignment_id, data):
@@ -1719,13 +1769,20 @@ def update_helper_assignment(assignment_id, data):
     set_parts.append("updated_at=datetime('now')")
     vals.append(assignment_id)
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM helper_assignments WHERE id=?", (assignment_id,)).fetchone()
         conn.execute(
             f"UPDATE helper_assignments SET {', '.join(set_parts)} WHERE id=?", vals
         )
+        new = conn.execute("SELECT * FROM helper_assignments WHERE id=?", (assignment_id,)).fetchone()
+        if old:
+            _log_history(conn, 'helper_assignments', assignment_id, 'update', old, new)
 
 
 def delete_helper_assignment(assignment_id):
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM helper_assignments WHERE id=?", (assignment_id,)).fetchone()
+        if old:
+            _log_history(conn, 'helper_assignments', assignment_id, 'delete', old)
         conn.execute("DELETE FROM helper_assignments WHERE id=?", (assignment_id,))
 
 
@@ -1845,7 +1902,10 @@ def create_guard_camp_assignment(data):
              data.get("pricing_type", "standard"),
              data.get("include_sunday", 1))
         )
-        return cur.lastrowid
+        new_id = cur.lastrowid
+        new = conn.execute("SELECT * FROM guard_camp_assignments WHERE id=?", (new_id,)).fetchone()
+        _log_history(conn, 'guard_camp_assignments', new_id, 'create', new_data=new)
+        return new_id
 
 
 def update_guard_camp_assignment(assignment_id, data):
@@ -1861,13 +1921,20 @@ def update_guard_camp_assignment(assignment_id, data):
     set_parts.append("updated_at=datetime('now')")
     vals.append(assignment_id)
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM guard_camp_assignments WHERE id=?", (assignment_id,)).fetchone()
         conn.execute(
             f"UPDATE guard_camp_assignments SET {', '.join(set_parts)} WHERE id=?", vals
         )
+        new = conn.execute("SELECT * FROM guard_camp_assignments WHERE id=?", (assignment_id,)).fetchone()
+        if old:
+            _log_history(conn, 'guard_camp_assignments', assignment_id, 'update', old, new)
 
 
 def delete_guard_camp_assignment(assignment_id):
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM guard_camp_assignments WHERE id=?", (assignment_id,)).fetchone()
+        if old:
+            _log_history(conn, 'guard_camp_assignments', assignment_id, 'delete', old)
         conn.execute("DELETE FROM guard_camp_assignments WHERE id=?", (assignment_id,))
 
 
@@ -1973,7 +2040,10 @@ def create_security_boat_assignment(data):
              data.get("pricing_type", "standard"),
              data.get("include_sunday", 1))
         )
-        return cur.lastrowid
+        new_id = cur.lastrowid
+        new = conn.execute("SELECT * FROM security_boat_assignments WHERE id=?", (new_id,)).fetchone()
+        _log_history(conn, 'security_boat_assignments', new_id, 'create', new_data=new)
+        return new_id
 
 
 def update_security_boat_assignment(assignment_id, data):
@@ -1991,13 +2061,20 @@ def update_security_boat_assignment(assignment_id, data):
     set_parts.append("updated_at=datetime('now')")
     vals.append(assignment_id)
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM security_boat_assignments WHERE id=?", (assignment_id,)).fetchone()
         conn.execute(
             f"UPDATE security_boat_assignments SET {', '.join(set_parts)} WHERE id=?", vals
         )
+        new = conn.execute("SELECT * FROM security_boat_assignments WHERE id=?", (assignment_id,)).fetchone()
+        if old:
+            _log_history(conn, 'security_boat_assignments', assignment_id, 'update', old, new)
 
 
 def delete_security_boat_assignment(assignment_id):
     with get_db() as conn:
+        old = conn.execute("SELECT * FROM security_boat_assignments WHERE id=?", (assignment_id,)).fetchone()
+        if old:
+            _log_history(conn, 'security_boat_assignments', assignment_id, 'delete', old)
         conn.execute("DELETE FROM security_boat_assignments WHERE id=?", (assignment_id,))
 
 
@@ -3073,7 +3150,8 @@ def undo_history_entry(history_id):
             "boat_assignments", "picture_boat_assignments", "security_boat_assignments",
             "transport_assignments", "helper_assignments", "guard_camp_assignments",
             "boats", "picture_boats", "security_boats", "transport_vehicles",
-            "helpers", "guard_camp_workers", "fuel_entries", "shooting_days",
+            "helpers", "guard_camp_workers", "fuel_entries", "fuel_machinery",
+            "shooting_days",
         }
         if table not in allowed_tables:
             return {"message": f"Undo not supported for table: {table}"}
