@@ -791,6 +791,22 @@ def api_delete_boat_function(func_id):
     return jsonify({"deleted": func_id})
 
 
+@app.route("/api/productions/<int:prod_id>/boat-functions/reorder", methods=["POST"])
+def api_reorder_boat_functions(prod_id):
+    """Batch update sort_order and optionally function_group for functions."""
+    prod_or_404(prod_id)
+    items = (request.json or {}).get("items", [])
+    with get_db() as conn:
+        for item in items:
+            fid = item.get("id")
+            conn.execute(
+                "UPDATE boat_functions SET sort_order=?, function_group=? WHERE id=? AND production_id=?",
+                (item.get("sort_order", 0), item.get("function_group"), fid, prod_id),
+            )
+        conn.commit()
+    return jsonify({"ok": True})
+
+
 # ─── Boat assignments ─────────────────────────────────────────────────────────
 
 @app.route("/api/productions/<int:prod_id>/assignments", methods=["GET"])

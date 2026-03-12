@@ -247,10 +247,13 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
     return `<div class="role-card" id="role-card-${func.id}"
       style="border-top:3px solid ${color}"
-      ondragover="App.onDragOver(event,${func.id})"
-      ondragleave="App.onDragLeave(event,${func.id})"
-      ondrop="App.onDrop(event,${func.id})">
+      draggable="true"
+      ondragstart="App.onFuncDragStart(event,${func.id})"
+      ondragend="App.onFuncDragEnd(event)"
+      ondragover="App.onFuncDragOver(event,${func.id})"
+      ondrop="App.onFuncDrop(event,${func.id})">
       <div class="role-card-header">
+        <span style="cursor:grab;color:var(--text-4);font-size:.7rem;margin-right:.3rem" title="Drag to reorder">&#x2630;</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;color:var(--text-0);font-size:.85rem">${esc(func.name)}</div>
           ${func.specs ? `<div style="font-size:.7rem;color:var(--text-4);margin-top:.1rem">${esc(func.specs)}</div>` : ''}
@@ -286,6 +289,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
 
   function onDragOver(event, funcId) {
+    if (_dragFuncId) return;  // func reorder handled separately
     event.preventDefault();
     document.getElementById(`role-card-${funcId}`)?.classList.add('drag-over');
     document.getElementById(`drop-${funcId}`)?.classList.add('drag-over');
@@ -297,6 +301,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
 
   function onDrop(event, funcId) {
+    if (_dragFuncId) return;  // func reorder handled separately
     event.preventDefault();
     document.getElementById(`role-card-${funcId}`)?.classList.remove('drag-over');
     document.getElementById(`drop-${funcId}`)?.classList.remove('drag-over');
@@ -304,6 +309,68 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     if (!boat) return;
     state.dragBoat = null;
     openAssignModal(funcId, boat);
+  }
+
+  // ── Function card drag & drop reorder ──────────────────────
+  let _dragFuncId = null;
+
+  function onFuncDragStart(event, funcId) {
+    _dragFuncId = funcId;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('application/x-func-id', funcId);
+    event.target.closest('.role-card')?.classList.add('dragging');
+  }
+
+  function onFuncDragEnd(event) {
+    _dragFuncId = null;
+    document.querySelectorAll('.role-card.dragging, .role-card.drag-over').forEach(el => {
+      el.classList.remove('dragging', 'drag-over');
+    });
+  }
+
+  function onFuncDragOver(event, targetFuncId) {
+    if (!_dragFuncId || _dragFuncId === targetFuncId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    document.getElementById(`role-card-${targetFuncId}`)?.classList.add('drag-over');
+  }
+
+  function onFuncDrop(event, targetFuncId) {
+    event.preventDefault();
+    event.stopPropagation();
+    document.getElementById(`role-card-${targetFuncId}`)?.classList.remove('drag-over');
+    if (!_dragFuncId || _dragFuncId === targetFuncId) return;
+
+    // Determine context
+    const ctx = _tabCtx || 'boats';
+    const funcArrays = {
+      boats: 'functions', picture: 'pictureFunctions', transport: 'transportFunctions',
+      security: 'securityFunctions', labour: 'labourFunctions', guard_camp: 'gcFunctions',
+    };
+    const arr = state[funcArrays[ctx] || 'functions'];
+    const dragFunc = arr.find(f => f.id === _dragFuncId);
+    const dropFunc = arr.find(f => f.id === targetFuncId);
+    if (!dragFunc || !dropFunc) return;
+
+    // Move dragged func to target's group if different
+    dragFunc.function_group = dropFunc.function_group;
+
+    // Reorder: remove drag, insert at drop position
+    const dragIdx = arr.indexOf(dragFunc);
+    arr.splice(dragIdx, 1);
+    const dropIdx = arr.indexOf(dropFunc);
+    arr.splice(dropIdx, 0, dragFunc);
+
+    // Update sort_order
+    arr.forEach((f, i) => { f.sort_order = i; });
+
+    _dragFuncId = null;
+    _rerenderCtx(ctx);
+
+    // Persist to server
+    api('POST', `/api/productions/${state.prodId}/boat-functions/reorder`, {
+      items: arr.map(f => ({ id: f.id, sort_order: f.sort_order, function_group: f.function_group })),
+    }).catch(e => toast('Reorder save error: ' + e.message, 'error'));
   }
 
   function onBoatClick(boatId) {
@@ -1970,6 +2037,10 @@ Object.assign(window.App, {
   _updateBillingLabel,
   assignFromDate,
   duplicateEntity,
+  onFuncDragStart,
+  onFuncDragEnd,
+  onFuncDragOver,
+  onFuncDrop,
   closeAddBoatModal,
   closeAddFunctionModal,
   closeAddPictureBoatModal,
