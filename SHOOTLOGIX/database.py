@@ -1190,16 +1190,18 @@ def get_boat_assignments(prod_id, context=None):
 
 
 def create_boat_assignment(data):
-    """Create assignment. Multiple assignments per function are allowed (for different periods)."""
+    """Create assignment. Multiple assignments per function are allowed (for different periods).
+    If start_date/end_date not provided, auto-fill from boat_function defaults."""
     func_id = data["boat_function_id"]
     with get_db() as conn:
+        start_date, end_date = _resolve_assignment_dates(conn, data)
         cur = conn.execute(
             """INSERT INTO boat_assignments
                (boat_function_id, boat_id, boat_name_override, start_date, end_date,
                 price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("boat_id"), data.get("boat_name_override"),
-             data.get("start_date"), data.get("end_date"),
+             start_date, end_date,
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
@@ -1331,16 +1333,32 @@ def get_picture_boat_assignments(prod_id):
         return result
 
 
+def _resolve_assignment_dates(conn, data):
+    """Auto-fill start_date/end_date from boat_function defaults if not provided."""
+    start = data.get("start_date")
+    end = data.get("end_date")
+    func_id = data.get("boat_function_id")
+    if func_id and (not start or not end):
+        func = conn.execute("SELECT default_start, default_end FROM boat_functions WHERE id=?", (func_id,)).fetchone()
+        if func:
+            if not start and func['default_start']:
+                start = func['default_start']
+            if not end and func['default_end']:
+                end = func['default_end']
+    return start, end
+
+
 def create_picture_boat_assignment(data):
     func_id = data["boat_function_id"]
     with get_db() as conn:
+        start_date, end_date = _resolve_assignment_dates(conn, data)
         cur = conn.execute(
             """INSERT INTO picture_boat_assignments
                (boat_function_id, picture_boat_id, boat_name_override, start_date, end_date,
                 price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("picture_boat_id"), data.get("boat_name_override"),
-             data.get("start_date"), data.get("end_date"),
+             start_date, end_date,
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
@@ -1472,13 +1490,14 @@ def get_transport_assignments(prod_id):
 def create_transport_assignment(data):
     func_id = data["boat_function_id"]
     with get_db() as conn:
+        start_date, end_date = _resolve_assignment_dates(conn, data)
         cur = conn.execute(
             """INSERT INTO transport_assignments
                (boat_function_id, vehicle_id, vehicle_name_override, start_date, end_date,
                 price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("vehicle_id"), data.get("vehicle_name_override"),
-             data.get("start_date"), data.get("end_date"),
+             start_date, end_date,
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
@@ -1734,13 +1753,14 @@ def get_helper_assignments(prod_id):
 def create_helper_assignment(data):
     func_id = data["boat_function_id"]
     with get_db() as conn:
+        start_date, end_date = _resolve_assignment_dates(conn, data)
         cur = conn.execute(
             """INSERT INTO helper_assignments
                (boat_function_id, helper_id, helper_name_override, start_date, end_date,
                 price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("helper_id"), data.get("helper_name_override"),
-             data.get("start_date"), data.get("end_date"),
+             start_date, end_date,
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
@@ -1889,13 +1909,14 @@ def get_guard_camp_assignments(prod_id):
 def create_guard_camp_assignment(data):
     func_id = data["boat_function_id"]
     with get_db() as conn:
+        start, end = _resolve_assignment_dates(conn, data)
         cur = conn.execute(
             """INSERT INTO guard_camp_assignments
                (boat_function_id, helper_id, helper_name_override, start_date, end_date,
                 price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("helper_id"), data.get("helper_name_override"),
-             data.get("start_date"), data.get("end_date"),
+             start, end,
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
@@ -2027,13 +2048,14 @@ def get_security_boat_assignments(prod_id):
 def create_security_boat_assignment(data):
     func_id = data["boat_function_id"]
     with get_db() as conn:
+        start, end = _resolve_assignment_dates(conn, data)
         cur = conn.execute(
             """INSERT INTO security_boat_assignments
                (boat_function_id, security_boat_id, boat_name_override, start_date, end_date,
                 price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("security_boat_id"), data.get("boat_name_override"),
-             data.get("start_date"), data.get("end_date"),
+             start, end,
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
