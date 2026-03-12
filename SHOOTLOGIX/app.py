@@ -3898,6 +3898,545 @@ def api_export_logistics_async(prod_id):
     return jsonify({"job_id": job_id, "status": "processing"}), 202
 
 
+# ─── PDF & Advanced Exports (AXE 2.3) ────────────────────────────────────────
+
+def _pdf_header(page, prod_name, title, date_range=None):
+    """Draw a standard PDF header with production name, title, and date range."""
+    import fitz
+    w = page.rect.width
+    # Production name
+    page.insert_text(fitz.Point(40, 40), prod_name.upper(),
+                     fontsize=10, fontname="helv", color=(0.4, 0.4, 0.4))
+    # Title
+    page.insert_text(fitz.Point(40, 62), title,
+                     fontsize=18, fontname="hebo", color=(0.1, 0.1, 0.1))
+    # Generation date + date range
+    from datetime import datetime as _dt
+    gen_text = f"Generated: {_dt.now().strftime('%Y-%m-%d %H:%M')}"
+    if date_range:
+        gen_text += f"  |  Period: {date_range}"
+    page.insert_text(fitz.Point(40, 82), gen_text,
+                     fontsize=8, fontname="helv", color=(0.5, 0.5, 0.5))
+    # Separator line
+    page.draw_line(fitz.Point(40, 90), fitz.Point(w - 40, 90),
+                   color=(0.8, 0.8, 0.8), width=0.5)
+    return 100  # y position after header
+
+
+def _pdf_table(page, y, headers, rows, col_widths, w_total,
+               header_bg=(0.17, 0.17, 0.17), header_fg=(1, 1, 1),
+               row_height=18, font_size=8):
+    """Draw a table on a PDF page. Returns y position after the table."""
+    import fitz
+    x_start = 40
+    # Header row
+    x = x_start
+    for i, h in enumerate(headers):
+        cw = col_widths[i]
+        rect = fitz.Rect(x, y, x + cw, y + row_height + 2)
+        page.draw_rect(rect, color=None, fill=header_bg)
+        page.insert_text(fitz.Point(x + 4, y + row_height - 4),
+                         h, fontsize=font_size, fontname="hebo", color=header_fg)
+        x += cw
+    y += row_height + 2
+
+    # Data rows
+    for ri, row in enumerate(rows):
+        bg = (0.96, 0.96, 0.96) if ri % 2 else (1, 1, 1)
+        x = x_start
+        for i, val in enumerate(row):
+            cw = col_widths[i]
+            rect = fitz.Rect(x, y, x + cw, y + row_height)
+            page.draw_rect(rect, color=None, fill=bg)
+            text = str(val) if val is not None else ""
+            # Right-align numbers
+            if isinstance(val, (int, float)):
+                text = f"{val:,.0f}" if isinstance(val, (int, float)) and val == int(val) else f"{val:,.2f}"
+                tw = fitz.get_text_length(text, fontname="helv", fontsize=font_size)
+                page.insert_text(fitz.Point(x + cw - tw - 4, y + row_height - 4),
+                                 text, fontsize=font_size, fontname="helv", color=(0.15, 0.15, 0.15))
+            else:
+                # Truncate if too long
+                max_chars = int(cw / (font_size * 0.45))
+                if len(text) > max_chars:
+                    text = text[:max_chars - 1] + "…"
+                page.insert_text(fitz.Point(x + 4, y + row_height - 4),
+                                 text, fontsize=font_size, fontname="helv", color=(0.15, 0.15, 0.15))
+            x += cw
+        y += row_height
+    return y
+
+
+@app.route("/api/productions/<int:prod_id>/export/budget-pdf")
+def api_export_budget_pdf(prod_id):
+    """Export consolidated budget as a print-friendly PDF with logo, date, department breakdown."""
+    import fitz
+    from datetime import datetime as dt
+
+    prod = prod_or_404(prod_id)
+    budget = get_budget(prod_id)
+    prod_name = prod.get("name", "PRODUCTION")
+    date_str = dt.now().strftime("%y%m%d")
+
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)  # A4
+    w = page.rect.width
+
+    # Header
+    y = _pdf_header(page, prod_name, "CONSOLIDATED BUDGET",
+                    f"{prod.get('start_date', 'N/A')} to {prod.get('end_date', 'N/A')}")
+
+    # Grand totals section
+    grand_est = budget["grand_total_estimate"]
+    grand_act = budget["grand_total_actual"]
+    page.insert_text(fitz.Point(40, y + 5), "GRAND TOTAL ESTIMATE",
+                     fontsize=9, fontname="hebo", color=(0.3, 0.3, 0.3))
+    page.insert_text(fitz.Point(220, y + 5), f"${grand_est:,.0f}",
+                     fontsize=14, fontname="hebo", color=(0.13, 0.55, 0.13))
+    if grand_act > 0:
+        page.insert_text(fitz.Point(350, y + 5), f"ACTUAL: ${grand_act:,.0f}",
+                         fontsize=9, fontname="hebo", color=(0.2, 0.5, 0.8))
+    y += 30
+
+    # Summary table by department
+    headers = ["Department", "Lines", "Estimate ($)", "Actual ($)", "Variance"]
+    col_widths = [140, 50, 120, 120, 85]
+    dept_rows = []
+    for dept_name, dept_data in budget["by_department"].items():
+        est = dept_data["total_estimate"]
+        act = dept_data.get("total_actual", 0) or 0
+        variance = f"{((act - est) / est * 100):+.1f}%" if est > 0 and act > 0 else "—"
+        dept_rows.append([dept_name, len(dept_data["lines"]), est, act or "—", variance])
+
+    y = _pdf_table(page, y, headers, dept_rows, col_widths, w)
+    y += 15
+
+    # Detailed breakdown per department
+    detail_headers = ["Item", "Detail", "Days", "$/Day", "Total ($)"]
+    detail_widths = [140, 140, 45, 80, 110]
+
+    for dept_name, dept_data in budget["by_department"].items():
+        # Check if we need a new page
+        needed = 30 + len(dept_data["lines"]) * 18
+        if y + needed > 790:
+            page = doc.new_page(width=595, height=842)
+            y = _pdf_header(page, prod_name, "CONSOLIDATED BUDGET (cont.)")
+
+        # Department header
+        page.insert_text(fitz.Point(40, y + 3), dept_name,
+                         fontsize=10, fontname="hebo", color=(0.1, 0.1, 0.1))
+        dept_total = dept_data["total_estimate"]
+        total_text = f"${dept_total:,.0f}"
+        tw = fitz.get_text_length(total_text, fontname="hebo", fontsize=10)
+        page.insert_text(fitz.Point(w - 40 - tw, y + 3), total_text,
+                         fontsize=10, fontname="hebo", color=(0.13, 0.55, 0.13))
+        y += 18
+
+        detail_rows = []
+        for line in dept_data["lines"]:
+            detail_rows.append([
+                line.get("name", ""),
+                line.get("boat", "") or line.get("detail", ""),
+                line.get("working_days", ""),
+                line.get("unit_price_estimate", 0),
+                line.get("amount_estimate", 0),
+            ])
+
+        # Paginate rows if needed
+        while detail_rows:
+            space = int((790 - y) / 18) - 1  # rows that fit
+            if space < 3:
+                page = doc.new_page(width=595, height=842)
+                y = _pdf_header(page, prod_name, "CONSOLIDATED BUDGET (cont.)")
+                space = int((790 - y) / 18) - 1
+            batch = detail_rows[:space]
+            detail_rows = detail_rows[space:]
+            y = _pdf_table(page, y, detail_headers, batch, detail_widths, w)
+
+        y += 10
+
+    # Footer on last page
+    page.insert_text(fitz.Point(40, 820), f"ShootLogix — {prod_name} — Budget Report",
+                     fontsize=7, fontname="helv", color=(0.6, 0.6, 0.6))
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    doc.close()
+    buf.seek(0)
+
+    fname = f"{prod_name}_BUDGET_{date_str}.pdf"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
+    )
+
+
+@app.route("/api/productions/<int:prod_id>/export/daily-report-pdf")
+def api_export_daily_report_pdf(prod_id):
+    """Export Daily Report: one page per shooting day with all resources mobilized + cost total."""
+    import fitz
+    from datetime import datetime as dt
+
+    prod = prod_or_404(prod_id)
+    daily = get_daily_budget(prod_id)
+    prod_name = prod.get("name", "PRODUCTION")
+    date_str = dt.now().strftime("%y%m%d")
+
+    # Optional date range filter from query params
+    date_from = request.args.get("from")
+    date_to = request.args.get("to")
+
+    days = daily.get("days", [])
+    if date_from:
+        days = [d for d in days if d["date"] >= date_from]
+    if date_to:
+        days = [d for d in days if d["date"] <= date_to]
+
+    if not days:
+        return jsonify({"error": "No shooting days in selected range"}), 404
+
+    # Pre-load all assignments for resource details
+    boat_asgns = get_boat_assignments(prod_id, context='boats')
+    pb_asgns = get_picture_boat_assignments(prod_id)
+    sb_asgns = get_security_boat_assignments(prod_id)
+    tr_asgns = get_transport_assignments(prod_id)
+    lb_asgns = get_helper_assignments(prod_id)
+    gc_asgns = get_guard_camp_assignments(prod_id)
+
+    from database import _is_assignment_active_on
+
+    doc = fitz.open()
+
+    for day_info in days:
+        page = doc.new_page(width=595, height=842)  # A4
+        date = day_info["date"]
+        day_type = day_info.get("day_type", "standard").upper()
+        location = day_info.get("location", "")
+        day_num = day_info.get("day_number", "")
+
+        range_str = f"{date_from} to {date_to}" if date_from and date_to else None
+        y = _pdf_header(page, prod_name, f"DAILY REPORT — Day {day_num}", range_str)
+
+        # Day info bar
+        page.insert_text(fitz.Point(40, y + 3), f"Date: {date}",
+                         fontsize=10, fontname="hebo", color=(0.1, 0.1, 0.1))
+        page.insert_text(fitz.Point(200, y + 3), f"Type: {day_type}",
+                         fontsize=10, fontname="hebo",
+                         color=(0.8, 0.2, 0.2) if day_type in ("GAME", "ARENA") else (0.3, 0.3, 0.3))
+        if location:
+            page.insert_text(fitz.Point(320, y + 3), f"Location: {location}",
+                             fontsize=10, fontname="helv", color=(0.3, 0.3, 0.3))
+        y += 22
+
+        # Cost summary bar
+        total = day_info.get("total", 0)
+        page.insert_text(fitz.Point(40, y), f"DAILY TOTAL: ${total:,.0f}",
+                         fontsize=12, fontname="hebo", color=(0.13, 0.55, 0.13))
+        y += 20
+
+        # Department cost breakdown
+        dept_keys = [("boats", "Boats"), ("picture_boats", "Picture Boats"),
+                     ("security_boats", "Security Boats"), ("transport", "Transport"),
+                     ("labour", "Labour"), ("guards", "Guards"),
+                     ("locations", "Locations"), ("fnb", "FNB"), ("fuel", "Fuel")]
+
+        cost_headers = ["Department", "Cost ($)"]
+        cost_widths = [250, 120]
+        cost_rows = []
+        for key, label in dept_keys:
+            val = day_info.get(key, 0)
+            if val > 0:
+                cost_rows.append([label, val])
+
+        if cost_rows:
+            y = _pdf_table(page, y, cost_headers, cost_rows, cost_widths, 595)
+            y += 15
+
+        # Active resources detail (compact: name list instead of full table for performance)
+        def _list_active_compact(title, assignments, name_key, rate_key):
+            nonlocal y, page
+            active = [a for a in assignments if _is_assignment_active_on(date, a)]
+            if not active:
+                return
+            if y + 30 > 790:
+                page = doc.new_page(width=595, height=842)
+                y = _pdf_header(page, prod_name, f"DAILY REPORT — Day {day_num} (cont.)")
+
+            total_rate = sum(a.get("price_override") or a.get(rate_key) or 0 for a in active)
+            page.insert_text(fitz.Point(40, y + 3),
+                             f"{title} ({len(active)}) — ${total_rate:,.0f}",
+                             fontsize=9, fontname="hebo", color=(0.2, 0.2, 0.2))
+            y += 14
+
+            # Compact list: names on a single line, wrapped if needed
+            names = []
+            for a in active:
+                n = a.get("boat_name_override") or a.get(name_key) or a.get("helper_name_override") or a.get("vehicle_name_override") or ""
+                rate = a.get("price_override") or a.get(rate_key) or 0
+                names.append(f"{n} (${rate:,.0f})")
+            text = ", ".join(names)
+            # Word-wrap at ~90 chars per line
+            lines = []
+            while text:
+                if len(text) <= 90:
+                    lines.append(text)
+                    break
+                idx = text.rfind(", ", 0, 90)
+                if idx == -1:
+                    idx = 90
+                else:
+                    idx += 2
+                lines.append(text[:idx])
+                text = text[idx:]
+            for line in lines:
+                if y + 12 > 790:
+                    page = doc.new_page(width=595, height=842)
+                    y = _pdf_header(page, prod_name, f"DAILY REPORT — Day {day_num} (cont.)")
+                page.insert_text(fitz.Point(55, y + 3), line,
+                                 fontsize=7, fontname="helv", color=(0.35, 0.35, 0.35))
+                y += 11
+            y += 4
+
+        _list_active_compact("BOATS", boat_asgns, "boat_name", "boat_daily_rate_estimate")
+        _list_active_compact("PICTURE BOATS", pb_asgns, "boat_name", "boat_daily_rate_estimate")
+        _list_active_compact("SECURITY BOATS", sb_asgns, "boat_name", "boat_daily_rate_estimate")
+        _list_active_compact("TRANSPORT", tr_asgns, "vehicle_name", "vehicle_daily_rate_estimate")
+        _list_active_compact("LABOUR", lb_asgns, "helper_name", "helper_daily_rate_estimate")
+        _list_active_compact("GUARDS (BASE CAMP)", gc_asgns, "helper_name", "helper_daily_rate_estimate")
+
+        # Footer
+        page.insert_text(fitz.Point(40, 820),
+                         f"ShootLogix — {prod_name} — Daily Report {date}",
+                         fontsize=7, fontname="helv", color=(0.6, 0.6, 0.6))
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    doc.close()
+    buf.seek(0)
+
+    range_suffix = f"_{date_from}_{date_to}".replace("-", "") if date_from and date_to else ""
+    fname = f"{prod_name}_DAILY_REPORT_{date_str}{range_suffix}.pdf"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
+    )
+
+
+@app.route("/api/productions/<int:prod_id>/export/vendor-summary")
+def api_export_vendor_summary(prod_id):
+    """Export Vendor Summary: aggregation of costs by vendor over selected date range.
+    Returns CSV with vendor, department, lines count, total estimate, total actual.
+    """
+    from datetime import datetime as dt
+
+    prod = prod_or_404(prod_id)
+    budget = get_budget(prod_id)
+    prod_name = prod.get("name", "PRODUCTION")
+    date_str = dt.now().strftime("%y%m%d")
+
+    # Optional date range filter
+    date_from = request.args.get("from")
+    date_to = request.args.get("to")
+
+    rows = budget["rows"]
+
+    # Filter by date range if provided
+    if date_from or date_to:
+        filtered = []
+        for r in rows:
+            start = (r.get("start_date") or "")[:10]
+            end = (r.get("end_date") or "")[:10]
+            if not start and not end:
+                # FNB/FUEL with no dates — always include
+                filtered.append(r)
+                continue
+            if date_from and end and end < date_from:
+                continue
+            if date_to and start and start > date_to:
+                continue
+            filtered.append(r)
+        rows = filtered
+
+    # Aggregate by vendor
+    vendor_data = {}
+    for r in rows:
+        vendor = r.get("vendor") or "—"
+        dept = r.get("department") or r.get("dept_name") or "OTHER"
+        key = (vendor, dept)
+        if key not in vendor_data:
+            vendor_data[key] = {"vendor": vendor, "department": dept, "lines": 0,
+                                "total_estimate": 0, "total_actual": 0}
+        vendor_data[key]["lines"] += 1
+        vendor_data[key]["total_estimate"] += r.get("amount_estimate") or 0
+        vendor_data[key]["total_actual"] += r.get("amount_actual") or 0
+
+    # Sort by vendor then department
+    sorted_data = sorted(vendor_data.values(), key=lambda x: (x["vendor"], x["department"]))
+
+    # Build CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Vendor", "Department", "Lines", "Total Estimate ($)", "Total Actual ($)"])
+    for d in sorted_data:
+        writer.writerow([d["vendor"], d["department"], d["lines"],
+                         round(d["total_estimate"], 2), round(d["total_actual"], 2)])
+
+    # Grand totals row
+    writer.writerow([])
+    writer.writerow(["GRAND TOTAL", "", sum(d["lines"] for d in sorted_data),
+                     round(sum(d["total_estimate"] for d in sorted_data), 2),
+                     round(sum(d["total_actual"] for d in sorted_data), 2)])
+
+    # Vendor totals
+    writer.writerow([])
+    writer.writerow(["--- VENDOR TOTALS ---"])
+    vendor_totals = {}
+    for d in sorted_data:
+        v = d["vendor"]
+        vendor_totals.setdefault(v, {"estimate": 0, "actual": 0})
+        vendor_totals[v]["estimate"] += d["total_estimate"]
+        vendor_totals[v]["actual"] += d["total_actual"]
+    for v in sorted(vendor_totals.keys()):
+        writer.writerow([v, "ALL", "",
+                         round(vendor_totals[v]["estimate"], 2),
+                         round(vendor_totals[v]["actual"], 2)])
+
+    range_suffix = ""
+    if date_from and date_to:
+        range_suffix = f"_{date_from}_{date_to}".replace("-", "")
+    fname = f"{prod_name}_VENDOR_SUMMARY_{date_str}{range_suffix}.csv"
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
+    )
+
+
+@app.route("/api/productions/<int:prod_id>/export/vendor-summary-pdf")
+def api_export_vendor_summary_pdf(prod_id):
+    """Export Vendor Summary as print-friendly PDF."""
+    import fitz
+    from datetime import datetime as dt
+
+    prod = prod_or_404(prod_id)
+    budget = get_budget(prod_id)
+    prod_name = prod.get("name", "PRODUCTION")
+    date_str = dt.now().strftime("%y%m%d")
+
+    date_from = request.args.get("from")
+    date_to = request.args.get("to")
+
+    rows = budget["rows"]
+    if date_from or date_to:
+        filtered = []
+        for r in rows:
+            start = (r.get("start_date") or "")[:10]
+            end = (r.get("end_date") or "")[:10]
+            if not start and not end:
+                filtered.append(r)
+                continue
+            if date_from and end and end < date_from:
+                continue
+            if date_to and start and start > date_to:
+                continue
+            filtered.append(r)
+        rows = filtered
+
+    # Aggregate by vendor
+    vendor_data = {}
+    for r in rows:
+        vendor = r.get("vendor") or "—"
+        vendor_data.setdefault(vendor, {"lines": [], "total_estimate": 0, "total_actual": 0})
+        vendor_data[vendor]["lines"].append(r)
+        vendor_data[vendor]["total_estimate"] += r.get("amount_estimate") or 0
+        vendor_data[vendor]["total_actual"] += r.get("amount_actual") or 0
+
+    # Sort vendors by total descending
+    sorted_vendors = sorted(vendor_data.items(), key=lambda x: -x[1]["total_estimate"])
+
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    range_str = f"{date_from} to {date_to}" if date_from and date_to else None
+    y = _pdf_header(page, prod_name, "VENDOR SUMMARY", range_str)
+
+    # Grand total
+    grand = sum(v["total_estimate"] for _, v in sorted_vendors)
+    page.insert_text(fitz.Point(40, y + 3), f"TOTAL ALL VENDORS: ${grand:,.0f}",
+                     fontsize=12, fontname="hebo", color=(0.13, 0.55, 0.13))
+    y += 25
+
+    # Summary table
+    sum_headers = ["Vendor", "Lines", "Estimate ($)", "Actual ($)", "Share (%)"]
+    sum_widths = [180, 45, 110, 110, 70]
+    sum_rows = []
+    for vendor, vdata in sorted_vendors:
+        share = f"{vdata['total_estimate'] / grand * 100:.1f}%" if grand > 0 else "—"
+        sum_rows.append([vendor, len(vdata["lines"]), vdata["total_estimate"],
+                         vdata["total_actual"] or "—", share])
+    y = _pdf_table(page, y, sum_headers, sum_rows, sum_widths, 595)
+    y += 20
+
+    # Detail per vendor
+    detail_headers = ["Dept", "Item", "Detail", "Days", "Total ($)"]
+    detail_widths = [90, 130, 120, 40, 100]
+
+    for vendor, vdata in sorted_vendors:
+        needed = 30 + len(vdata["lines"]) * 18
+        if y + min(needed, 100) > 790:
+            page = doc.new_page(width=595, height=842)
+            y = _pdf_header(page, prod_name, "VENDOR SUMMARY (cont.)")
+
+        page.insert_text(fitz.Point(40, y + 3), vendor,
+                         fontsize=10, fontname="hebo", color=(0.1, 0.1, 0.1))
+        vt = f"${vdata['total_estimate']:,.0f}"
+        tw = fitz.get_text_length(vt, fontname="hebo", fontsize=10)
+        page.insert_text(fitz.Point(555 - tw, y + 3), vt,
+                         fontsize=10, fontname="hebo", color=(0.13, 0.55, 0.13))
+        y += 18
+
+        d_rows = []
+        for line in vdata["lines"]:
+            d_rows.append([
+                line.get("department") or line.get("dept_name", ""),
+                line.get("name", ""),
+                line.get("boat", "") or line.get("detail", ""),
+                line.get("working_days", ""),
+                line.get("amount_estimate", 0),
+            ])
+
+        while d_rows:
+            space = int((790 - y) / 18) - 1
+            if space < 3:
+                page = doc.new_page(width=595, height=842)
+                y = _pdf_header(page, prod_name, "VENDOR SUMMARY (cont.)")
+                space = int((790 - y) / 18) - 1
+            batch = d_rows[:space]
+            d_rows = d_rows[space:]
+            y = _pdf_table(page, y, detail_headers, batch, detail_widths, 595, font_size=7)
+        y += 10
+
+    # Footer
+    page.insert_text(fitz.Point(40, 820),
+                     f"ShootLogix — {prod_name} — Vendor Summary",
+                     fontsize=7, fontname="helv", color=(0.6, 0.6, 0.6))
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    doc.close()
+    buf.seek(0)
+
+    range_suffix = f"_{date_from}_{date_to}".replace("-", "") if date_from and date_to else ""
+    fname = f"{prod_name}_VENDOR_SUMMARY_{date_str}{range_suffix}.pdf"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
+    )
+
+
 # ─── Dashboard ───────────────────────────────────────────────────────────────
 
 @app.route("/api/productions/<int:prod_id>/dashboard", methods=["GET"])

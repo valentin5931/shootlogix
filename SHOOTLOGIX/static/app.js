@@ -4091,10 +4091,24 @@ const App = (() => {
       const html = `
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
           <div style="font-size:.75rem;color:var(--text-4)">Global budget overview across all departments</div>
-          <button class="btn btn-sm btn-primary" onclick="App.budgetExportXlsx()" style="display:flex;align-items:center;gap:.35rem">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Export XLSX
-          </button>
+          <div style="display:flex;gap:.35rem;flex-wrap:wrap">
+            <button class="btn btn-sm btn-primary" onclick="App.budgetExportXlsx()" style="display:flex;align-items:center;gap:.35rem">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              XLSX
+            </button>
+            <button class="btn btn-sm" onclick="App.budgetExportPdf()" style="display:flex;align-items:center;gap:.35rem;background:#dc2626;color:#fff;border:none">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              PDF
+            </button>
+            <button class="btn btn-sm" onclick="App.dailyReportPdf()" style="display:flex;align-items:center;gap:.35rem;background:#7c3aed;color:#fff;border:none">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              Daily
+            </button>
+            <button class="btn btn-sm" onclick="App.vendorSummaryExport()" style="display:flex;align-items:center;gap:.35rem;background:#0891b2;color:#fff;border:none">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+              Vendors
+            </button>
+          </div>
         </div>
         <div class="stat-grid" style="margin-bottom:.75rem">
           <div class="stat-card" style="border:1px solid var(--border)">
@@ -4327,6 +4341,24 @@ const App = (() => {
       `/api/productions/${state.prodId}/export/budget-global/async`,
       `/api/productions/${state.prodId}/export/budget-global`
     );
+  }
+
+  function budgetExportPdf() {
+    authDownload(`/api/productions/${state.prodId}/export/budget-pdf`);
+  }
+
+  function dailyReportPdf() {
+    authDownload(`/api/productions/${state.prodId}/export/daily-report-pdf`);
+  }
+
+  function vendorSummaryExport() {
+    // Show format picker: CSV or PDF
+    const fmt = confirm('OK = PDF format\nCancel = CSV format') ? 'pdf' : 'csv';
+    if (fmt === 'pdf') {
+      authDownload(`/api/productions/${state.prodId}/export/vendor-summary-pdf`);
+    } else {
+      authDownload(`/api/productions/${state.prodId}/export/vendor-summary`);
+    }
   }
 
   function logisticsExportXlsx() {
@@ -11600,7 +11632,7 @@ const App = (() => {
     // Boat view popup + detail / edit
     openBoatView, closeBoatView,
     openBoatDetail, closeBoatDetail, saveBoatEdit, triggerPhotoUpload, uploadBoatPhoto,
-    undoBoat, toggleExport, exportCSV, exportJSON, budgetExportXlsx, logisticsExportXlsx, _toggleDailySort,
+    undoBoat, toggleExport, exportCSV, exportJSON, budgetExportXlsx, budgetExportPdf, dailyReportPdf, vendorSummaryExport, logisticsExportXlsx, _toggleDailySort,
     showConfirm, cancelConfirm, confirmDeleteBoat,
     _onScheduleMouseDown, _onScheduleMouseOver, multiSelectFill, multiSelectClear, multiSelectCancel,
     // Picture Boats
