@@ -971,6 +971,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         </div>`).join('')
       : '<div style="color:var(--text-4);font-size:.78rem">No assignments yet</div>';
     $('boat-detail-overlay').classList.remove('hidden');
+    // AXE 4.4: load entity history
+    if (App._loadDetailHistory) App._loadDetailHistory('guard_camp_workers', workerId);
   }
 
   // ── Add worker modal ─────────────────────────────────────────

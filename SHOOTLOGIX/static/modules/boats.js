@@ -751,6 +751,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
     $('bd-delete-btn').classList.remove('hidden');
     $('boat-detail-overlay').classList.remove('hidden');
+    // AXE 4.4: load entity history
+    if (App._loadDetailHistory) App._loadDetailHistory('picture_boats', pbId);
   }
 
   function _detailBoatIdForBtn() { return _detailBoatId; }
@@ -1579,6 +1581,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       : '<div style="color:var(--text-4);font-size:.78rem">No assignments yet</div>';
 
     $('boat-detail-overlay').classList.remove('hidden');
+    // AXE 4.4: load entity history
+    if (App._loadDetailHistory) App._loadDetailHistory('boats', boatId);
   }
 
   async function saveBoatEdit() {

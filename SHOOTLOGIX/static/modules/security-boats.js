@@ -748,6 +748,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('bd-delete-btn').classList.remove('hidden');
     $('bd-delete-btn').onclick = () => deleteSecurityBoat(sbId);
     $('boat-detail-overlay').classList.remove('hidden');
+    // AXE 4.4: load entity history
+    if (App._loadDetailHistory) App._loadDetailHistory('security_boats', sbId);
   }
 
   async function deleteSecurityBoat(sbId) {

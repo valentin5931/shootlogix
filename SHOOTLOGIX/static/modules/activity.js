@@ -278,6 +278,16 @@ function renderEntityHistoryHTML(entries) {
   </div>`;
 }
 
+// ── Detail modal history loader (AXE 4.4) ────────────────
+
+async function _loadDetailHistory(tableName, entityId) {
+  const container = document.getElementById('bd-history-list');
+  if (!container) return;
+  container.innerHTML = '<div class="entity-history-empty">Loading...</div>';
+  const entries = await loadEntityHistory(tableName, entityId);
+  container.innerHTML = renderEntityHistoryHTML(entries);
+}
+
 // ── Register on App ──────────────────────────────────────
 
 App.toggleActivityPanel = toggleActivityPanel;
@@ -287,3 +297,4 @@ App.loadMoreActivity = loadMoreActivity;
 App.loadEntityHistory = loadEntityHistory;
 App.renderEntityHistoryHTML = renderEntityHistoryHTML;
 App._activityEntryClick = _activityEntryClick;
+App._loadDetailHistory = _loadDetailHistory;
