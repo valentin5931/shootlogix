@@ -38,6 +38,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     else if (tab === 'projects') _adminLoadProjects();
     else if (tab === 'invitations') _adminLoadInvitations();
     else if (tab === 'permissions') _adminLoadPermissions();
+    else if (tab === 'templates') _adminLoadTemplates();
   }
 
   async function _adminLoadUsers() {
@@ -163,9 +164,17 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   function adminShowCreateProject() {
     _adminModalAction = 'create-project';
     $('admin-modal-title').textContent = 'Create Project';
+    api('GET', '/api/admin/templates').then(tpls => {
+      let tplOpts = '<option value="">-- Blank project --</option>';
+      (tpls || []).forEach(t => { tplOpts += `<option value="${t.id}">${esc(t.name)}</option>`; });
+      const sel = $('adm-proj-template');
+      if (sel) sel.innerHTML = tplOpts;
+    }).catch(() => {});
     $('admin-modal-body').innerHTML = `
       <div class="form-group"><label class="form-label">Project Name</label>
         <input type="text" id="adm-projname" class="form-control" placeholder="e.g. KLAS8"></div>
+      <div class="form-group"><label class="form-label">From Template (optional)</label>
+        <select id="adm-proj-template" class="form-control"><option value="">-- Blank project --</option></select></div>
     `;
     $('admin-modal-ok').textContent = 'Create';
     $('admin-modal-overlay').classList.remove('hidden');
@@ -214,8 +223,14 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       } else if (_adminModalAction === 'create-project') {
         const name = $('adm-projname')?.value?.trim();
         if (!name) { toast('Enter project name', 'error'); return; }
-        await api('POST', '/api/admin/projects', { name });
-        toast(`Project '${name}' created`);
+        const templateId = $('adm-proj-template')?.value;
+        if (templateId) {
+          await api('POST', '/api/admin/projects/from-template', { name, template_id: parseInt(templateId) });
+          toast(`Project '${name}' created from template`);
+        } else {
+          await api('POST', '/api/admin/projects', { name });
+          toast(`Project '${name}' created`);
+        }
         adminCloseModal();
         _adminLoadProjects();
         await _loadAuthState();
@@ -569,6 +584,85 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   });
 
 
+  // ─── Production Templates (AXE 10.1) ────────────────────────────
+  let _adminTemplates = [];
+
+  async function _adminLoadTemplates() {
+    try {
+      _adminTemplates = await api('GET', '/api/admin/templates');
+      _renderAdminTemplates();
+    } catch (e) { toast('Failed to load templates: ' + e.message, 'error'); }
+  }
+
+  function _renderAdminTemplates() {
+    const el = $('admin-templates-list');
+    if (!el) return;
+    if (!_adminTemplates.length) {
+      el.innerHTML = '<p style="color:var(--text-3)">No templates saved yet. Save a project config as template to reuse it.</p>';
+      return;
+    }
+    let html = '<table class="admin-table"><thead><tr><th>Name</th><th>Description</th><th>Created</th><th>By</th><th>Actions</th></tr></thead><tbody>';
+    _adminTemplates.forEach(t => {
+      html += `<tr>
+        <td>${esc(t.name)}</td>
+        <td>${esc(t.description || '-')}</td>
+        <td>${fmtDate(t.created_at)}</td>
+        <td>${esc(t.creator_nickname || '-')}</td>
+        <td>
+          <button class="btn btn-xs btn-danger" onclick="App.adminDeleteTemplate(${t.id},'${esc(t.name)}')">Delete</button>
+        </td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }
+
+  function adminShowSaveTemplate() {
+    _adminModalAction = 'save-template';
+    $('admin-modal-title').textContent = 'Save as Template';
+    $('admin-modal-body').innerHTML = `
+      <div class="form-group"><label class="form-label">Template Name</label>
+        <input type="text" id="adm-tpl-name" class="form-control" placeholder="e.g. Survival Show Standard"></div>
+      <div class="form-group"><label class="form-label">Description (optional)</label>
+        <input type="text" id="adm-tpl-desc" class="form-control" placeholder="Functions, FNB categories, guard posts..."></div>
+      <p style="color:var(--text-3);font-size:.75rem;margin-top:.5rem">Saves: boat functions, FNB categories/items, guard posts, location sites from current project.</p>
+    `;
+    $('admin-modal-ok').textContent = 'Save Template';
+    $('admin-modal-overlay').classList.remove('hidden');
+  }
+
+  function adminDeleteTemplate(tplId, tplName) {
+    showConfirm(`Delete template "${tplName}"?`, async () => {
+      try {
+        await api('DELETE', `/api/admin/templates/${tplId}`);
+        toast('Template deleted');
+        _adminLoadTemplates();
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  }
+
+  // Hook save-template into modalConfirm
+  const _origAdminModalConfirm = adminModalConfirm;
+  async function _extendedAdminModalConfirm() {
+    if (_adminModalAction === 'save-template') {
+      const name = $('adm-tpl-name')?.value?.trim();
+      if (!name) { toast('Enter template name', 'error'); return; }
+      try {
+        await api('POST', '/api/admin/templates', {
+          production_id: state.prodId,
+          name,
+          description: $('adm-tpl-desc')?.value?.trim() || null,
+        });
+        toast(`Template '${name}' saved`);
+        adminCloseModal();
+        _adminLoadTemplates();
+      } catch (e) { toast(e.message, 'error'); }
+      return;
+    }
+    return _origAdminModalConfirm();
+  }
+
+
 // Register module functions on App
 Object.assign(window.App, {
   _adminLoadInvitations,
@@ -583,7 +677,7 @@ Object.assign(window.App, {
   adminCloseModal,
   adminDeleteUser,
   adminLoadMembers,
-  adminModalConfirm,
+  adminModalConfirm: _extendedAdminModalConfirm,
   adminRemoveMember,
   adminRenameProject,
   adminResetPassword,
@@ -598,4 +692,8 @@ Object.assign(window.App, {
   adminPermChanged,
   adminPermPreset,
   adminPermSave,
+  // Templates (AXE 10.1)
+  _adminLoadTemplates,
+  adminShowSaveTemplate,
+  adminDeleteTemplate,
 });

@@ -11989,6 +11989,7 @@ const App = (() => {
     if (tab === 'users') _adminLoadUsers();
     else if (tab === 'projects') _adminLoadProjects();
     else if (tab === 'invitations') _adminLoadInvitations();
+    else if (tab === 'templates') _adminLoadTemplates();
   }
 
   async function _adminLoadUsers() {
@@ -12104,9 +12105,18 @@ const App = (() => {
   function adminShowCreateProject() {
     _adminModalAction = 'create-project';
     $('admin-modal-title').textContent = 'Create Project';
+    // Load templates for dropdown
+    api('GET', '/api/admin/templates').then(tpls => {
+      let tplOpts = '<option value="">-- Blank project --</option>';
+      (tpls || []).forEach(t => { tplOpts += `<option value="${t.id}">${t.name}</option>`; });
+      const sel = $('adm-proj-template');
+      if (sel) sel.innerHTML = tplOpts;
+    }).catch(() => {});
     $('admin-modal-body').innerHTML = `
       <div class="form-group"><label class="form-label">Project Name</label>
         <input type="text" id="adm-projname" class="form-control" placeholder="e.g. KLAS8"></div>
+      <div class="form-group"><label class="form-label">From Template (optional)</label>
+        <select id="adm-proj-template" class="form-control"><option value="">-- Blank project --</option></select></div>
     `;
     $('admin-modal-ok').textContent = 'Create';
     $('admin-modal-overlay').classList.remove('hidden');
@@ -12150,8 +12160,14 @@ const App = (() => {
       } else if (_adminModalAction === 'create-project') {
         const name = $('adm-projname')?.value?.trim();
         if (!name) { toast('Enter project name', 'error'); return; }
-        await api('POST', '/api/admin/projects', { name });
-        toast(`Project '${name}' created`);
+        const templateId = $('adm-proj-template')?.value;
+        if (templateId) {
+          await api('POST', '/api/admin/projects/from-template', { name, template_id: parseInt(templateId) });
+          toast(`Project '${name}' created from template`);
+        } else {
+          await api('POST', '/api/admin/projects', { name });
+          toast(`Project '${name}' created`);
+        }
         adminCloseModal();
         _adminLoadProjects();
         await _loadAuthState();

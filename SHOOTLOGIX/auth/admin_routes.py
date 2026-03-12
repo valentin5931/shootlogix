@@ -43,6 +43,14 @@ from auth.models import (
     set_user_permissions,
     ensure_user_permissions,
 )
+from database import (
+    get_production_templates,
+    get_production_template,
+    save_production_as_template,
+    create_production_from_template,
+    delete_production_template,
+    seed_departments,
+)
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
@@ -379,3 +387,83 @@ def update_member_permissions(project_id, user_id):
         "modules": get_user_permissions(user_id, project_id),
         "global": get_user_global_permissions(user_id, project_id),
     })
+
+
+# ─── Production Templates (AXE 10.1) ─────────────────────────────────────────
+
+@admin_bp.route("/templates", methods=["GET"])
+@require_admin
+def list_templates():
+    """List all production templates."""
+    return jsonify(get_production_templates())
+
+
+@admin_bp.route("/templates", methods=["POST"])
+@require_admin
+def save_template():
+    """Save a production as template. Body: { production_id, name, description? }"""
+    data = request.json or {}
+    prod_id = data.get("production_id")
+    name = (data.get("name") or "").strip()
+    if not prod_id or not name:
+        return jsonify({"error": "production_id and name required"}), 400
+
+    tpl_id = save_production_as_template(
+        prod_id, name, data.get("description"),
+        creator_id=g.user_id, creator_nickname=getattr(g, "nickname", None)
+    )
+    return jsonify(get_production_template(tpl_id)), 201
+
+
+@admin_bp.route("/templates/<int:template_id>", methods=["GET"])
+@require_admin
+def get_template(template_id):
+    """Get a single template."""
+    tpl = get_production_template(template_id)
+    if not tpl:
+        return jsonify({"error": "Template not found"}), 404
+    return jsonify(tpl)
+
+
+@admin_bp.route("/templates/<int:template_id>", methods=["DELETE"])
+@require_admin
+def remove_template(template_id):
+    """Delete a template."""
+    tpl = get_production_template(template_id)
+    if not tpl:
+        return jsonify({"error": "Template not found"}), 404
+    delete_production_template(template_id)
+    return jsonify({"message": f"Template '{tpl['name']}' deleted"})
+
+
+@admin_bp.route("/projects/from-template", methods=["POST"])
+@require_admin
+def create_project_from_template():
+    """Create a project from a template. Body: { template_id, name }"""
+    data = request.json or {}
+    template_id = data.get("template_id")
+    name = (data.get("name") or "").strip()
+    if not template_id or not name:
+        return jsonify({"error": "template_id and name required"}), 400
+
+    # Check duplicate project name
+    with get_auth_db() as conn:
+        existing = conn.execute("SELECT id FROM productions WHERE name = ?", (name,)).fetchone()
+        if existing:
+            return jsonify({"error": f"Project '{name}' already exists"}), 409
+
+    prod_id = create_production_from_template(
+        template_id, name,
+        creator_id=g.user_id, creator_nickname=getattr(g, "nickname", None)
+    )
+    if not prod_id:
+        return jsonify({"error": "Template not found"}), 404
+
+    # Auto-add creating admin to the project
+    with get_auth_db() as conn:
+        conn.execute(
+            "INSERT INTO project_memberships (user_id, production_id, role) VALUES (?, ?, 'ADMIN')",
+            (g.user_id, prod_id)
+        )
+
+    return jsonify({"id": prod_id, "name": name, "from_template": True}), 201

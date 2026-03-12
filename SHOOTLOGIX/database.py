@@ -1057,6 +1057,17 @@ def _migrate_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_prod ON notifications(production_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(user_id, is_read)")
 
+        # AXE 10.1: Production templates table
+        conn.execute("""CREATE TABLE IF NOT EXISTS production_templates (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            name            TEXT NOT NULL,
+            description     TEXT,
+            config_json     TEXT NOT NULL DEFAULT '{}',
+            creator_id      INTEGER,
+            creator_nickname TEXT,
+            created_at      TEXT DEFAULT (datetime('now'))
+        )""")
+
 
 # ─── Working days ─────────────────────────────────────────────────────────────
 
@@ -4396,3 +4407,247 @@ def mark_all_notifications_read(user_id, production_id=None):
                 "UPDATE notifications SET is_read=1 WHERE user_id=? AND is_read=0",
                 (user_id,)
             )
+
+
+# ─── Production Templates (AXE 10.1) ──────────────────────────────────────────
+
+def get_production_templates():
+    """List all production templates."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM production_templates ORDER BY created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_production_template(template_id):
+    """Get a single template by ID."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM production_templates WHERE id=?", (template_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def save_production_as_template(production_id, name, description=None,
+                                 creator_id=None, creator_nickname=None):
+    """Snapshot a production's config (boat_functions, groups, FNB categories/items,
+    guard_posts, location_sites) into a reusable template."""
+    config = {}
+    with get_db() as conn:
+        # Boat functions (roles/groups)
+        funcs = conn.execute(
+            "SELECT name, specs, context, function_group, color, default_start, default_end, sort_order "
+            "FROM boat_functions WHERE production_id=?", (production_id,)
+        ).fetchall()
+        config["boat_functions"] = [dict(r) for r in funcs]
+
+        # FNB categories and items
+        cats = conn.execute(
+            "SELECT name, color, sort_order FROM fnb_categories WHERE production_id=?",
+            (production_id,)
+        ).fetchall()
+        fnb = []
+        for cat in cats:
+            items = conn.execute(
+                """SELECT fi.name, fi.unit, fi.unit_price, fi.notes, fi.sort_order
+                   FROM fnb_items fi
+                   JOIN fnb_categories fc ON fi.category_id = fc.id
+                   WHERE fc.production_id=? AND fc.name=?""",
+                (production_id, cat["name"])
+            ).fetchall()
+            fnb.append({"category": dict(cat), "items": [dict(i) for i in items]})
+        config["fnb"] = fnb
+
+        # Guard posts
+        posts = conn.execute(
+            "SELECT name, guards_prep, guards_film, guards_wrap FROM guard_posts WHERE production_id=?",
+            (production_id,)
+        ).fetchall()
+        config["guard_posts"] = [dict(r) for r in posts]
+
+        # Location sites
+        sites = conn.execute(
+            "SELECT name, site_type, color FROM location_sites WHERE production_id=?",
+            (production_id,)
+        ).fetchall()
+        config["location_sites"] = [dict(r) for r in sites]
+
+        # Production settings (start_date, end_date, site)
+        prod = conn.execute("SELECT start_date, end_date, site FROM productions WHERE id=?",
+                            (production_id,)).fetchone()
+        if prod:
+            config["production_defaults"] = dict(prod)
+
+        # Save template
+        cur = conn.execute(
+            """INSERT INTO production_templates (name, description, config_json, creator_id, creator_nickname)
+               VALUES (?, ?, ?, ?, ?)""",
+            (name, description, json.dumps(config), creator_id, creator_nickname)
+        )
+        _log_history(conn, "production_templates", cur.lastrowid, "create",
+                     new_data={"name": name}, user_id=creator_id,
+                     user_nickname=creator_nickname, production_id=production_id)
+        return cur.lastrowid
+
+
+def create_production_from_template(template_id, name, creator_id=None, creator_nickname=None):
+    """Create a new production pre-populated from a template."""
+    tpl = get_production_template(template_id)
+    if not tpl:
+        return None
+    config = json.loads(tpl["config_json"])
+
+    # Create the production
+    prod_data = {"name": name, "status": "active"}
+    defaults = config.get("production_defaults", {})
+    prod_data["site"] = defaults.get("site")
+    prod_id = create_production(prod_data)
+    from database import seed_departments
+    seed_departments(prod_id)
+
+    with get_db() as conn:
+        # Boat functions
+        for f in config.get("boat_functions", []):
+            conn.execute(
+                """INSERT INTO boat_functions
+                   (production_id, name, specs, context, function_group, color, default_start, default_end, sort_order)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (prod_id, f.get("name"), f.get("specs"), f.get("context", "boats"),
+                 f.get("function_group"), f.get("color"), f.get("default_start"),
+                 f.get("default_end"), f.get("sort_order", 0))
+            )
+
+        # FNB categories + items
+        for entry in config.get("fnb", []):
+            cat = entry["category"]
+            cur = conn.execute(
+                "INSERT INTO fnb_categories (production_id, name, color, sort_order) VALUES (?, ?, ?, ?)",
+                (prod_id, cat["name"], cat.get("color", "#F97316"), cat.get("sort_order", 0))
+            )
+            cat_id = cur.lastrowid
+            for item in entry.get("items", []):
+                conn.execute(
+                    """INSERT INTO fnb_items (category_id, production_id, name, unit, unit_price, notes, sort_order)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (cat_id, prod_id, item["name"], item.get("unit", "unit"),
+                     item.get("unit_price", 0), item.get("notes"), item.get("sort_order", 0))
+                )
+
+        # Guard posts
+        for gp in config.get("guard_posts", []):
+            conn.execute(
+                """INSERT INTO guard_posts (production_id, name, guards_prep, guards_film, guards_wrap)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (prod_id, gp["name"], gp.get("guards_prep", 2),
+                 gp.get("guards_film", 2), gp.get("guards_wrap", 2))
+            )
+
+        # Location sites
+        for s in config.get("location_sites", []):
+            conn.execute(
+                "INSERT INTO location_sites (production_id, name, site_type, color) VALUES (?, ?, ?, ?)",
+                (prod_id, s["name"], s.get("site_type"), s.get("color"))
+            )
+
+        _log_history(conn, "productions", prod_id, "create",
+                     new_data={"name": name, "from_template": tpl["name"]},
+                     user_id=creator_id, user_nickname=creator_nickname,
+                     production_id=prod_id)
+
+    return prod_id
+
+
+def delete_production_template(template_id):
+    """Delete a production template."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM production_templates WHERE id=?", (template_id,))
+
+
+# ─── Duplicate Assignment (AXE 10.2) ──────────────────────────────────────────
+
+def duplicate_assignment(table_name, assignment_id, date_offset_days=7):
+    """Duplicate an assignment with dates shifted by offset_days.
+    Works for boat_assignments, picture_boat_assignments, security_boat_assignments,
+    transport_assignments, helper_assignments, guard_camp_assignments."""
+    with get_db() as conn:
+        row = conn.execute(f"SELECT * FROM {table_name} WHERE id=?", (assignment_id,)).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        old_id = data.pop("id")
+
+        # Shift dates
+        for date_field in ("start_date", "end_date", "default_start", "default_end"):
+            if data.get(date_field):
+                try:
+                    dt = datetime.strptime(data[date_field][:10], "%Y-%m-%d")
+                    dt += timedelta(days=date_offset_days)
+                    data[date_field] = dt.strftime("%Y-%m-%d")
+                except (ValueError, TypeError):
+                    pass
+
+        # Clear day_overrides (fresh schedule)
+        if "day_overrides" in data:
+            data["day_overrides"] = "{}"
+
+        # Build INSERT
+        cols = list(data.keys())
+        placeholders = ",".join(["?"] * len(cols))
+        cur = conn.execute(
+            f"INSERT INTO {table_name} ({','.join(cols)}) VALUES ({placeholders})",
+            [data[c] for c in cols]
+        )
+        new_id = cur.lastrowid
+        new_row = conn.execute(f"SELECT * FROM {table_name} WHERE id=?", (new_id,)).fetchone()
+
+        _log_history(conn, table_name, new_id, "create",
+                     new_data=dict(new_row),
+                     human_description=f"Duplicated from #{old_id} (+{date_offset_days}d)")
+
+        return dict(new_row)
+
+
+def duplicate_fnb_category(category_id):
+    """Duplicate an FNB category with all its items."""
+    with get_db() as conn:
+        cat = conn.execute("SELECT * FROM fnb_categories WHERE id=?", (category_id,)).fetchone()
+        if not cat:
+            return None
+        cat_data = dict(cat)
+        prod_id = cat_data["production_id"]
+        old_cat_id = cat_data.pop("id")
+        cat_data["name"] = cat_data["name"] + " (copy)"
+
+        cur = conn.execute(
+            "INSERT INTO fnb_categories (production_id, name, color, sort_order) VALUES (?, ?, ?, ?)",
+            (prod_id, cat_data["name"], cat_data.get("color", "#F97316"), cat_data.get("sort_order", 0))
+        )
+        new_cat_id = cur.lastrowid
+
+        # Duplicate items
+        items = conn.execute(
+            "SELECT * FROM fnb_items WHERE category_id=?", (old_cat_id,)
+        ).fetchall()
+        for item in items:
+            idata = dict(item)
+            idata.pop("id")
+            idata["category_id"] = new_cat_id
+            conn.execute(
+                """INSERT INTO fnb_items (category_id, production_id, name, unit, unit_price, notes, sort_order)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (new_cat_id, idata["production_id"], idata["name"], idata.get("unit", "unit"),
+                 idata.get("unit_price", 0), idata.get("notes"), idata.get("sort_order", 0))
+            )
+
+        new_cat = conn.execute("SELECT * FROM fnb_categories WHERE id=?", (new_cat_id,)).fetchone()
+        new_items = conn.execute(
+            "SELECT * FROM fnb_items WHERE category_id=?", (new_cat_id,)
+        ).fetchall()
+
+        _log_history(conn, "fnb_categories", new_cat_id, "create",
+                     new_data=dict(new_cat),
+                     human_description=f"Duplicated category '{cat['name']}' with {len(items)} items",
+                     production_id=prod_id)
+
+        return {"category": dict(new_cat), "items": [dict(i) for i in new_items]}

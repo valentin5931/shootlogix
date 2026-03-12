@@ -526,6 +526,7 @@
           <button class="admin-tab" data-atab="projects" onclick="App.adminSetTab('projects')">Projects</button>
           <button class="admin-tab" data-atab="invitations" onclick="App.adminSetTab('invitations')">Members</button>
           <button class="admin-tab" data-atab="permissions" onclick="App.adminSetTab('permissions')">Permissions</button>
+          <button class="admin-tab" data-atab="templates" onclick="App.adminSetTab('templates')">Templates</button>
         </div>
 
         <!-- Users sub-panel -->
@@ -579,6 +580,15 @@
             </div>
           </div>
           <div id="admin-perm-grid"></div>
+        </div>
+
+        <!-- Templates sub-panel (AXE 10.1) -->
+        <div id="admin-templates" class="admin-sub">
+          <div class="admin-toolbar">
+            <h3>Production Templates</h3>
+            <button class="btn btn-primary btn-sm" onclick="App.adminShowSaveTemplate()">Save Current as Template</button>
+          </div>
+          <div id="admin-templates-list"></div>
         </div>
       </div>
     </div>
