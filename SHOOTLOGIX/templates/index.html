@@ -1391,6 +1391,23 @@
   </div>
 </div>
 
+<!-- ── Cascade preview modal (AXE 7.2) ────────────────────────────────────── -->
+<div id="cascade-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.cancelCascade()">
+  <div class="modal-box" style="max-width:560px">
+    <div class="modal-header">
+      <h3 style="margin:0;font-size:1.1rem">Cascade de modifications</h3>
+      <button class="close-btn" onclick="App.cancelCascade()">&times;</button>
+    </div>
+    <div id="cascade-body" style="padding:1rem;font-size:.85rem;max-height:60vh;overflow-y:auto">
+    </div>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end;padding:.75rem 1rem;border-top:1px solid var(--border)">
+      <button class="btn btn-secondary" onclick="App.cancelCascade()">Non, garder tel quel</button>
+      <button class="btn btn-primary" onclick="App.applyCascade()">Oui, cascader</button>
+      <button class="btn btn-secondary" onclick="App.skipCascade()">Sauver sans cascade</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Boat view popup (large) ─────────────────────────────────────────────── -->
 <div id="boat-view-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeBoatView()">
   <div class="boat-view-box">

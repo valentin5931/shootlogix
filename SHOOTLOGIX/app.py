@@ -78,6 +78,8 @@ from database import (
     get_guard_camp_assignments, create_guard_camp_assignment,
     update_guard_camp_assignment, delete_guard_camp_assignment,
     delete_guard_camp_assignment_by_function,
+    # PDT cascade (AXE 7.2)
+    cascade_preview, cascade_apply,
 )
 
 from validation import ValidationError, validate_assignment, validate_fuel_entry, validate_shooting_day, validate_date_range, validate_positive_number, validate_required, validate_guard_schedule, validate_assignment_overlap
@@ -391,6 +393,39 @@ def api_delete_shooting_day(prod_id, day_id):
     prod_or_404(prod_id)
     delete_shooting_day(day_id)
     return jsonify({"deleted": day_id})
+
+
+# ─── PDT Cascade (AXE 7.2) ──────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/shooting-days/<int:day_id>/cascade-preview", methods=["POST"])
+def api_cascade_preview(prod_id, day_id):
+    """Preview cascade effects when moving a shooting day to a new date."""
+    prod_or_404(prod_id)
+    data = request.json or {}
+    old_date = data.get("old_date")
+    new_date = data.get("new_date")
+    if not old_date or not new_date:
+        return jsonify({"error": "old_date and new_date required"}), 400
+    if old_date == new_date:
+        return jsonify({"assignments": [], "fuel_entries": [], "location_schedules": [],
+                        "summary": {"assignments": 0, "fuel_entries": 0, "location_schedules": 0}})
+    preview = cascade_preview(prod_id, day_id, old_date, new_date)
+    return jsonify(preview)
+
+
+@app.route("/api/productions/<int:prod_id>/shooting-days/<int:day_id>/cascade-apply", methods=["POST"])
+def api_cascade_apply(prod_id, day_id):
+    """Apply cascade: move all date-keyed data from old_date to new_date."""
+    prod_or_404(prod_id)
+    data = request.json or {}
+    old_date = data.get("old_date")
+    new_date = data.get("new_date")
+    if not old_date or not new_date:
+        return jsonify({"error": "old_date and new_date required"}), 400
+    if old_date == new_date:
+        return jsonify({"applied": {"assignments": 0, "fuel_entries": 0, "location_schedules": 0}})
+    applied = cascade_apply(prod_id, day_id, old_date, new_date)
+    return jsonify({"applied": applied})
 
 
 # ─── Shooting day events ─────────────────────────────────────────────────────

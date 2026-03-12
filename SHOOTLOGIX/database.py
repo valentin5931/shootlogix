@@ -3729,3 +3729,191 @@ def set_setting(key, value):
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, value)
         )
+
+
+# ─── PDT Cascade (AXE 7.2) ──────────────────────────────────────────────────
+
+_ASSIGNMENT_TABLES = [
+    ("boat_assignments", "boat_id", "boats", "name", "Boats"),
+    ("picture_boat_assignments", "picture_boat_id", "picture_boats", "name", "Picture Boats"),
+    ("security_boat_assignments", "security_boat_id", "security_boats", "name", "Security Boats"),
+    ("transport_assignments", "vehicle_id", "vehicles", "name", "Transport"),
+    ("helper_assignments", "helper_id", "helpers", "name", "Labour"),
+    ("guard_camp_assignments", None, None, None, "Guards"),
+]
+
+
+def cascade_preview(prod_id, day_id, old_date, new_date):
+    """Preview what would change if a shooting day moves from old_date to new_date.
+    Returns a dict with affected items grouped by category."""
+    result = {
+        "assignments": [],
+        "fuel_entries": [],
+        "location_schedules": [],
+        "summary": {"assignments": 0, "fuel_entries": 0, "location_schedules": 0},
+    }
+    with get_db() as conn:
+        # 1. Assignments with day_overrides containing old_date
+        for table, entity_col, entity_table, name_col, label in _ASSIGNMENT_TABLES:
+            rows = conn.execute(
+                f"SELECT a.*, bf.name AS function_name "
+                f"FROM {table} a "
+                f"JOIN boat_functions bf ON a.boat_function_id = bf.id "
+                f"WHERE bf.production_id = ?",
+                (prod_id,)
+            ).fetchall()
+            for row in rows:
+                rd = dict(row)
+                overrides = json.loads(rd.get("day_overrides") or "{}")
+                in_overrides = old_date in overrides
+                start_match = rd.get("start_date") == old_date
+                end_match = rd.get("end_date") == old_date
+                # Only show assignments that would actually change
+                if not (in_overrides or start_match or end_match):
+                    continue
+                # Resolve entity name
+                entity_name = None
+                if entity_col and entity_table and rd.get(entity_col):
+                    try:
+                        ent = conn.execute(
+                            f"SELECT {name_col} FROM {entity_table} WHERE id=?",
+                            (rd[entity_col],)
+                        ).fetchone()
+                        if ent:
+                            entity_name = ent[name_col]
+                    except Exception:
+                        pass
+                name_override = (rd.get("boat_name_override")
+                                 or rd.get("vehicle_name_override")
+                                 or rd.get("helper_name_override"))
+                impact = []
+                if in_overrides:
+                    impact.append("override jour")
+                if start_match:
+                    impact.append("date debut")
+                if end_match:
+                    impact.append("date fin")
+                result["assignments"].append({
+                    "table": table,
+                    "id": rd["id"],
+                    "module": label,
+                    "function_name": rd.get("function_name"),
+                    "entity_name": entity_name or name_override or f"#{rd['id']}",
+                    "impact": impact,
+                    "override_status": overrides.get(old_date) if in_overrides else None,
+                })
+
+        result["summary"]["assignments"] = len(result["assignments"])
+
+        # 2. Fuel entries on old_date
+        fuel_rows = conn.execute(
+            "SELECT * FROM fuel_entries WHERE production_id=? AND date=?",
+            (prod_id, old_date)
+        ).fetchall()
+        for fr in fuel_rows:
+            result["fuel_entries"].append({
+                "id": fr["id"],
+                "source_type": fr["source_type"],
+                "assignment_id": fr["assignment_id"],
+                "liters": fr["liters"],
+                "fuel_type": fr["fuel_type"],
+            })
+        result["summary"]["fuel_entries"] = len(result["fuel_entries"])
+
+        # 3. Location schedules on old_date
+        loc_rows = conn.execute(
+            "SELECT * FROM location_schedules WHERE production_id=? AND date=?",
+            (prod_id, old_date)
+        ).fetchall()
+        for lr in loc_rows:
+            result["location_schedules"].append({
+                "id": lr["id"],
+                "location_name": lr["location_name"],
+                "status": lr["status"],
+                "locked": lr["locked"],
+            })
+        result["summary"]["location_schedules"] = len(result["location_schedules"])
+
+    return result
+
+
+def cascade_apply(prod_id, day_id, old_date, new_date):
+    """Apply cascade: move date-keyed data from old_date to new_date."""
+    applied = {"assignments": 0, "fuel_entries": 0, "location_schedules": 0}
+    with get_db() as conn:
+        # 1. Update assignment day_overrides
+        for table, entity_col, entity_table, name_col, label in _ASSIGNMENT_TABLES:
+            rows = conn.execute(
+                f"SELECT a.id, a.day_overrides, a.start_date, a.end_date "
+                f"FROM {table} a "
+                f"JOIN boat_functions bf ON a.boat_function_id = bf.id "
+                f"WHERE bf.production_id = ?",
+                (prod_id,)
+            ).fetchall()
+            for row in rows:
+                overrides = json.loads(row["day_overrides"] or "{}")
+                in_overrides = old_date in overrides
+                start_match = row["start_date"] == old_date
+                end_match = row["end_date"] == old_date
+                # Only cascade if there's actually something to change
+                if not (in_overrides or start_match or end_match):
+                    continue
+
+                new_overrides = dict(overrides)
+                if in_overrides:
+                    new_overrides[new_date] = new_overrides.pop(old_date)
+
+                new_start = new_date if start_match else row["start_date"]
+                new_end = new_date if end_match else row["end_date"]
+
+                conn.execute(
+                    f"UPDATE {table} SET day_overrides=?, start_date=?, end_date=?, "
+                    f"updated_at=datetime('now') WHERE id=?",
+                    (json.dumps(new_overrides), new_start, new_end, row["id"])
+                )
+                applied["assignments"] += 1
+
+        # 2. Update fuel entries date
+        cur = conn.execute(
+            "UPDATE fuel_entries SET date=? WHERE production_id=? AND date=?",
+            (new_date, prod_id, old_date)
+        )
+        applied["fuel_entries"] = cur.rowcount
+
+        # 3. Location schedules are handled by the existing sync logic
+        # (frontend calls _syncPdtLocationsDelete + _syncPdtLocations)
+        # But we also move non-F entries (P/W) that might exist on old_date
+        loc_rows = conn.execute(
+            "SELECT * FROM location_schedules WHERE production_id=? AND date=? AND locked=0",
+            (prod_id, old_date)
+        ).fetchall()
+        for lr in loc_rows:
+            # Check if new_date already has an entry for this location
+            existing = conn.execute(
+                "SELECT id FROM location_schedules "
+                "WHERE production_id=? AND location_name=? AND date=?",
+                (prod_id, lr["location_name"], new_date)
+            ).fetchone()
+            if existing:
+                # Update existing entry
+                conn.execute(
+                    "UPDATE location_schedules SET status=? WHERE id=?",
+                    (lr["status"], existing["id"])
+                )
+            else:
+                # Move the entry to new date
+                conn.execute(
+                    "UPDATE location_schedules SET date=? WHERE id=?",
+                    (new_date, lr["id"])
+                )
+            applied["location_schedules"] += 1
+
+        # Log cascade action in history
+        _log_history(conn, 'shooting_days', day_id, 'cascade',
+                     {"old_date": old_date},
+                     {"new_date": new_date,
+                      "assignments": applied["assignments"],
+                      "fuel_entries": applied["fuel_entries"],
+                      "location_schedules": applied["location_schedules"]})
+
+    return applied

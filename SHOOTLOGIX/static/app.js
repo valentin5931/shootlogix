@@ -1608,6 +1608,80 @@ const App = (() => {
     $('day-modal-overlay').classList.add('hidden');
     state.editingDayId = null;
     state.editingDayEvents = [];
+    // Clean up cascade state
+    state._cascadeDecision = null;
+    state._pendingSaveData = null;
+    state._pendingOldDate = null;
+  }
+
+  // ── AXE 7.2: Cascade preview modal ───────────────────────────────────────
+  function _showCascadePreview(preview, oldDate, newDate) {
+    const body = $('cascade-body');
+    let html = `<p style="margin:0 0 .75rem"><strong>Date deplacee :</strong> ${oldDate} &rarr; ${newDate}</p>`;
+    html += `<p style="margin:0 0 1rem;color:var(--text-2)">Les elements suivants referencent l'ancienne date. Souhaitez-vous les mettre a jour automatiquement ?</p>`;
+
+    // Assignments
+    if (preview.assignments.length > 0) {
+      html += `<div style="margin-bottom:.75rem">`;
+      html += `<div style="font-weight:600;margin-bottom:.25rem">Assignments (${preview.assignments.length})</div>`;
+      html += `<div style="border:1px solid var(--border);border-radius:6px;overflow:hidden">`;
+      html += `<table style="width:100%;font-size:.8rem;border-collapse:collapse">`;
+      html += `<tr style="background:var(--bg-2)"><th style="padding:4px 8px;text-align:left">Module</th><th style="padding:4px 8px;text-align:left">Fonction</th><th style="padding:4px 8px;text-align:left">Entite</th><th style="padding:4px 8px;text-align:left">Impact</th></tr>`;
+      for (const a of preview.assignments) {
+        html += `<tr style="border-top:1px solid var(--border)"><td style="padding:4px 8px">${a.module}</td><td style="padding:4px 8px">${a.function_name || '-'}</td><td style="padding:4px 8px">${a.entity_name}</td><td style="padding:4px 8px">${(a.impact || []).join(', ')}</td></tr>`;
+      }
+      html += `</table></div></div>`;
+    }
+
+    // Fuel entries
+    if (preview.fuel_entries.length > 0) {
+      html += `<div style="margin-bottom:.75rem">`;
+      html += `<div style="font-weight:600;margin-bottom:.25rem">Fuel entries (${preview.fuel_entries.length})</div>`;
+      html += `<div style="border:1px solid var(--border);border-radius:6px;overflow:hidden">`;
+      html += `<table style="width:100%;font-size:.8rem;border-collapse:collapse">`;
+      html += `<tr style="background:var(--bg-2)"><th style="padding:4px 8px;text-align:left">Type</th><th style="padding:4px 8px;text-align:left">Litres</th><th style="padding:4px 8px;text-align:left">Carburant</th></tr>`;
+      for (const f of preview.fuel_entries) {
+        html += `<tr style="border-top:1px solid var(--border)"><td style="padding:4px 8px">${f.source_type}</td><td style="padding:4px 8px">${f.liters || 0}L</td><td style="padding:4px 8px">${f.fuel_type}</td></tr>`;
+      }
+      html += `</table></div></div>`;
+    }
+
+    // Location schedules
+    if (preview.location_schedules.length > 0) {
+      html += `<div style="margin-bottom:.75rem">`;
+      html += `<div style="font-weight:600;margin-bottom:.25rem">Location schedules (${preview.location_schedules.length})</div>`;
+      html += `<div style="border:1px solid var(--border);border-radius:6px;overflow:hidden">`;
+      html += `<table style="width:100%;font-size:.8rem;border-collapse:collapse">`;
+      html += `<tr style="background:var(--bg-2)"><th style="padding:4px 8px;text-align:left">Location</th><th style="padding:4px 8px;text-align:left">Statut</th><th style="padding:4px 8px;text-align:left">Verrouille</th></tr>`;
+      for (const l of preview.location_schedules) {
+        html += `<tr style="border-top:1px solid var(--border)"><td style="padding:4px 8px">${l.location_name}</td><td style="padding:4px 8px">${l.status}</td><td style="padding:4px 8px">${l.locked ? 'Oui' : 'Non'}</td></tr>`;
+      }
+      html += `</table></div></div>`;
+    }
+
+    body.innerHTML = html;
+    $('cascade-overlay').classList.remove('hidden');
+  }
+
+  function cancelCascade() {
+    $('cascade-overlay').classList.add('hidden');
+    // Do nothing - user cancelled, day is NOT saved
+    state._pendingSaveData = null;
+    state._pendingOldDate = null;
+  }
+
+  async function applyCascade() {
+    $('cascade-overlay').classList.add('hidden');
+    state._cascadeDecision = 'apply';
+    // Re-trigger saveDay with cascade decision set
+    await saveDay();
+  }
+
+  async function skipCascade() {
+    $('cascade-overlay').classList.add('hidden');
+    state._cascadeDecision = 'skip';
+    // Re-trigger saveDay without cascade
+    await saveDay();
   }
 
   // Add a new event to a day (creates immediately via API if editing existing day)
@@ -1794,6 +1868,37 @@ const App = (() => {
       $('dm-status').value = 'modifié';
     }
 
+    // ── AXE 7.2: Cascade detection ──
+    // If editing an existing day AND date changed, check for cascade impacts
+    if (state.editingDayId) {
+      const oldDay = state.shootingDays.find(d => d.id === state.editingDayId);
+      const oldDate = oldDay?.date;
+      if (oldDate && oldDate !== data.date && !state._cascadeDecision) {
+        // Store pending save data and fetch cascade preview
+        state._pendingSaveData = data;
+        state._pendingOldDate = oldDate;
+        try {
+          const preview = await api('POST',
+            `/api/productions/${state.prodId}/shooting-days/${state.editingDayId}/cascade-preview`,
+            { old_date: oldDate, new_date: data.date });
+          const total = preview.summary.assignments + preview.summary.fuel_entries
+                        + preview.summary.location_schedules;
+          if (total > 0) {
+            _showCascadePreview(preview, oldDate, data.date);
+            return; // Wait for user decision via modal
+          }
+          // No cascade needed, proceed normally
+        } catch (e) {
+          console.warn('Cascade preview failed, proceeding without cascade:', e);
+        }
+      }
+    }
+    // Clear cascade decision flag
+    const cascadeDecision = state._cascadeDecision;
+    state._cascadeDecision = null;
+    state._pendingSaveData = null;
+    state._pendingOldDate = null;
+
     try {
       let dayId = state.editingDayId;
       if (dayId) {
@@ -1830,6 +1935,19 @@ const App = (() => {
         }
         // Sync PDT locations -> Locations tab (Film days)
         await _syncPdtLocations(data.date, data, freshEvents);
+
+        // ── AXE 7.2: Apply cascade if user confirmed ──
+        if (cascadeDecision === 'apply' && oldDate && oldDate !== data.date) {
+          try {
+            const result = await api('POST',
+              `/api/productions/${state.prodId}/shooting-days/${dayId}/cascade-apply`,
+              { old_date: oldDate, new_date: data.date });
+            const a = result.applied;
+            toast(`Cascade: ${a.assignments} assignments, ${a.fuel_entries} fuel, ${a.location_schedules} locations mis a jour`);
+          } catch (e) {
+            toast('Erreur cascade: ' + e.message, 'error');
+          }
+        }
       } else {
         data.production_id = state.prodId;
         const created = await api('POST',
@@ -12164,6 +12282,8 @@ const App = (() => {
     // Budget History (AXE 6.3)
     _setBudgetHistoryTab, _setSnapshotCompare, _createManualSnapshot, _compareSnapshots,
     showConfirm, cancelConfirm, confirmDeleteBoat,
+    // Cascade (AXE 7.2)
+    cancelCascade, applyCascade, skipCascade,
     _onScheduleMouseDown, _onScheduleMouseOver, multiSelectFill, multiSelectClear, multiSelectCancel,
     // Picture Boats
     pbSetBoatView, pbFilterBoats, pbOpenBoatView,
