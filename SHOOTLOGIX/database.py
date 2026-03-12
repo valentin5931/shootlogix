@@ -16,16 +16,173 @@ from db_compat import (
 )
 
 
-def _log_history(conn, table_name, record_id, action, old_data=None, new_data=None):
-    """Generic history logger. Call within an existing get_db() context."""
+# ─── Entity labels for human-readable history descriptions ───────────────────
+_TABLE_LABELS = {
+    "shooting_days": "jour de tournage",
+    "boats": "bateau",
+    "boat_assignments": "assignment bateau",
+    "boat_functions": "fonction",
+    "picture_boats": "picture boat",
+    "picture_boat_assignments": "assignment picture boat",
+    "security_boats": "security boat",
+    "security_boat_assignments": "assignment security boat",
+    "transport_vehicles": "véhicule",
+    "transport_assignments": "assignment transport",
+    "helpers": "helper",
+    "helper_assignments": "assignment helper",
+    "guard_camp_workers": "garde",
+    "guard_camp_assignments": "assignment garde",
+    "fuel_entries": "entrée carburant",
+    "fuel_machinery": "engin carburant",
+    "locations": "location",
+    "location_schedules": "schedule location",
+    "guard_location_schedules": "schedule garde",
+    "location_sites": "site",
+    "guard_posts": "poste de garde",
+    "fnb_categories": "catégorie FNB",
+    "fnb_items": "item FNB",
+    "fnb_entries": "entrée FNB",
+    "fnb_tracking": "suivi FNB",
+}
+
+# Fields to use as entity "name" for each table
+_NAME_FIELDS = {
+    "shooting_days": ["date", "day_number"],
+    "boats": ["name"],
+    "boat_assignments": ["boat_name_override", "boat_id"],
+    "boat_functions": ["name"],
+    "picture_boats": ["name"],
+    "picture_boat_assignments": ["boat_name_override", "boat_id"],
+    "security_boats": ["name"],
+    "security_boat_assignments": ["boat_name_override", "boat_id"],
+    "transport_vehicles": ["name"],
+    "transport_assignments": ["vehicle_name_override", "vehicle_id"],
+    "helpers": ["name"],
+    "helper_assignments": ["helper_name_override", "helper_id"],
+    "guard_camp_workers": ["name"],
+    "guard_camp_assignments": ["worker_name_override", "worker_id"],
+    "fuel_entries": ["source_type", "date"],
+    "fuel_machinery": ["name"],
+    "locations": ["name"],
+    "location_sites": ["name"],
+    "guard_posts": ["name"],
+    "fnb_categories": ["name"],
+    "fnb_items": ["name"],
+}
+
+# Fields to skip in update diffs (noisy/internal)
+_SKIP_DIFF_FIELDS = {"id", "created_at", "updated_at", "production_id"}
+
+
+def _extract_entity_name(table_name, data):
+    """Extract a human-readable name from record data."""
+    if not data:
+        return "?"
+    d = dict(data) if not isinstance(data, dict) else data
+    for field in _NAME_FIELDS.get(table_name, ["name", "id"]):
+        val = d.get(field)
+        if val is not None and str(val).strip():
+            return str(val).strip()
+    return str(d.get("id", "?"))
+
+
+def _generate_human_description(table_name, action, old_data, new_data, nickname=None):
+    """Auto-generate a human-readable description for a history entry."""
+    who = nickname or "Système"
+    label = _TABLE_LABELS.get(table_name, table_name)
+
+    if action == "create":
+        name = _extract_entity_name(table_name, new_data)
+        return f"{who} a créé {label} '{name}'"
+
+    elif action == "delete":
+        name = _extract_entity_name(table_name, old_data)
+        return f"{who} a supprimé {label} '{name}'"
+
+    elif action == "update":
+        name = _extract_entity_name(table_name, old_data or new_data)
+        # Build diff of changed fields
+        if old_data and new_data:
+            od = dict(old_data) if not isinstance(old_data, dict) else old_data
+            nd = dict(new_data) if not isinstance(new_data, dict) else new_data
+            changes = []
+            for k in nd:
+                if k in _SKIP_DIFF_FIELDS:
+                    continue
+                old_val = od.get(k)
+                new_val = nd.get(k)
+                if str(old_val) != str(new_val):
+                    changes.append(f"{k}: {old_val} → {new_val}")
+            if changes:
+                detail = ", ".join(changes[:3])
+                if len(changes) > 3:
+                    detail += f" (+{len(changes)-3})"
+                return f"{who} a modifié {label} '{name}' : {detail}"
+        return f"{who} a modifié {label} '{name}'"
+
+    elif action == "lock":
+        date_val = (new_data or {}).get("date", "?") if isinstance(new_data, dict) else "?"
+        return f"{who} a verrouillé le {date_val}"
+
+    elif action == "unlock":
+        date_val = (new_data or {}).get("date", "?") if isinstance(new_data, dict) else "?"
+        return f"{who} a déverrouillé le {date_val}"
+
+    elif action == "cascade":
+        return f"{who} a cascadé un déplacement de {label}"
+
+    else:
+        name = _extract_entity_name(table_name, new_data or old_data)
+        return f"{who} : {action} sur {label} '{name}'"
+
+
+def _log_history(conn, table_name, record_id, action, old_data=None, new_data=None,
+                 user_id=None, user_nickname=None, human_description=None, production_id=None):
+    """Generic history logger. Call within an existing get_db() context.
+
+    Automatically reads user_id/nickname from Flask g context if not provided.
+    Automatically generates human_description if not provided.
+    """
+    # Auto-read user from Flask request context
+    if user_id is None or user_nickname is None:
+        try:
+            from flask import g as _g, has_request_context
+            if has_request_context():
+                if user_id is None:
+                    user_id = getattr(_g, 'user_id', None)
+                if user_nickname is None:
+                    user_nickname = getattr(_g, 'nickname', None)
+        except ImportError:
+            pass
+
+    # Auto-extract production_id from the data if not provided
+    if production_id is None:
+        for src in (new_data, old_data):
+            if src:
+                d = dict(src) if not isinstance(src, dict) else src
+                if "production_id" in d:
+                    production_id = d["production_id"]
+                    break
+
+    # Serialize data
+    old_json = json.dumps(dict(old_data)) if old_data else None
+    new_json = json.dumps(dict(new_data)) if new_data else None
+
+    # Auto-generate human description
+    if human_description is None:
+        old_d = json.loads(old_json) if old_json else None
+        new_d = json.loads(new_json) if new_json else None
+        human_description = _generate_human_description(
+            table_name, action, old_d, new_d, user_nickname
+        )
+
     conn.execute(
-        """INSERT INTO history (table_name, record_id, action, old_data, new_data)
-           VALUES (?, ?, ?, ?, ?)""",
-        (table_name,
-         record_id,
-         action,
-         json.dumps(dict(old_data)) if old_data else None,
-         json.dumps(dict(new_data)) if new_data else None)
+        """INSERT INTO history
+           (table_name, record_id, action, old_data, new_data,
+            user_id, user_nickname, human_description, production_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (table_name, record_id, action, old_json, new_json,
+         user_id, user_nickname, human_description, production_id)
     )
 
 
@@ -822,6 +979,23 @@ def _migrate_db():
                     print(f"Migration: added {tbl}.sort_order")
             except Exception:
                 pass
+
+        # AXE4: history enrichment — user_nickname, human_description, production_id
+        h_cols = get_table_columns(conn, 'history')
+        if 'user_nickname' not in h_cols:
+            conn.execute("ALTER TABLE history ADD COLUMN user_nickname TEXT")
+            print("Migration: added history.user_nickname")
+        if 'human_description' not in h_cols:
+            conn.execute("ALTER TABLE history ADD COLUMN human_description TEXT")
+            print("Migration: added history.human_description")
+        if 'production_id' not in h_cols:
+            conn.execute("ALTER TABLE history ADD COLUMN production_id INTEGER")
+            print("Migration: added history.production_id")
+            # Create index for production_id filtering
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_history_prod ON history(production_id)")
+            # Create index for user_id filtering
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id)")
+            print("Migration: added history indexes (production_id, user_id)")
 
 
 # ─── Working days ─────────────────────────────────────────────────────────────
@@ -3465,18 +3639,35 @@ def get_daily_budget(prod_id):
 
 # ─── History / Undo ───────────────────────────────────────────────────────────
 
-def get_history(prod_id, limit=50, entity_type=None, entity_id=None):
-    """Return recent history entries with optional filtering."""
+def get_history(prod_id, limit=50, entity_type=None, entity_id=None,
+                user_id=None, action_type=None, date_from=None, date_to=None):
+    """Return recent history entries with filtering by production, module, user, dates, action."""
     with get_db() as conn:
         query = "SELECT * FROM history"
         params = []
         conditions = []
+        # Filter by production (if column populated)
+        if prod_id:
+            conditions.append("(production_id = ? OR production_id IS NULL)")
+            params.append(prod_id)
         if entity_type:
             conditions.append("table_name = ?")
             params.append(entity_type)
         if entity_id:
             conditions.append("record_id = ?")
             params.append(entity_id)
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if action_type:
+            conditions.append("action = ?")
+            params.append(action_type)
+        if date_from:
+            conditions.append("created_at >= ?")
+            params.append(date_from)
+        if date_to:
+            conditions.append("created_at <= ?")
+            params.append(date_to + " 23:59:59" if len(date_to) == 10 else date_to)
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY id DESC LIMIT ?"

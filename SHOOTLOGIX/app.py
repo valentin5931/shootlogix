@@ -1487,9 +1487,20 @@ def api_history(prod_id):
     limit = int(request.args.get("limit", 50))
     entity_type = request.args.get("entity_type")
     entity_id = request.args.get("entity_id")
+    user_id = request.args.get("user_id")
+    action_type = request.args.get("action_type")
+    date_from = request.args.get("date_from")
+    date_to = request.args.get("date_to")
     if entity_id:
         entity_id = int(entity_id)
-    return jsonify(get_history(prod_id, limit, entity_type=entity_type, entity_id=entity_id))
+    if user_id:
+        user_id = int(user_id)
+    return jsonify(get_history(
+        prod_id, limit,
+        entity_type=entity_type, entity_id=entity_id,
+        user_id=user_id, action_type=action_type,
+        date_from=date_from, date_to=date_to
+    ))
 
 
 @app.route("/api/productions/<int:prod_id>/undo", methods=["POST"])
