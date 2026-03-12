@@ -2385,3 +2385,134 @@ body.schedule-dragging * { cursor: col-resize !important; }
     font-size: .68rem;
   }
 }
+
+/* ── FAB (Floating Action Button) — mobile only ─────────────────────── */
+.fab {
+  display: none;
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 90;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  font-size: 1.6rem;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(59,130,246,.45);
+  transition: transform .15s, box-shadow .15s, background .15s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.fab:active {
+  transform: scale(.92);
+  box-shadow: 0 2px 8px rgba(59,130,246,.3);
+}
+.fab:hover {
+  background: var(--accent-h);
+  box-shadow: 0 6px 20px rgba(59,130,246,.5);
+}
+.fab .fab-label {
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--bg-card);
+  color: var(--text-1);
+  font-size: .75rem;
+  font-weight: 600;
+  padding: .35rem .7rem;
+  border-radius: 6px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px var(--shadow-color);
+  border: 1px solid var(--border-lt);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.fab:hover .fab-label,
+.fab:focus .fab-label {
+  opacity: 1;
+}
+@media (max-width: 768px) {
+  .fab { display: flex; align-items: center; justify-content: center; }
+  .fab .fab-label { opacity: 1; }
+}
+
+/* ── Pull-to-refresh indicator ──────────────────────────────────────── */
+.ptr-indicator {
+  position: fixed;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-60px);
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .4rem .9rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-lt);
+  border-radius: 20px;
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--text-2);
+  box-shadow: 0 4px 12px var(--shadow-color);
+  transition: transform .25s ease;
+  pointer-events: none;
+}
+.ptr-indicator.ptr-pulling {
+  transform: translateX(-50%) translateY(12px);
+}
+.ptr-indicator.ptr-refreshing {
+  transform: translateX(-50%) translateY(12px);
+}
+.ptr-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-lt);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ptr-spin .6s linear infinite;
+}
+@keyframes ptr-spin { to { transform: rotate(360deg); } }
+.ptr-arrow {
+  display: inline-block;
+  transition: transform .2s;
+  font-size: .9rem;
+}
+.ptr-arrow.ptr-ready {
+  transform: rotate(180deg);
+}
+
+/* ── Mobile-simplified modals: Advanced accordion ───────────────────── */
+.modal-advanced-toggle {
+  display: none;
+  width: 100%;
+  padding: .5rem;
+  margin: .25rem 0 .5rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-lt);
+  border-radius: 6px;
+  color: var(--text-3);
+  font-size: .72rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+.modal-advanced-toggle:active { background: var(--bg-hover); }
+
+@media (max-width: 768px) {
+  .modal-advanced-toggle { display: block; }
+  .modal-advanced.collapsed { display: none; }
+  /* Full-screen modals on mobile for easier input */
+  .modal-box {
+    max-width: 100% !important;
+    margin: 0 .5rem;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}

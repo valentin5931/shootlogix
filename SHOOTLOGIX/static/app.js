@@ -849,6 +849,7 @@ const App = (() => {
     if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
+    _updateFab();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -10530,6 +10531,9 @@ const App = (() => {
       }
     });
 
+    // Initialize pull-to-refresh gesture
+    _initPullToRefresh();
+
     try {
       // Auth: fetch user info and show project selector
       await _loadAuthState();
@@ -10909,6 +10913,141 @@ const App = (() => {
     } catch (e) { toast(e.message, 'error'); }
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  FAB — Floating Action Button (mobile, contextual per tab)
+  // ═══════════════════════════════════════════════════════════
+
+  const FAB_CONFIG = {
+    pdt:              { label: '+ Day',       action: () => addDay() },
+    boats:            { label: '+ Boat',      action: () => showAddBoatModal() },
+    'picture-boats':  { label: '+ Boat',      action: () => showAddPictureBoatModal() },
+    'security-boats': { label: '+ Boat',      action: () => showAddSecurityBoatModal() },
+    transport:        { label: '+ Vehicle',   action: () => showAddTransportVehicleModal() },
+    labour:           { label: '+ Worker',    action: () => showAddWorkerModal() },
+    guards:           { label: '+ Guard',     action: () => gcShowAddWorkerModal() },
+    locations:        { label: '+ Location',  action: () => showAddLocationModal() },
+    fnb:              { label: '+ Category',  action: () => showFnbCatModal() },
+  };
+
+  function _updateFab() {
+    const fab = $('fab-btn');
+    if (!fab) return;
+    const cfg = FAB_CONFIG[state.tab];
+    if (!cfg || !_canEdit()) {
+      fab.style.display = 'none';
+      return;
+    }
+    fab.style.display = '';
+    const lbl = $('fab-label');
+    if (lbl) lbl.textContent = cfg.label;
+  }
+
+  function fabAction() {
+    const cfg = FAB_CONFIG[state.tab];
+    if (cfg) cfg.action();
+  }
+
+  // Hook into setTab to update FAB
+  const _origSetTab = setTab;
+
+  // ═══════════════════════════════════════════════════════════
+  //  Pull-to-Refresh (touch gesture on view panels)
+  // ═══════════════════════════════════════════════════════════
+
+  let _ptrStartY = 0;
+  let _ptrActive = false;
+  let _ptrTriggered = false;
+
+  function _initPullToRefresh() {
+    const mc = $('main-content');
+    if (!mc) return;
+
+    mc.addEventListener('touchstart', (e) => {
+      // Only activate if scrolled to top
+      const panel = mc.querySelector('.view-panel.active');
+      if (!panel || panel.scrollTop > 5) return;
+      _ptrStartY = e.touches[0].clientY;
+      _ptrActive = true;
+      _ptrTriggered = false;
+    }, { passive: true });
+
+    mc.addEventListener('touchmove', (e) => {
+      if (!_ptrActive) return;
+      const dy = e.touches[0].clientY - _ptrStartY;
+      const indicator = $('ptr-indicator');
+      const icon = $('ptr-icon');
+      const text = $('ptr-text');
+      if (dy > 10 && dy < 150) {
+        indicator.classList.add('ptr-pulling');
+        if (dy > 70) {
+          icon.classList.add('ptr-ready');
+          text.textContent = 'Release to refresh';
+          _ptrTriggered = true;
+        } else {
+          icon.classList.remove('ptr-ready');
+          text.textContent = 'Pull to refresh';
+          _ptrTriggered = false;
+        }
+      }
+    }, { passive: true });
+
+    mc.addEventListener('touchend', () => {
+      if (!_ptrActive) return;
+      _ptrActive = false;
+      const indicator = $('ptr-indicator');
+      const icon = $('ptr-icon');
+      const text = $('ptr-text');
+
+      if (_ptrTriggered) {
+        // Show refreshing state
+        icon.innerHTML = '';
+        const spinner = document.createElement('span');
+        spinner.className = 'ptr-spinner';
+        icon.parentNode.insertBefore(spinner, icon);
+        icon.style.display = 'none';
+        text.textContent = 'Refreshing...';
+        indicator.classList.remove('ptr-pulling');
+        indicator.classList.add('ptr-refreshing');
+
+        // Reload current tab data
+        _reloadCurrentTab().finally(() => {
+          setTimeout(() => {
+            indicator.classList.remove('ptr-refreshing');
+            spinner.remove();
+            icon.style.display = '';
+            icon.innerHTML = '\u2193';
+            icon.classList.remove('ptr-ready');
+            text.textContent = 'Pull to refresh';
+            toast('Data refreshed', 'success');
+          }, 400);
+        });
+      } else {
+        indicator.classList.remove('ptr-pulling');
+        icon.classList.remove('ptr-ready');
+        text.textContent = 'Pull to refresh';
+      }
+      _ptrTriggered = false;
+    }, { passive: true });
+  }
+
+  async function _reloadCurrentTab() {
+    const tab = state.tab;
+    try {
+      if (tab === 'pdt')             { state.shootingDays = await api('GET', `/api/productions/${state.prodId}/shooting-days`); renderPDT(); }
+      else if (tab === 'boats')      { const [b,f,a] = await Promise.all([api('GET',`/api/productions/${state.prodId}/boats`), api('GET',`/api/productions/${state.prodId}/boat-functions?context=boats`), api('GET',`/api/productions/${state.prodId}/assignments`)]); state.boats=b; state.functions=f; state.assignments=a; renderBoats(); }
+      else if (tab === 'picture-boats')   { const [b,f,a] = await Promise.all([api('GET',`/api/productions/${state.prodId}/picture-boats`), api('GET',`/api/productions/${state.prodId}/boat-functions?context=picture`), api('GET',`/api/productions/${state.prodId}/picture-boat-assignments`)]); state.pictureBoats=b; state.pbFunctions=f; state.pbAssignments=a; renderPictureBoats(); }
+      else if (tab === 'security-boats')  { await _loadAndRenderSecurityBoats(); }
+      else if (tab === 'transport')       { await _loadAndRenderTransport(); }
+      else if (tab === 'fuel')            { await _loadAndRenderFuel(); }
+      else if (tab === 'labour')          { await _loadAndRenderLabour(); }
+      else if (tab === 'locations')       { state.locationSchedules = null; renderLocations(); }
+      else if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
+      else if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
+      else if (tab === 'budget')          { renderBudget(); }
+      else if (tab === 'dashboard')       { renderDashboard(); }
+    } catch(e) { toast('Refresh failed: ' + e.message, 'error'); }
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -11025,6 +11164,8 @@ const App = (() => {
     _openSearch, _closeSearch,
     // History undo
     _undoFromToast,
+    // FAB
+    fabAction,
     init,
   };
 })();

@@ -535,6 +535,19 @@
     </div>
 
   </div><!-- /main-content -->
+
+  <!-- ── FAB (Floating Action Button) — mobile contextual ──────────── -->
+  <button id="fab-btn" class="fab" style="display:none" onclick="App.fabAction()">
+    <span style="margin-top:-2px">+</span>
+    <span class="fab-label" id="fab-label"></span>
+  </button>
+
+  <!-- ── Pull-to-refresh indicator ─────────────────────────────────── -->
+  <div id="ptr-indicator" class="ptr-indicator">
+    <span id="ptr-icon" class="ptr-arrow">&#8595;</span>
+    <span id="ptr-text">Pull to refresh</span>
+  </div>
+
 </div><!-- /app -->
 
 <!-- ── Day edit modal ──────────────────────────────────────────────────────── -->
@@ -697,38 +710,41 @@
       <label class="form-label">Name *</label>
       <input type="text" id="nb-name" class="form-control" placeholder="Boat name">
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Rate/day ($)</label>
-        <input type="number" id="nb-price" class="form-control" placeholder="0">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Capacity (pax)</label>
-        <input type="text" id="nb-capacity" class="form-control" placeholder="12">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Captain</label>
-        <input type="text" id="nb-captain" class="form-control">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Waves</label>
-        <select id="nb-wave" class="form-control">
-          <option value="Waves">Waves</option>
-          <option value="Big Waves">Big Waves</option>
-          <option value="High Waves">High Waves</option>
-          <option value="Dr boat">Dr boat</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-group" style="display:flex;align-items:center;gap:.5rem">
-      <input type="checkbox" id="nb-night" style="width:16px;height:16px">
-      <label for="nb-night" style="font-size:.82rem;color:var(--text-1)">Night navigation OK</label>
-    </div>
     <div class="form-group">
-      <label class="form-label">Notes</label>
-      <textarea id="nb-notes" class="form-control" rows="2"></textarea>
+      <label class="form-label">Rate/day ($)</label>
+      <input type="number" id="nb-price" class="form-control" placeholder="0">
+    </div>
+    <button type="button" class="modal-advanced-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.textContent=this.nextElementSibling.classList.contains('collapsed')?'Show details \u25BC':'Hide details \u25B2'">Show details &#9660;</button>
+    <div class="modal-advanced collapsed">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Capacity (pax)</label>
+          <input type="text" id="nb-capacity" class="form-control" placeholder="12">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Captain</label>
+          <input type="text" id="nb-captain" class="form-control">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Waves</label>
+          <select id="nb-wave" class="form-control">
+            <option value="Waves">Waves</option>
+            <option value="Big Waves">Big Waves</option>
+            <option value="High Waves">High Waves</option>
+            <option value="Dr boat">Dr boat</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:.5rem;padding-top:1.2rem">
+          <input type="checkbox" id="nb-night" style="width:16px;height:16px">
+          <label for="nb-night" style="font-size:.82rem;color:var(--text-1)">Night nav OK</label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <textarea id="nb-notes" class="form-control" rows="2"></textarea>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeAddBoatModal()">Cancel</button>
@@ -745,38 +761,41 @@
       <label class="form-label">Name *</label>
       <input type="text" id="npb-name" class="form-control" placeholder="Boat name">
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Rate/day ($)</label>
-        <input type="number" id="npb-price" class="form-control" placeholder="0">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Capacity (pax)</label>
-        <input type="text" id="npb-capacity" class="form-control" placeholder="12">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Captain</label>
-        <input type="text" id="npb-captain" class="form-control">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Waves</label>
-        <select id="npb-wave" class="form-control">
-          <option value="Waves">Waves</option>
-          <option value="Big Waves">Big Waves</option>
-          <option value="High Waves">High Waves</option>
-          <option value="Dr boat">Dr boat</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-group" style="display:flex;align-items:center;gap:.5rem">
-      <input type="checkbox" id="npb-night" style="width:16px;height:16px">
-      <label for="npb-night" style="font-size:.82rem;color:var(--text-1)">Night navigation OK</label>
-    </div>
     <div class="form-group">
-      <label class="form-label">Notes</label>
-      <textarea id="npb-notes" class="form-control" rows="2"></textarea>
+      <label class="form-label">Rate/day ($)</label>
+      <input type="number" id="npb-price" class="form-control" placeholder="0">
+    </div>
+    <button type="button" class="modal-advanced-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.textContent=this.nextElementSibling.classList.contains('collapsed')?'Show details \u25BC':'Hide details \u25B2'">Show details &#9660;</button>
+    <div class="modal-advanced collapsed">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Capacity (pax)</label>
+          <input type="text" id="npb-capacity" class="form-control" placeholder="12">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Captain</label>
+          <input type="text" id="npb-captain" class="form-control">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Waves</label>
+          <select id="npb-wave" class="form-control">
+            <option value="Waves">Waves</option>
+            <option value="Big Waves">Big Waves</option>
+            <option value="High Waves">High Waves</option>
+            <option value="Dr boat">Dr boat</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:.5rem;padding-top:1.2rem">
+          <input type="checkbox" id="npb-night" style="width:16px;height:16px">
+          <label for="npb-night" style="font-size:.82rem;color:var(--text-1)">Night nav OK</label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <textarea id="npb-notes" class="form-control" rows="2"></textarea>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeAddPictureBoatModal()">Cancel</button>
@@ -793,39 +812,42 @@
       <label class="form-label">Name *</label>
       <input type="text" id="ntv-name" class="form-control" placeholder="Vehicle name">
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Rate/day ($)</label>
-        <input type="number" id="ntv-price" class="form-control" placeholder="0">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Nr</label>
-        <input type="number" id="ntv-nr" class="form-control" placeholder="">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Type</label>
-        <select id="ntv-type" class="form-control">
-          <option value="MULE">MULE</option>
-          <option value="GOLF CART">GOLF CART</option>
-          <option value="PICK UP">PICK UP</option>
-          <option value="SUV" selected>SUV</option>
-          <option value="TRUCK">TRUCK</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Driver</label>
-        <input type="text" id="ntv-driver" class="form-control">
-      </div>
-    </div>
     <div class="form-group">
-      <label class="form-label">Vendor</label>
-      <input type="text" id="ntv-vendor" class="form-control">
+      <label class="form-label">Rate/day ($)</label>
+      <input type="number" id="ntv-price" class="form-control" placeholder="0">
     </div>
-    <div class="form-group">
-      <label class="form-label">Notes</label>
-      <textarea id="ntv-notes" class="form-control" rows="2"></textarea>
+    <button type="button" class="modal-advanced-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.textContent=this.nextElementSibling.classList.contains('collapsed')?'Show details \u25BC':'Hide details \u25B2'">Show details &#9660;</button>
+    <div class="modal-advanced collapsed">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Nr</label>
+          <input type="number" id="ntv-nr" class="form-control" placeholder="">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Type</label>
+          <select id="ntv-type" class="form-control">
+            <option value="MULE">MULE</option>
+            <option value="GOLF CART">GOLF CART</option>
+            <option value="PICK UP">PICK UP</option>
+            <option value="SUV" selected>SUV</option>
+            <option value="TRUCK">TRUCK</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Driver</label>
+          <input type="text" id="ntv-driver" class="form-control">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Vendor</label>
+          <input type="text" id="ntv-vendor" class="form-control">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <textarea id="ntv-notes" class="form-control" rows="2"></textarea>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeAddTransportVehicleModal()">Cancel</button>
@@ -854,19 +876,22 @@
         </select>
       </div>
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Role / Position</label>
-        <input type="text" id="nw-role" class="form-control" placeholder="e.g. Machinist, Diver">
+    <button type="button" class="modal-advanced-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.textContent=this.nextElementSibling.classList.contains('collapsed')?'Show details \u25BC':'Hide details \u25B2'">Show details &#9660;</button>
+    <div class="modal-advanced collapsed">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Role / Position</label>
+          <input type="text" id="nw-role" class="form-control" placeholder="e.g. Machinist, Diver">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Contact</label>
+          <input type="text" id="nw-contact" class="form-control" placeholder="Phone / email">
+        </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Contact</label>
-        <input type="text" id="nw-contact" class="form-control" placeholder="Phone / email">
+        <label class="form-label">Notes</label>
+        <textarea id="nw-notes" class="form-control" rows="2"></textarea>
       </div>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Notes</label>
-      <textarea id="nw-notes" class="form-control" rows="2"></textarea>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeAddWorkerModal()">Cancel</button>
@@ -1085,17 +1110,20 @@
         <select id="gcw-group" class="form-control"></select>
       </div>
     </div>
-    <div class="form-group">
-      <label class="form-label">Role / Position</label>
-      <input type="text" id="gcw-role" class="form-control" placeholder="e.g. Night Guard">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Contact</label>
-      <input type="text" id="gcw-contact" class="form-control" placeholder="Phone / email">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Notes</label>
-      <textarea id="gcw-notes" class="form-control" rows="2" placeholder="Notes..."></textarea>
+    <button type="button" class="modal-advanced-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.textContent=this.nextElementSibling.classList.contains('collapsed')?'Show details \u25BC':'Hide details \u25B2'">Show details &#9660;</button>
+    <div class="modal-advanced collapsed">
+      <div class="form-group">
+        <label class="form-label">Role / Position</label>
+        <input type="text" id="gcw-role" class="form-control" placeholder="e.g. Night Guard">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Contact</label>
+        <input type="text" id="gcw-contact" class="form-control" placeholder="Phone / email">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <textarea id="gcw-notes" class="form-control" rows="2" placeholder="Notes..."></textarea>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.gcCloseAddWorkerModal()">Cancel</button>
@@ -1112,38 +1140,41 @@
       <label class="form-label">Name *</label>
       <input type="text" id="nsb-name" class="form-control" placeholder="Boat name">
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Rate/day ($)</label>
-        <input type="number" id="nsb-price" class="form-control" placeholder="0">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Capacity (pax)</label>
-        <input type="text" id="nsb-capacity" class="form-control" placeholder="6">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Captain</label>
-        <input type="text" id="nsb-captain" class="form-control">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Waves</label>
-        <select id="nsb-wave" class="form-control">
-          <option value="Waves">Waves</option>
-          <option value="Big Waves">Big Waves</option>
-          <option value="High Waves">High Waves</option>
-          <option value="Dr boat">Dr boat</option>
-        </select>
-      </div>
-    </div>
     <div class="form-group">
-      <label class="form-label">Vendor</label>
-      <input type="text" id="nsb-vendor" class="form-control">
+      <label class="form-label">Rate/day ($)</label>
+      <input type="number" id="nsb-price" class="form-control" placeholder="0">
     </div>
-    <div class="form-group">
-      <label class="form-label">Notes</label>
-      <textarea id="nsb-notes" class="form-control" rows="2"></textarea>
+    <button type="button" class="modal-advanced-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.textContent=this.nextElementSibling.classList.contains('collapsed')?'Show details \u25BC':'Hide details \u25B2'">Show details &#9660;</button>
+    <div class="modal-advanced collapsed">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Capacity (pax)</label>
+          <input type="text" id="nsb-capacity" class="form-control" placeholder="6">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Captain</label>
+          <input type="text" id="nsb-captain" class="form-control">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Waves</label>
+          <select id="nsb-wave" class="form-control">
+            <option value="Waves">Waves</option>
+            <option value="Big Waves">Big Waves</option>
+            <option value="High Waves">High Waves</option>
+            <option value="Dr boat">Dr boat</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Vendor</label>
+          <input type="text" id="nsb-vendor" class="form-control">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <textarea id="nsb-notes" class="form-control" rows="2"></textarea>
+      </div>
     </div>
     <input type="hidden" id="nsb-edit-id" value="">
     <div class="modal-footer">
