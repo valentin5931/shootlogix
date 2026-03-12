@@ -9,32 +9,16 @@ Tables managed:
 Roles: ADMIN, UNIT, TRANSPO, READER
 """
 import os
-import sqlite3
-from contextlib import contextmanager
+import sys
 
-# Re-use the same DB path as database.py (respects DATABASE_PATH env var)
-_default_db = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "shootlogix.db")
-DB_PATH = os.environ.get("DATABASE_PATH", _default_db)
+# Import from the compatibility layer (supports both SQLite and PostgreSQL)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from db_compat import (
+    get_auth_db, get_table_columns, get_table_names, is_postgres,
+)
 
 # Valid membership roles
 VALID_ROLES = ("ADMIN", "UNIT", "TRANSPO", "READER")
-
-
-@contextmanager
-def get_auth_db():
-    """Separate connection context for auth operations."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
 
 def migrate_auth_tables():
@@ -47,7 +31,7 @@ def migrate_auth_tables():
     """
     with get_auth_db() as conn:
         # --- Evolve users table (only if it already exists) ---
-        user_cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+        user_cols = get_table_columns(conn, 'users')
 
         if not user_cols:
             # Fresh deploy: users table not created yet. init_db() handles it.
@@ -66,38 +50,62 @@ def migrate_auth_tables():
 
             # Add 'created_at' column
             if "created_at" not in user_cols:
-                conn.execute(
-                    "ALTER TABLE users ADD COLUMN created_at TEXT DEFAULT (datetime('now'))"
-                )
+                if is_postgres():
+                    conn.execute(
+                        "ALTER TABLE users ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP"
+                    )
+                else:
+                    conn.execute(
+                        "ALTER TABLE users ADD COLUMN created_at TEXT DEFAULT (datetime('now'))"
+                    )
                 print("Auth migration: added users.created_at")
 
         # --- Create project_memberships table ---
-        # Only create tables with FK references to users/productions if those tables exist
-        tables = [r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()]
+        tables = get_table_names(conn)
 
         if "users" in tables:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS project_memberships (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    production_id   INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
-                    role            TEXT NOT NULL DEFAULT 'READER',
-                    created_at      TEXT DEFAULT (datetime('now')),
-                    UNIQUE(user_id, production_id)
-                )
-            """)
+            if is_postgres():
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS project_memberships (
+                        id              SERIAL PRIMARY KEY,
+                        user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        production_id   INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+                        role            TEXT NOT NULL DEFAULT 'READER',
+                        created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(user_id, production_id)
+                    )
+                """)
 
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS refresh_tokens (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    token       TEXT NOT NULL UNIQUE,
-                    expires_at  TEXT NOT NULL,
-                    created_at  TEXT DEFAULT (datetime('now'))
-                )
-            """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS refresh_tokens (
+                        id          SERIAL PRIMARY KEY,
+                        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        token       TEXT NOT NULL UNIQUE,
+                        expires_at  TEXT NOT NULL,
+                        created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+            else:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS project_memberships (
+                        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        production_id   INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+                        role            TEXT NOT NULL DEFAULT 'READER',
+                        created_at      TEXT DEFAULT (datetime('now')),
+                        UNIQUE(user_id, production_id)
+                    )
+                """)
+
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS refresh_tokens (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        token       TEXT NOT NULL UNIQUE,
+                        expires_at  TEXT NOT NULL,
+                        created_at  TEXT DEFAULT (datetime('now'))
+                    )
+                """)
 
             # Create indexes for performance
             conn.execute("""
@@ -147,11 +155,18 @@ def get_user_by_id(user_id):
 def create_user(nickname, password_hash, is_admin=False):
     """Create a new user. Returns the new user id."""
     with get_auth_db() as conn:
-        cur = conn.execute(
-            """INSERT INTO users (name, nickname, email, password_hash, is_admin, created_at)
-               VALUES (?, ?, ?, ?, ?, datetime('now'))""",
-            (nickname, nickname, f"{nickname.lower()}@shootlogix.local", password_hash, 1 if is_admin else 0)
-        )
+        if is_postgres():
+            cur = conn.execute(
+                """INSERT INTO users (name, nickname, email, password_hash, is_admin, created_at)
+                   VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+                (nickname, nickname, f"{nickname.lower()}@shootlogix.local", password_hash, 1 if is_admin else 0)
+            )
+        else:
+            cur = conn.execute(
+                """INSERT INTO users (name, nickname, email, password_hash, is_admin, created_at)
+                   VALUES (?, ?, ?, ?, ?, datetime('now'))""",
+                (nickname, nickname, f"{nickname.lower()}@shootlogix.local", password_hash, 1 if is_admin else 0)
+            )
         return cur.lastrowid
 
 
@@ -286,6 +301,11 @@ def delete_user_refresh_tokens(user_id):
 def cleanup_expired_tokens():
     """Remove all expired refresh tokens."""
     with get_auth_db() as conn:
-        conn.execute(
-            "DELETE FROM refresh_tokens WHERE expires_at < datetime('now')"
-        )
+        if is_postgres():
+            conn.execute(
+                "DELETE FROM refresh_tokens WHERE expires_at < CURRENT_TIMESTAMP"
+            )
+        else:
+            conn.execute(
+                "DELETE FROM refresh_tokens WHERE expires_at < datetime('now')"
+            )

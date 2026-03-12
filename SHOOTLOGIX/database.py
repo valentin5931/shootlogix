@@ -10,26 +10,10 @@ import unicodedata
 from datetime import datetime, timedelta
 from contextlib import contextmanager
 
-# Database path: configurable via DATABASE_PATH env var for production (e.g. Railway volume).
-# Defaults to shootlogix.db in the same directory as this file (local dev).
-_default_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shootlogix.db")
-DB_PATH = os.environ.get("DATABASE_PATH", _default_db)
-
-
-@contextmanager
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=DELETE")
-    conn.execute("PRAGMA foreign_keys=ON")
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+from db_compat import (
+    get_db, get_table_columns, get_table_names, is_postgres,
+    DATABASE_PATH as DB_PATH,
+)
 
 
 def _log_history(conn, table_name, record_id, action, old_data=None, new_data=None):
@@ -45,9 +29,17 @@ def _log_history(conn, table_name, record_id, action, old_data=None, new_data=No
     )
 
 
+def _run_ddl(conn, sql_script):
+    """Execute a DDL script on both SQLite and PostgreSQL."""
+    if is_postgres():
+        conn.executescript(sql_script)  # PgConnectionWrapper handles conversion
+    else:
+        conn.executescript(sql_script)
+
+
 def init_db():
     with get_db() as conn:
-        conn.executescript("""
+        _run_ddl(conn, """
 -- ═══════════════════════════════════════════════
 -- SOCLE COMMUN
 -- ═══════════════════════════════════════════════
@@ -723,7 +715,7 @@ def _migrate_db():
     """Add columns to existing DBs that predate schema additions."""
     with get_db() as conn:
         # boat_assignments.assignment_status
-        ba_cols = [r[1] for r in conn.execute("PRAGMA table_info(boat_assignments)").fetchall()]
+        ba_cols = get_table_columns(conn, 'boat_assignments')
         if 'assignment_status' not in ba_cols:
             conn.execute(
                 "ALTER TABLE boat_assignments ADD COLUMN assignment_status TEXT DEFAULT 'confirmed'"
@@ -735,17 +727,17 @@ def _migrate_db():
             )
             print("Migration: added boat_assignments.day_overrides")
         # boats.vendor
-        b_cols = [r[1] for r in conn.execute("PRAGMA table_info(boats)").fetchall()]
+        b_cols = get_table_columns(conn, 'boats')
         if 'vendor' not in b_cols:
             conn.execute("ALTER TABLE boats ADD COLUMN vendor TEXT")
             print("Migration: added boats.vendor")
         # boat_functions.context
-        bf_cols = [r[1] for r in conn.execute("PRAGMA table_info(boat_functions)").fetchall()]
+        bf_cols = get_table_columns(conn, 'boat_functions')
         if 'context' not in bf_cols:
             conn.execute("ALTER TABLE boat_functions ADD COLUMN context TEXT DEFAULT 'boats'")
             print("Migration: added boat_functions.context")
         # helpers.group_name, helpers.image_path
-        h_cols = [r[1] for r in conn.execute("PRAGMA table_info(helpers)").fetchall()]
+        h_cols = get_table_columns(conn, 'helpers')
         if 'group_name' not in h_cols:
             conn.execute("ALTER TABLE helpers ADD COLUMN group_name TEXT DEFAULT 'GENERAL'")
             print("Migration: added helpers.group_name")
@@ -759,7 +751,7 @@ def _migrate_db():
         if renamed:
             print(f"Migration: renamed {renamed} boat_functions context helpers -> labour")
         # locations.location_type
-        loc_cols = [r[1] for r in conn.execute("PRAGMA table_info(locations)").fetchall()]
+        loc_cols = get_table_columns(conn, 'locations')
         if 'location_type' not in loc_cols:
             conn.execute("ALTER TABLE locations ADD COLUMN location_type TEXT DEFAULT 'game'")
             print("Migration: added locations.location_type")
@@ -776,7 +768,7 @@ def _migrate_db():
                      'security_boat_assignments', 'transport_assignments',
                      'helper_assignments', 'guard_camp_assignments']:
             try:
-                cols = [r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
+                cols = get_table_columns(conn, tbl)
                 if 'pricing_type' not in cols:
                     conn.execute(f"ALTER TABLE {tbl} ADD COLUMN pricing_type TEXT DEFAULT 'standard'")
                     print(f"Migration: added {tbl}.pricing_type")
@@ -788,18 +780,18 @@ def _migrate_db():
                      'security_boat_assignments', 'transport_assignments',
                      'helper_assignments', 'guard_camp_assignments']:
             try:
-                cols = [r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
+                cols = get_table_columns(conn, tbl)
                 if 'include_sunday' not in cols:
                     conn.execute(f"ALTER TABLE {tbl} ADD COLUMN include_sunday INTEGER DEFAULT 1")
-                    # Migrate existing pricing_type values: 'standard' meant Sunday=NO → include_sunday=0
+                    # Migrate existing pricing_type values: 'standard' meant Sunday=NO -> include_sunday=0
                     conn.execute(f"UPDATE {tbl} SET include_sunday=0 WHERE pricing_type='standard'")
-                    # '24_7' meant Sunday=YES → include_sunday=1 (already default)
+                    # '24_7' meant Sunday=YES -> include_sunday=1 (already default)
                     print(f"Migration: added {tbl}.include_sunday (migrated from pricing_type)")
             except Exception:
                 pass  # table may not exist yet
 
         # guard_posts: guards_prep / guards_film / guards_wrap (variable guard count per phase)
-        gp_cols = [r[1] for r in conn.execute("PRAGMA table_info(guard_posts)").fetchall()]
+        gp_cols = get_table_columns(conn, 'guard_posts')
         if 'guards_prep' not in gp_cols:
             conn.execute("ALTER TABLE guard_posts ADD COLUMN guards_prep INTEGER DEFAULT 2")
             conn.execute("ALTER TABLE guard_posts ADD COLUMN guards_film INTEGER DEFAULT 2")
@@ -810,7 +802,7 @@ def _migrate_db():
         for tbl in ['boats', 'picture_boats', 'transport_vehicles', 'helpers',
                      'security_boats', 'guard_camp_workers']:
             try:
-                cols = [r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
+                cols = get_table_columns(conn, tbl)
                 if 'sort_order' not in cols:
                     conn.execute(f"ALTER TABLE {tbl} ADD COLUMN sort_order INTEGER DEFAULT 0")
                     print(f"Migration: added {tbl}.sort_order")

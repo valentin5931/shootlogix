@@ -12,6 +12,7 @@ import tempfile
 import threading
 from flask import Flask, jsonify, request, render_template, abort, Response, g, make_response
 
+from db_compat import get_table_names as _compat_get_table_names, get_backend_info
 from database import (
     init_db, get_db,
     get_productions, get_production, create_production,
@@ -309,10 +310,9 @@ def login_page():
 @app.route("/api/health")
 def health():
     with get_db() as conn:
-        tables = [r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        ).fetchall()]
-    return jsonify({"status": "ok", "tables": tables, "table_count": len(tables)})
+        tables = _compat_get_table_names(conn)
+    info = get_backend_info()
+    return jsonify({"status": "ok", "tables": tables, "table_count": len(tables), "backend": info["backend"]})
 
 
 # ─── Productions ──────────────────────────────────────────────────────────────
