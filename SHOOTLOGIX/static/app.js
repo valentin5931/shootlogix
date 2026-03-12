@@ -243,6 +243,84 @@ const App = (() => {
     }
   }
 
+  // ── AXE 5.4 — Loading Skeletons ────────────────────────────
+  function _skeletonCards(count = 4) {
+    return Array.from({ length: count }, () =>
+      '<div class="skeleton skeleton-card"></div>'
+    ).join('');
+  }
+
+  function _skeletonTable(rows = 6, cols = 10) {
+    let html = '<div class="skeleton-table"><div class="skeleton skeleton-header"></div>';
+    for (let r = 0; r < rows; r++) {
+      html += '<div class="skeleton-row" style="display:flex;gap:2px;margin-bottom:3px">';
+      html += '<div class="skeleton" style="width:120px;height:28px;flex-shrink:0;border-radius:4px"></div>';
+      for (let c = 0; c < cols; c++) {
+        html += '<div class="skeleton skeleton-cell"></div>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  // ── AXE 5.4 — Save Flash (green flash on cell/element) ────
+  let _pendingFlash = null; // { selector, timeout }
+  function _flashSaved(el) {
+    if (!el) return;
+    el.classList.remove('cell-saved');
+    void el.offsetWidth; // force reflow for re-trigger
+    el.classList.add('cell-saved');
+    el.addEventListener('animationend', () => el.classList.remove('cell-saved'), { once: true });
+  }
+
+  function _flashSavedCard(el) {
+    if (!el) return;
+    el.classList.remove('save-flash');
+    void el.offsetWidth;
+    el.classList.add('save-flash');
+    el.addEventListener('animationend', () => el.classList.remove('save-flash'), { once: true });
+  }
+
+  // Queue a flash for after the next render (cell will be re-created by render)
+  function _queueCellFlash(date, funcId) {
+    clearTimeout(_pendingFlash);
+    _pendingFlash = setTimeout(() => {
+      const cell = document.querySelector(`.schedule-cell[data-date="${date}"][data-func="${funcId}"]`);
+      _flashSaved(cell);
+    }, 50);
+  }
+
+  // ── AXE 5.4 — Network Indicator ──────────────────────────
+  let _netFadeTimer = null;
+  function _updateNetIndicator(online) {
+    const el = $('net-indicator');
+    if (!el) return;
+    const label = $('net-label');
+    clearTimeout(_netFadeTimer);
+    el.classList.remove('online', 'offline', 'fade-out');
+    if (online) {
+      el.classList.add('online');
+      if (label) label.textContent = 'Online';
+      // Fade out after 4s when online — stays visible when offline
+      _netFadeTimer = setTimeout(() => el.classList.add('fade-out'), 4000);
+    } else {
+      el.classList.add('offline');
+      if (label) label.textContent = 'Offline';
+    }
+  }
+
+  // ── AXE 5.4 — Unsaved Modifications Counter ───────────────
+  function _updateOfflineCounter() {
+    const el = $('offline-counter');
+    const badge = $('oc-count');
+    if (!el || !badge) return;
+    const count = _offlineQueue.length;
+    badge.textContent = count;
+    el.querySelector('span:last-child').textContent = count === 1 ? 'unsaved change' : 'unsaved changes';
+    el.classList.toggle('visible', count > 0);
+  }
+
   // ── Virtual Schedule (column windowing) ─────────────────────
   // Only renders visible date columns + buffer to avoid rendering 80+ columns
   const VCOL_WIDTH_DESKTOP = 26; // px per column (matches .schedule-cell min-width desktop)
@@ -687,6 +765,7 @@ const App = (() => {
     const queue = [..._offlineQueue];
     _offlineQueue = [];
     _saveOfflineQueue();
+    _updateOfflineCounter();
     let succeeded = 0;
     for (const item of queue) {
       try {
@@ -723,6 +802,7 @@ const App = (() => {
     if (!navigator.onLine && method !== 'GET') {
       _offlineQueue.push({ method, path, body, ts: Date.now() });
       _saveOfflineQueue();
+      _updateOfflineCounter();
       toast('Saved offline - will sync when back online', 'info');
       return body || {};
     }
@@ -2788,6 +2868,7 @@ const App = (() => {
       }
       state.assignments = await api('GET', `/api/productions/${state.prodId}/assignments?context=boats`);
       renderBoats();
+      _queueCellFlash(date, funcId);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -2805,7 +2886,11 @@ const App = (() => {
       await api('PUT', `/api/assignments/${assignmentId}`, { day_overrides: JSON.stringify(overrides) });
       const idx = state.assignments.findIndex(a => a.id === assignmentId);
       if (idx >= 0) state.assignments[idx].day_overrides = JSON.stringify(overrides);
+      const funcId = idx >= 0 ? state.assignments[idx].boat_function_id : null;
+      const lastDate = Object.keys(overrides).pop();
       renderBoats();
+      // AXE 5.4: flash saved cell after render re-creates DOM
+      if (lastDate && funcId) _queueCellFlash(lastDate, funcId);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -2965,10 +3050,13 @@ const App = (() => {
     };
     if (!data.name) { toast('Name is required', 'error'); return; }
     try {
+      // AXE 5.4: flash detail panel on successful save
+      const _flashDetail = () => _flashSavedCard($('boat-detail-overlay')?.querySelector('.bd-inner'));
       if (_detailIsSecurityBoat) {
         const updated = await api('PUT', `/api/security-boats/${_detailBoatId}`, data);
         const idx = state.securityBoats.findIndex(b => b.id === _detailBoatId);
         if (idx >= 0) state.securityBoats[idx] = { ...state.securityBoats[idx], ...updated };
+        _flashDetail();
         closeBoatDetail();
         renderSbBoatList();
         toast('Security boat updated');
@@ -2984,6 +3072,7 @@ const App = (() => {
         const updated = await api('PUT', `/api/helpers/${_detailBoatId}`, wdata);
         const idx = state.labourWorkers.findIndex(w => w.id === _detailBoatId);
         if (idx >= 0) state.labourWorkers[idx] = { ...state.labourWorkers[idx], ...updated };
+        _flashDetail();
         closeBoatDetail();
         renderLabour();
         toast('Worker updated');
@@ -2999,6 +3088,7 @@ const App = (() => {
         const updated = await api('PUT', `/api/guard-camp-workers/${_detailBoatId}`, gcdata);
         const idx = state.gcWorkers.findIndex(w => w.id === _detailBoatId);
         if (idx >= 0) state.gcWorkers[idx] = { ...state.gcWorkers[idx], ...updated };
+        _flashDetail();
         closeBoatDetail();
         renderGuardCamp();
         toast('Guard updated');
@@ -3015,6 +3105,7 @@ const App = (() => {
         const updated = await api('PUT', `/api/transport-vehicles/${_detailBoatId}`, tdata);
         const idx = state.transportVehicles.findIndex(v => v.id === _detailBoatId);
         if (idx >= 0) state.transportVehicles[idx] = { ...state.transportVehicles[idx], ...updated };
+        _flashDetail();
         closeBoatDetail();
         renderTbVehicleList();
         toast('Vehicle updated');
@@ -3022,6 +3113,7 @@ const App = (() => {
         const updated = await api('PUT', `/api/picture-boats/${_detailBoatId}`, data);
         const idx = state.pictureBoats.findIndex(b => b.id === _detailBoatId);
         if (idx >= 0) state.pictureBoats[idx] = { ...state.pictureBoats[idx], ...updated };
+        _flashDetail();
         closeBoatDetail();
         renderPbBoatList();
         toast('Picture boat updated');
@@ -3030,6 +3122,7 @@ const App = (() => {
         const updated = await api('PUT', `/api/boats/${_detailBoatId}`, data);
         const idx = state.boats.findIndex(b => b.id === _detailBoatId);
         if (idx >= 0) state.boats[idx] = { ...state.boats[idx], ...updated };
+        _flashDetail();
         closeBoatDetail();
         renderBoatList();
         toast('Boat updated');
@@ -3705,6 +3798,7 @@ const App = (() => {
       }
       state.pictureAssignments = await api('GET', `/api/productions/${state.prodId}/picture-boat-assignments`);
       renderPictureBoats();
+      _queueCellFlash(date, funcId);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -3718,6 +3812,7 @@ const App = (() => {
       const idx = state.pictureAssignments.findIndex(a => a.id === assignmentId);
       if (idx >= 0) state.pictureAssignments[idx].day_overrides = JSON.stringify(overrides);
       renderPictureBoats();
+      _queueCellFlash(date, funcId);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -4116,6 +4211,9 @@ const App = (() => {
   }
 
   async function _loadAndRenderTransport() {
+    // AXE 5.4: show loading skeletons
+    const rg = $('tb-role-groups'); if (rg) rg.innerHTML = _skeletonCards(3);
+    const sc = $('tb-schedule-container'); if (sc) sc.innerHTML = _skeletonTable();
     try {
       const [vehicles, functions, assignments] = await Promise.all([
         api('GET', `/api/productions/${state.prodId}/transport-vehicles`),
@@ -4538,6 +4636,7 @@ const App = (() => {
       }
       state.transportAssignments = await api('GET', `/api/productions/${state.prodId}/transport-assignments`);
       renderTransport();
+      _queueCellFlash(date, funcId);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -4551,6 +4650,7 @@ const App = (() => {
       const idx = state.transportAssignments.findIndex(a => a.id === assignmentId);
       if (idx >= 0) state.transportAssignments[idx].day_overrides = JSON.stringify(overrides);
       renderTransport();
+      _queueCellFlash(date, funcId);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -4951,6 +5051,8 @@ const App = (() => {
   }
 
   async function _loadAndRenderFuel() {
+    // AXE 5.4: show loading skeleton
+    const fc = $('fuel-content'); if (fc) fc.innerHTML = _skeletonTable(8, 12);
     // Always refresh global fuel prices + locked snapshots from DB
     await _loadFuelGlobals();
     try {
@@ -5193,6 +5295,14 @@ const App = (() => {
       const idx = state.fuelEntries.findIndex(e => e.source_type===srcType && e.assignment_id===asgnId && e.date===date);
       if (idx >= 0) state.fuelEntries[idx] = entry;
       else state.fuelEntries.push(entry);
+      // AXE 5.4: flash saved fuel cell
+      const fuelCells = document.querySelectorAll('.fuel-data-cell');
+      for (const td of fuelCells) {
+        const inp = td.querySelector('input');
+        if (inp && inp.getAttribute('oninput')?.includes(`'${srcType}',${asgnId},'${date}'`)) {
+          _flashSaved(td); break;
+        }
+      }
     } catch(e) { /* silent */ }
   }
 
@@ -5756,6 +5866,9 @@ const App = (() => {
   });
 
   async function _loadAndRenderLabour() {
+    // AXE 5.4: show loading skeletons
+    const rg = $('lb-role-groups'); if (rg) rg.innerHTML = _skeletonCards(3);
+    const sc = $('lb-schedule-container'); if (sc) sc.innerHTML = _skeletonTable();
     try {
       const [workers, functions, assignments] = await Promise.all([
         api('GET', `/api/productions/${state.prodId}/helpers`),
@@ -6407,6 +6520,7 @@ const App = (() => {
       }
       state.labourAssignments = await api('GET', `/api/productions/${state.prodId}/helper-assignments`);
       renderLabour();
+      _queueCellFlash(date, funcId);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -6420,6 +6534,7 @@ const App = (() => {
       const idx = state.labourAssignments.findIndex(a => a.id === assignmentId);
       if (idx >= 0) state.labourAssignments[idx].day_overrides = JSON.stringify(overrides);
       renderLabour();
+      _queueCellFlash(date, funcId);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -6643,6 +6758,9 @@ const App = (() => {
   }
 
   async function _loadAndRenderSecurityBoats() {
+    // AXE 5.4: show loading skeletons
+    const rg = $('sb-role-groups'); if (rg) rg.innerHTML = _skeletonCards(3);
+    const sc = $('sb-schedule-container'); if (sc) sc.innerHTML = _skeletonTable();
     try {
       const [boats, functions, assignments] = await Promise.all([
         api('GET', `/api/productions/${state.prodId}/security-boats`),
@@ -7032,6 +7150,7 @@ const App = (() => {
       }
       state.securityAssignments = await api('GET', `/api/productions/${state.prodId}/security-boat-assignments`);
       renderSecurityBoats();
+      _queueCellFlash(date, funcId);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -7045,6 +7164,7 @@ const App = (() => {
       const idx = state.securityAssignments.findIndex(a => a.id === assignmentId);
       if (idx >= 0) state.securityAssignments[idx].day_overrides = JSON.stringify(overrides);
       renderSecurityBoats();
+      _queueCellFlash(date, funcId);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -8724,6 +8844,9 @@ const App = (() => {
   } catch(e) {}
 
   async function _loadAndRenderGuardCamp() {
+    // AXE 5.4: show loading skeletons
+    const rg = $('gc-role-groups'); if (rg) rg.innerHTML = _skeletonCards(3);
+    const sc = $('gc-schedule-container'); if (sc) sc.innerHTML = _skeletonTable();
     try {
       const [workers, functions, assignments] = await Promise.all([
         api('GET', `/api/productions/${state.prodId}/guard-camp-workers`),
@@ -9370,6 +9493,7 @@ const App = (() => {
       }
       state.gcAssignments = await api('GET', `/api/productions/${state.prodId}/guard-camp-assignments`);
       renderGuardCamp();
+      _queueCellFlash(date, funcId);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -9383,6 +9507,7 @@ const App = (() => {
       const idx = state.gcAssignments.findIndex(a => a.id === assignmentId);
       if (idx >= 0) state.gcAssignments[idx].day_overrides = JSON.stringify(overrides);
       renderGuardCamp();
+      _queueCellFlash(date, funcId);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -9655,6 +9780,8 @@ const App = (() => {
     if (!state.fnbSubTab) state.fnbSubTab = 'achats';
     if (!state.fnbViewMode) state.fnbViewMode = 'week';
 
+    // AXE 5.4: skeleton while loading
+    if (!state.fnbCategories) container.innerHTML = _skeletonTable(5, 8);
     await _fnbLoadAll();
 
     const cats = state.fnbCategories || [];
@@ -10628,6 +10755,10 @@ const App = (() => {
     // Initialize pull-to-refresh gesture
     _initPullToRefresh();
 
+    // AXE 5.4: Init network indicator + offline counter
+    _updateNetIndicator(navigator.onLine);
+    _updateOfflineCounter();
+
     try {
       // Auth: fetch user info and show project selector
       await _loadAuthState();
@@ -11263,6 +11394,8 @@ const App = (() => {
     // Bottom nav & breadcrumb & shortcuts
     toggleBottomNavMore, _updateBreadcrumb,
     openShortcutsPanel, closeShortcutsPanel,
+    // AXE 5.4 — Feedback
+    _updateNetIndicator, _updateOfflineCounter,
     init,
   };
 })();
@@ -11283,9 +11416,13 @@ window.addEventListener('offline', () => {
   banner.className = 'offline-banner';
   banner.textContent = 'You are offline - changes will sync when connection returns';
   document.body.prepend(banner);
+  // AXE 5.4: update network indicator
+  if (typeof App !== 'undefined' && App._updateNetIndicator) App._updateNetIndicator(false);
 });
 
 window.addEventListener('online', () => {
   const banner = document.getElementById('offline-banner');
   if (banner) banner.remove();
+  // AXE 5.4: update network indicator
+  if (typeof App !== 'undefined' && App._updateNetIndicator) App._updateNetIndicator(true);
 });
