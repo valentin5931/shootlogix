@@ -667,7 +667,14 @@ const App = (() => {
       setTab(firstAllowed);
     }
 
-    // 4. Disable draggable for read-only users
+    // 4. Activity button visibility (requires can_view_history or admin)
+    const activityBtn = $('activity-btn');
+    if (activityBtn) {
+      const canViewHistory = _isAdmin() || (authState.globalPermissions && authState.globalPermissions.can_view_history);
+      activityBtn.style.display = canViewHistory ? '' : 'none';
+    }
+
+    // 5. Disable draggable for read-only users
     if (!_canEdit()) {
       document.querySelectorAll('[draggable="true"]').forEach(el => {
         el.setAttribute('draggable', 'false');
@@ -1256,6 +1263,7 @@ const App = (() => {
     'dashboard':      '/static/modules/dashboard.js',
     'alerts':         '/static/modules/alerts.js',
     'admin':          '/static/modules/admin.js',
+    'activity':       '/static/modules/activity.js',
   };
 
   // Dependencies: some modules need other modules loaded first
@@ -1290,6 +1298,7 @@ const App = (() => {
       _loadModule('pdt'),
       _loadModule('boats'),
       _loadModule('alerts'),
+      _loadModule('activity'),
     ]);
   }
 
@@ -1981,6 +1990,10 @@ const App = (() => {
     // Export date range modal (AXE 2.1)
     openExportDateModal, closeExportDateModal, confirmExportDate,
     exportDateShortcut, _selectExportFormat, _exportWithDates,
+    // Activity panel (AXE 4.3) — populated by activity module
+    toggleActivityPanel: () => {}, closeActivityPanel: () => {},
+    loadActivity: () => {}, loadMoreActivity: () => {},
+    loadEntityHistory: () => Promise.resolve([]),
     // Init
     init,
   };

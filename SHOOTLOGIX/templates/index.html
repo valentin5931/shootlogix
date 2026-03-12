@@ -72,6 +72,9 @@
       <span class="dot" style="background:#22C55E"></span>BUDGET
     </button>
     <div style="flex:1"></div>
+    <button class="tab-btn" id="activity-btn" onclick="App.toggleActivityPanel()" title="Activity history" style="font-size:1rem;padding:.3rem .5rem;position:relative">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </button>
     <button class="tab-btn alerts-bell-btn" id="alerts-bell" onclick="App.toggleAlertsPanel()" title="Scheduling alerts & conflicts" style="font-size:1rem;padding:.3rem .5rem;position:relative">
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
       <span id="alerts-badge" class="alerts-badge" style="display:none">0</span>
@@ -1691,6 +1694,60 @@
 <!-- ── PDT tooltip ─────────────────────────────────────────────────────────── -->
 <div id="pdt-tooltip" class="pdt-tooltip hidden"></div>
 
+
+<!-- ── Activity Panel (AXE 4.3) ─────────────────────────────────────────── -->
+<div id="activity-overlay" class="activity-overlay hidden" onclick="if(event.target===this)App.closeActivityPanel()">
+  <div class="activity-panel">
+    <div class="activity-header">
+      <h3>Activity</h3>
+      <button class="btn btn-icon btn-sm" onclick="App.closeActivityPanel()" title="Close">&times;</button>
+    </div>
+    <div class="activity-filters">
+      <select id="activity-filter-module" onchange="App.loadActivity()">
+        <option value="">All modules</option>
+        <option value="shooting_days">PDT</option>
+        <option value="boats">Boats</option>
+        <option value="boat_assignments">Boat Assignments</option>
+        <option value="picture_boats">Picture Boats</option>
+        <option value="picture_boat_assignments">PB Assignments</option>
+        <option value="security_boats">Security Boats</option>
+        <option value="security_boat_assignments">SB Assignments</option>
+        <option value="transport_vehicles">Transport</option>
+        <option value="transport_assignments">Transport Assignments</option>
+        <option value="fuel_entries">Fuel</option>
+        <option value="fuel_machinery">Fuel Machinery</option>
+        <option value="helpers">Labour</option>
+        <option value="helper_assignments">Labour Assignments</option>
+        <option value="guard_camp_workers">Guards</option>
+        <option value="guard_camp_assignments">Guard Assignments</option>
+        <option value="location_sites">Locations</option>
+        <option value="location_schedules">Location Schedule</option>
+        <option value="fnb_categories">FNB</option>
+      </select>
+      <select id="activity-filter-user" onchange="App.loadActivity()">
+        <option value="">All users</option>
+      </select>
+      <select id="activity-filter-action" onchange="App.loadActivity()">
+        <option value="">All actions</option>
+        <option value="create">Create</option>
+        <option value="update">Update</option>
+        <option value="delete">Delete</option>
+        <option value="lock">Lock</option>
+        <option value="unlock">Unlock</option>
+      </select>
+      <div class="activity-date-filters">
+        <input type="date" id="activity-filter-from" onchange="App.loadActivity()" placeholder="From">
+        <input type="date" id="activity-filter-to" onchange="App.loadActivity()" placeholder="To">
+      </div>
+    </div>
+    <div id="activity-feed" class="activity-feed">
+      <div class="activity-loading">Loading...</div>
+    </div>
+    <div class="activity-footer">
+      <button class="btn btn-secondary btn-sm" id="activity-load-more" onclick="App.loadMoreActivity()" style="display:none">Load more</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── Toast ───────────────────────────────────────────────────────────────── -->
 <div id="toast" class="hidden">
