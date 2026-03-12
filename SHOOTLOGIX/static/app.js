@@ -2359,7 +2359,7 @@ const App = (() => {
       const multiSuffix = funcAsgns.length > 1 ? ` +${funcAsgns.length - 1}` : '';
 
       let cells = `<td class="role-name-cell sch-func-cell" style="border-top:2px solid ${color}"
-        title="${esc(func.name)}" onclick="App.onFuncCellClick(event,${func.id})">
+        data-func-id="${func.id}" title="${esc(func.name)}" onclick="App.onFuncCellClick(event,${func.id})">
         <div class="rn-group" style="color:${color}">${esc(func.function_group || 'Special')}</div>
         <div class="${boatLabel ? 'rn-boat' : 'rn-empty'}">${esc(boatLabel ? boatLabel + multiSuffix : func.name)}</div>
       </td>`;
@@ -2384,12 +2384,14 @@ const App = (() => {
         }
 
         if (!filledAsgn) {
-          cells += `<td class="schedule-cell ${weClass}"
-            onclick="App.onDateCellClick(event,${func.id},null,'${dk}')"></td>`;
+          cells += `<td class="schedule-cell ${weClass}" data-func="${func.id}" data-date="${dk}" data-asgn=""
+            onmousedown="App._onScheduleMouseDown(event,${func.id},null,'${dk}')"
+            onmouseover="App._onScheduleMouseOver(event,${func.id},null,'${dk}')"></td>`;
         } else {
           const bg = _scheduleCellBg(filledStatus, color, isWE);
-          cells += `<td class="schedule-cell ${weClass}" style="background:${bg}"
-            onclick="App.onDateCellClick(event,${func.id},${filledAsgn.id},'${dk}')"></td>`;
+          cells += `<td class="schedule-cell ${weClass}" data-func="${func.id}" data-date="${dk}" data-asgn="${filledAsgn.id}" style="background:${bg}"
+            onmousedown="App._onScheduleMouseDown(event,${func.id},${filledAsgn.id},'${dk}')"
+            onmouseover="App._onScheduleMouseOver(event,${func.id},${filledAsgn.id},'${dk}')"></td>`;
         }
       });
 
@@ -2442,6 +2444,171 @@ const App = (() => {
         _debouncedRender('schedule-vscroll', renderSchedule, 100);
       });
     }
+  }
+
+  // ── Multi-select state for schedules ─────────────────────────
+  let _multiSel = {
+    active: false,       // is drag-selecting
+    cells: [],           // [{funcId, assignmentId, date, el}]
+    lastCell: null,      // {funcId, date} for shift+click anchor
+    ctx: 'boats',        // which schedule context
+  };
+
+  function _clearMultiSelect() {
+    _multiSel.cells.forEach(c => { if (c.el) c.el.classList.remove('sch-multi-selected'); });
+    _multiSel.cells = [];
+    _multiSel.active = false;
+    const bar = $('multi-select-bar');
+    if (bar) bar.classList.add('hidden');
+  }
+
+  function _addToMultiSelect(funcId, assignmentId, date, el) {
+    if (_multiSel.cells.some(c => c.funcId === funcId && c.date === date)) return;
+    _multiSel.cells.push({ funcId, assignmentId, date, el });
+    if (el) el.classList.add('sch-multi-selected');
+    _showMultiSelectBar();
+  }
+
+  function _showMultiSelectBar() {
+    let bar = $('multi-select-bar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'multi-select-bar';
+      bar.className = 'multi-select-bar hidden';
+      bar.innerHTML = `
+        <span id="msb-count" style="font-size:.75rem;color:var(--text-1);font-weight:600"></span>
+        <button class="btn btn-sm btn-primary" onclick="App.multiSelectFill()">Fill selected</button>
+        <button class="btn btn-sm btn-secondary" onclick="App.multiSelectClear()">Clear selected</button>
+        <button class="btn btn-sm btn-danger" onclick="App.multiSelectCancel()">Cancel</button>
+      `;
+      document.body.appendChild(bar);
+    }
+    $('msb-count').textContent = `${_multiSel.cells.length} cell(s) selected`;
+    bar.classList.remove('hidden');
+  }
+
+  function multiSelectFill() {
+    const cells = [..._multiSel.cells];
+    _clearMultiSelect();
+    cells.forEach(c => {
+      if (!c.assignmentId) _fillDay(c.funcId, c.date);
+      else _doCellCycle(c.funcId, c.assignmentId, c.date);
+    });
+  }
+
+  function multiSelectClear() {
+    const cells = [..._multiSel.cells];
+    _clearMultiSelect();
+    cells.forEach(c => {
+      if (c.assignmentId) _clearDayOverride(c.assignmentId, c.date);
+    });
+  }
+
+  function multiSelectCancel() {
+    _clearMultiSelect();
+  }
+
+  function _onScheduleMouseDown(event, funcId, assignmentId, date) {
+    if (event.shiftKey && _multiSel.lastCell) {
+      // Shift+click: select range from last to current
+      event.preventDefault();
+      _selectRange(_multiSel.lastCell.funcId, _multiSel.lastCell.date, funcId, date);
+      return;
+    }
+    if (event.ctrlKey || event.metaKey) {
+      // Ctrl+click: toggle single cell in selection
+      event.preventDefault();
+      const el = event.target.closest('td');
+      _addToMultiSelect(funcId, assignmentId, date, el);
+      _multiSel.lastCell = { funcId, date };
+      return;
+    }
+    // Normal click: start drag-select
+    _clearMultiSelect();
+    _multiSel.active = true;
+    _multiSel.lastCell = { funcId, date };
+    const el = event.target.closest('td');
+    _addToMultiSelect(funcId, assignmentId, date, el);
+  }
+
+  function _onScheduleMouseOver(event, funcId, assignmentId, date) {
+    if (!_multiSel.active) return;
+    const el = event.target.closest('td');
+    _addToMultiSelect(funcId, assignmentId, date, el);
+  }
+
+  // Global mouseup to end drag-select
+  document.addEventListener('mouseup', () => {
+    if (_multiSel.active) {
+      _multiSel.active = false;
+      if (_multiSel.cells.length <= 1) {
+        // Single cell click — do normal action
+        const c = _multiSel.cells[0];
+        _clearMultiSelect();
+        if (c) {
+          _multiSel.lastCell = { funcId: c.funcId, date: c.date };
+          if (!c.assignmentId) _fillDay(c.funcId, c.date);
+          else _doCellCycle(c.funcId, c.assignmentId, c.date);
+        }
+      }
+    }
+  });
+
+  function _selectRange(funcId1, date1, funcId2, date2) {
+    // For range selection, select all cells in the rectangle
+    const schedWrap = document.querySelector('.schedule-wrap');
+    if (!schedWrap) return;
+    const allCells = schedWrap.querySelectorAll('td.schedule-cell[data-func][data-date]');
+    const dates = [date1, date2].sort();
+    const funcIds = [funcId1, funcId2];
+    // Find row indices
+    const rows = schedWrap.querySelectorAll('tbody tr');
+    let rowMap = {};
+    rows.forEach((row, i) => {
+      const fc = row.querySelector('.sch-func-cell');
+      if (fc && fc.dataset.funcId) rowMap[fc.dataset.funcId] = i;
+    });
+    allCells.forEach(cell => {
+      const cf = parseInt(cell.dataset.func);
+      const cd = cell.dataset.date;
+      if (cd >= dates[0] && cd <= dates[1]) {
+        const ri1 = rowMap[funcId1] ?? 0, ri2 = rowMap[funcId2] ?? 0;
+        const ri = rowMap[cf];
+        const minR = Math.min(ri1, ri2), maxR = Math.max(ri1, ri2);
+        if (ri !== undefined && ri >= minR && ri <= maxR) {
+          _addToMultiSelect(cf, parseInt(cell.dataset.asgn) || null, cd, cell);
+        }
+      }
+    });
+  }
+
+  async function _clearDayOverride(assignmentId, date) {
+    // Find context and clear the override
+    const asgn = state.assignments.find(a => a.id === assignmentId)
+      || state.pictureAssignments?.find(a => a.id === assignmentId)
+      || state.transportAssignments?.find(a => a.id === assignmentId)
+      || state.labourAssignments?.find(a => a.id === assignmentId)
+      || state.securityAssignments?.find(a => a.id === assignmentId)
+      || state.gcAssignments?.find(a => a.id === assignmentId);
+    if (!asgn) return;
+    const overrides = JSON.parse(asgn.day_overrides || '{}');
+    overrides[date] = 'empty';
+    try {
+      const endpoint = _getAssignmentEndpoint(asgn);
+      if (endpoint) {
+        await api('PUT', endpoint, { day_overrides: JSON.stringify(overrides) });
+        asgn.day_overrides = JSON.stringify(overrides);
+      }
+    } catch (e) { /* silent */ }
+  }
+
+  function _getAssignmentEndpoint(asgn) {
+    if (asgn.boat_id !== undefined && asgn.boat_function_id) return `/api/assignments/${asgn.id}`;
+    if (asgn.picture_boat_id !== undefined) return `/api/picture-boat-assignments/${asgn.id}`;
+    if (asgn.vehicle_id !== undefined) return `/api/transport-assignments/${asgn.id}`;
+    if (asgn.helper_id !== undefined) return `/api/helper-assignments/${asgn.id}`;
+    if (asgn.security_boat_id !== undefined) return `/api/security-boat-assignments/${asgn.id}`;
+    return null;
   }
 
   // ── Schedule cell interactions ─────────────────────────────
@@ -10665,6 +10832,7 @@ const App = (() => {
     openBoatDetail, closeBoatDetail, saveBoatEdit, triggerPhotoUpload, uploadBoatPhoto,
     undoBoat, toggleExport, exportCSV, exportJSON, budgetExportXlsx, logisticsExportXlsx,
     showConfirm, cancelConfirm, confirmDeleteBoat,
+    _onScheduleMouseDown, _onScheduleMouseOver, multiSelectFill, multiSelectClear, multiSelectCancel,
     // Picture Boats
     pbSetBoatView, pbFilterBoats, pbOpenBoatView,
     pbOnBoatDragStart, pbOnBoatDragEnd, pbOnDragOver, pbOnDragLeave, pbOnDrop,
