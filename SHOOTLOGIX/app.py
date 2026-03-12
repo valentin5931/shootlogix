@@ -2160,6 +2160,35 @@ def api_sync_pdt_locations(prod_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/productions/<int:prod_id>/resync-pdt-locations", methods=["POST"])
+def api_resync_all_pdt_locations(prod_id):
+    """Full resync: iterate all shooting days and sync their locations."""
+    prod_or_404(prod_id)
+    days = get_shooting_days(prod_id)
+    total_log = {'created': [], 'matched': [], 'ignored': []}
+    for day in days:
+        day_date = day.get('date')
+        if not day_date:
+            continue
+        locations = []
+        if day.get('location'):
+            locations.append(day['location'])
+        events = get_events_for_day(day['id'])
+        for ev in events:
+            if ev.get('location'):
+                locations.append(ev['location'])
+        if locations:
+            log = sync_pdt_day_to_locations(prod_id, day_date, locations)
+            if log:
+                total_log['created'].extend(log.get('created', []))
+                total_log['matched'].extend(log.get('matched', []))
+                total_log['ignored'].extend(log.get('ignored', []))
+    # Deduplicate
+    total_log['created'] = list(set(total_log['created']))
+    total_log['matched'] = list(set(total_log['matched']))
+    return jsonify(total_log)
+
+
 # ─── Guard Location Schedules ───────────────────────────────────────────────
 
 @app.route("/api/productions/<int:prod_id>/guard-schedules", methods=["GET"])

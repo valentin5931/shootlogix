@@ -7518,6 +7518,7 @@ const App = (() => {
         <div style="margin-left:auto;display:flex;gap:.3rem">
           <button class="btn btn-sm btn-primary" onclick="App.showAddLocationModal()">+ Add Location</button>
           <button class="btn btn-sm btn-secondary" onclick="App.locAutoFill()">Auto-fill from PDT</button>
+          <button class="btn btn-sm btn-secondary" onclick="App.locResyncPdt()" title="Resync all PDT locations (normalized matching)">Resync PDT</button>
           <button class="btn btn-sm btn-secondary" onclick="App.locExportCSV()">Export CSV</button>
         </div>
       </div>
@@ -7831,6 +7832,20 @@ const App = (() => {
       state.locationSchedules = await api('GET', `/api/productions/${state.prodId}/location-schedules`);
       renderLocations();
     } catch(e) { toast('Auto-fill error: ' + e.message, 'error'); }
+  }
+
+  async function locResyncPdt() {
+    try {
+      const result = await api('POST', `/api/productions/${state.prodId}/resync-pdt-locations`);
+      const msgs = [];
+      if (result.created?.length) msgs.push(`Created: ${result.created.join(', ')}`);
+      if (result.matched?.length) msgs.push(`Matched: ${result.matched.length} location(s)`);
+      toast(msgs.length ? msgs.join(' | ') : 'Resync complete, no changes', 'success');
+      // Reload location data
+      state.locationSites = await api('GET', `/api/productions/${state.prodId}/locations`);
+      state.locationSchedules = await api('GET', `/api/productions/${state.prodId}/location-schedules`);
+      renderLocations();
+    } catch(e) { toast('Resync error: ' + e.message, 'error'); }
   }
 
   function locExportCSV() {
@@ -10878,7 +10893,7 @@ const App = (() => {
     showAddSecurityBoatModal, closeAddSecurityBoatModal, saveSecurityBoat,
     deleteSecurityBoatFromModal, openSecurityBoatDetail, deleteSecurityBoat, confirmDeleteSecurityBoat,
     // Locations
-    locSetView, locSetSubTab, locCellClick, locToggleLock, locAutoFill, locExportCSV,
+    locSetView, locSetSubTab, locCellClick, locToggleLock, locAutoFill, locResyncPdt, locExportCSV,
     showAddLocationModal, closeAddLocationModal, editLocationSite,
     saveLocationSite, deleteLocationSite,
     _locModalAddSchedule, _locModalRemoveSchedule,

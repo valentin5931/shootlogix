@@ -6,6 +6,7 @@ import os
 import sqlite3
 import json
 import math
+import unicodedata
 from datetime import datetime, timedelta
 from contextlib import contextmanager
 
@@ -2273,6 +2274,19 @@ def auto_fill_locations_from_pdt(prod_id):
     return created
 
 
+def _normalize_location_name(name):
+    """Normalize a location name for matching: trim, lowercase, remove accents."""
+    if not name:
+        return ''
+    s = name.strip().lower()
+    # Remove accents (e.g. é -> e, ñ -> n)
+    s = unicodedata.normalize('NFD', s)
+    s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+    # Collapse multiple spaces
+    s = ' '.join(s.split())
+    return s
+
+
 def sync_pdt_day_to_locations(prod_id, day_date, locations_from_pdt):
     """Sync a single PDT day's locations to the location_schedules table.
 
@@ -2283,9 +2297,12 @@ def sync_pdt_day_to_locations(prod_id, day_date, locations_from_pdt):
     - Removes 'F' entries on this date that are no longer in the PDT
       (but NEVER touches P or W entries)
     - Respects locked cells: does not modify locked schedule entries
+    Returns: dict with 'created', 'matched', 'ignored' lists for logging.
     """
     if not day_date:
-        return
+        return {'created': [], 'matched': [], 'ignored': []}
+
+    sync_log = {'created': [], 'matched': [], 'ignored': []}
 
     # Normalize and deduplicate location names (skip empty/null)
     loc_names = set()
@@ -2298,23 +2315,36 @@ def sync_pdt_day_to_locations(prod_id, day_date, locations_from_pdt):
         db_sites = [dict(r) for r in conn.execute(
             "SELECT * FROM locations WHERE production_id=?", (prod_id,)
         ).fetchall()]
-        site_lookup = {}  # uppercase name -> (canonical_name, location_type)
+        # Build normalized lookup: normalized_name -> (canonical_name, location_type)
+        site_lookup = {}
+        site_lookup_upper = {}  # Keep uppercase for backward compat
         for s in db_sites:
-            site_lookup[s['name'].upper()] = (s['name'], s.get('location_type', 'game'))
+            norm = _normalize_location_name(s['name'])
+            site_lookup[norm] = (s['name'], s.get('location_type', 'game'))
+            site_lookup_upper[s['name'].upper()] = (s['name'], s.get('location_type', 'game'))
 
         # Resolve each PDT location to a canonical site name, auto-creating if needed
         resolved_names = set()
         for raw_name in loc_names:
+            raw_norm = _normalize_location_name(raw_name)
             raw_upper = raw_name.upper()
-            # Try exact match first
-            if raw_upper in site_lookup:
-                resolved_names.add(site_lookup[raw_upper][0])
+
+            # Try normalized match first
+            if raw_norm in site_lookup:
+                resolved_names.add(site_lookup[raw_norm][0])
+                sync_log['matched'].append(raw_name)
                 continue
-            # Try substring match (existing auto_fill logic)
+            # Fallback: uppercase exact match
+            if raw_upper in site_lookup_upper:
+                resolved_names.add(site_lookup_upper[raw_upper][0])
+                sync_log['matched'].append(raw_name)
+                continue
+            # Try substring match on normalized names
             matched = False
-            for uname, (orig, ltype) in site_lookup.items():
-                if uname in raw_upper or raw_upper in uname:
+            for norm_name, (orig, ltype) in site_lookup.items():
+                if norm_name in raw_norm or raw_norm in norm_name:
                     resolved_names.add(orig)
+                    sync_log['matched'].append(f"{raw_name} -> {orig}")
                     matched = True
                     break
             if not matched:
@@ -2323,8 +2353,11 @@ def sync_pdt_day_to_locations(prod_id, day_date, locations_from_pdt):
                     "INSERT INTO locations (production_id, name, location_type) VALUES (?,?,?)",
                     (prod_id, raw_name, 'game')
                 )
-                site_lookup[raw_upper] = (raw_name, 'game')
+                norm = _normalize_location_name(raw_name)
+                site_lookup[norm] = (raw_name, 'game')
+                site_lookup_upper[raw_upper] = (raw_name, 'game')
                 resolved_names.add(raw_name)
+                sync_log['created'].append(raw_name)
 
         # Get existing F entries on this date (to know what to remove)
         existing_f = conn.execute(
@@ -2387,6 +2420,8 @@ def sync_pdt_day_to_locations(prod_id, day_date, locations_from_pdt):
                 "DELETE FROM location_schedules WHERE production_id=? AND location_name=? AND date=? AND status='F' AND locked=0",
                 (prod_id, name, day_date)
             )
+
+    return sync_log
 
 
 def remove_pdt_film_days_for_date(prod_id, day_date):
