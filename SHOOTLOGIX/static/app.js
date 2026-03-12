@@ -1472,6 +1472,32 @@ const App = (() => {
           App.renderLbRoleCards?.();
         }
       }
+      // Enter key — submit visible modal (AXE 1.12)
+      if (e.key === 'Enter') {
+        const tag = (e.target.tagName || '').toLowerCase();
+        // Don't intercept Enter in textareas (newlines) — use Ctrl+Enter there
+        if (tag === 'textarea') {
+          if (e.ctrlKey || e.metaKey) {
+            // Ctrl+Enter in textarea = submit the modal
+            e.preventDefault();
+            const overlay = e.target.closest('.modal-overlay');
+            if (overlay) {
+              const btn = overlay.querySelector('.modal-footer .btn-primary');
+              if (btn) btn.click();
+            }
+          }
+          return;
+        }
+        // For inputs/selects inside a modal, Enter submits
+        if (tag === 'input' || tag === 'select') {
+          const overlay = e.target.closest('.modal-overlay');
+          if (overlay && !overlay.classList.contains('hidden')) {
+            e.preventDefault();
+            const btn = overlay.querySelector('.modal-footer .btn-primary');
+            if (btn) btn.click();
+          }
+        }
+      }
       // ? key — open shortcuts help (only when not in an input)
       const tag = (e.target.tagName || '').toLowerCase();
       const isInput = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
@@ -1770,7 +1796,151 @@ const App = (() => {
     set drag(v) { _drag = v; },
     get dragJustEnded() { return _dragJustEnded; },
     set dragJustEnded(v) { _dragJustEnded = v; },
+    // Export date range (AXE 2.1)
+    openExportDateModal, closeExportDateModal, confirmExportDate,
+    exportDateShortcut, _selectExportFormat, _exportWithDates,
   };
+
+  // ── Export Date Range Modal (AXE 2.1) ─────────────────────
+  let _exportDateCallback = null;
+  let _exportDateModule = null;
+
+  function openExportDateModal(module, title, formats, callback) {
+    _exportDateCallback = callback;
+    _exportDateModule = module;
+    const overlay = $('export-date-overlay');
+    const titleEl = $('export-date-title');
+    const subtitleEl = $('export-date-subtitle');
+    const formatsEl = $('export-date-formats');
+    if (!overlay) return callback(null, null, formats?.[0]?.key || 'csv');
+
+    titleEl.textContent = title || 'Export';
+    subtitleEl.textContent = `Select date range for ${title || 'export'}`;
+
+    // Format buttons
+    if (formats && formats.length > 1) {
+      formatsEl.innerHTML = `
+        <div style="font-size:.7rem;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem">Format</div>
+        <div style="display:flex;gap:.35rem;flex-wrap:wrap" id="export-format-btns">
+          ${formats.map((f, i) => `
+            <button class="btn btn-sm export-fmt-btn" data-fmt="${f.key}"
+              style="font-size:.72rem;padding:.25rem .6rem;border:1px solid var(--border);${i === 0 ? 'background:#3B82F6;color:#fff;border-color:#3B82F6' : 'background:var(--bg-surface);color:var(--text-2)'}"
+              onclick="App._selectExportFormat('${f.key}')">${f.label}</button>
+          `).join('')}
+        </div>`;
+    } else {
+      formatsEl.innerHTML = '';
+    }
+
+    // Load smart defaults
+    _loadExportDefaults(module);
+
+    overlay.classList.remove('hidden');
+    // Focus the from field
+    setTimeout(() => $('export-date-from')?.focus(), 100);
+  }
+
+  function closeExportDateModal() {
+    const overlay = $('export-date-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    _exportDateCallback = null;
+    _exportDateModule = null;
+  }
+
+  function _selectExportFormat(fmt) {
+    const btns = document.querySelectorAll('.export-fmt-btn');
+    btns.forEach(b => {
+      if (b.dataset.fmt === fmt) {
+        b.style.background = '#3B82F6';
+        b.style.color = '#fff';
+        b.style.borderColor = '#3B82F6';
+      } else {
+        b.style.background = 'var(--bg-surface)';
+        b.style.color = 'var(--text-2)';
+        b.style.borderColor = 'var(--border)';
+      }
+    });
+  }
+
+  function _getSelectedExportFormat() {
+    const active = document.querySelector('.export-fmt-btn[style*="#3B82F6"]');
+    return active ? active.dataset.fmt : 'csv';
+  }
+
+  async function _loadExportDefaults(module) {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    if (!fromEl || !toEl) return;
+    try {
+      const defaults = await api('GET', `/api/productions/${state.prodId}/export-defaults/${module}`);
+      if (defaults.from) fromEl.value = defaults.from;
+      if (defaults.to) toEl.value = defaults.to;
+    } catch (e) {
+      // Fallback: use production dates
+      if (state.production) {
+        fromEl.value = state.production.start_date || '';
+        toEl.value = state.production.end_date || '';
+      }
+    }
+  }
+
+  async function confirmExportDate() {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    const dateFrom = fromEl ? fromEl.value : '';
+    const dateTo = toEl ? toEl.value : '';
+    const fmt = _getSelectedExportFormat();
+
+    // Save preference
+    if (_exportDateModule && state.prodId) {
+      api('POST', `/api/productions/${state.prodId}/export-defaults/${_exportDateModule}`,
+          { from: dateFrom, to: dateTo }).catch(() => {});
+    }
+
+    closeExportDateModal();
+
+    if (_exportDateCallback) {
+      _exportDateCallback(dateFrom, dateTo, fmt);
+    }
+  }
+
+  function exportDateShortcut(type) {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    if (!fromEl || !toEl) return;
+
+    const now = new Date();
+    if (type === 'week') {
+      const day = now.getDay();
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      fromEl.value = monday.toISOString().slice(0, 10);
+      toEl.value = sunday.toISOString().slice(0, 10);
+    } else if (type === 'last-week') {
+      const day = now.getDay();
+      const lastMonday = new Date(now);
+      lastMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1) - 7);
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastMonday.getDate() + 6);
+      fromEl.value = lastMonday.toISOString().slice(0, 10);
+      toEl.value = lastSunday.toISOString().slice(0, 10);
+    } else if (type === 'all') {
+      fromEl.value = '';
+      toEl.value = '';
+    }
+  }
+
+  // Helper: trigger export with date range via authDownload
+  function _exportWithDates(baseUrl, dateFrom, dateTo) {
+    let url = baseUrl;
+    const params = [];
+    if (dateFrom) params.push(`from=${dateFrom}`);
+    if (dateTo) params.push(`to=${dateTo}`);
+    if (params.length) url += (url.includes('?') ? '&' : '?') + params.join('&');
+    authDownload(url);
+  }
 
   // ── Public API ─────────────────────────────────────────────
   const App = {
@@ -1796,6 +1966,9 @@ const App = (() => {
     _updateNetIndicator, _updateOfflineCounter,
     // Groups
     openGroupsModal, closeGroupsModal, addGroup, removeGroup,
+    // Export date range modal (AXE 2.1)
+    openExportDateModal, closeExportDateModal, confirmExportDate,
+    exportDateShortcut, _selectExportFormat, _exportWithDates,
     // Init
     init,
   };
