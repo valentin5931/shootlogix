@@ -850,6 +850,70 @@ const App = (() => {
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
+    _updateBreadcrumb();
+    _updateBottomNav();
+  }
+
+  // ── Breadcrumb ──────────────────────────────────────────────
+  const TAB_LABELS = {
+    dashboard: 'Dashboard', pdt: 'PDT', locations: 'Locations',
+    boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
+    transport: 'Transport', fuel: 'Fuel', labour: 'Labour',
+    guards: 'Guards', fnb: 'FNB', budget: 'Budget', admin: 'Admin',
+  };
+
+  function _updateBreadcrumb(view, entity) {
+    const modEl = $('bc-module');
+    const viewEl = $('bc-view');
+    const entityEl = $('bc-entity');
+    const entitySep = document.querySelector('.bc-entity-sep');
+    if (!modEl) return;
+    modEl.textContent = TAB_LABELS[state.tab] || state.tab;
+    viewEl.textContent = view || 'Overview';
+    if (entity) {
+      entityEl.textContent = entity;
+      entityEl.style.display = '';
+      if (entitySep) entitySep.style.display = '';
+    } else {
+      entityEl.style.display = 'none';
+      if (entitySep) entitySep.style.display = 'none';
+    }
+  }
+
+  // ── Bottom nav sync ────────────────────────────────────────
+  function _updateBottomNav() {
+    const nav = $('bottom-nav');
+    if (!nav) return;
+    // Primary tabs in bottom bar
+    nav.querySelectorAll('.bnav-btn[data-tab]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === state.tab);
+    });
+    // "More" button active if current tab is one of the secondary tabs
+    const primaryTabs = ['dashboard', 'pdt', 'boats', 'budget'];
+    const moreBtn = $('bnav-more-btn');
+    if (moreBtn) {
+      moreBtn.classList.toggle('active', !primaryTabs.includes(state.tab) && state.tab !== 'admin');
+    }
+    // Update active state in more sheet grid
+    document.querySelectorAll('.bnav-more-item[data-tab]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === state.tab);
+    });
+  }
+
+  function toggleBottomNavMore() {
+    const sheet = $('bnav-more-sheet');
+    if (sheet) sheet.classList.toggle('hidden');
+  }
+
+  // ── Keyboard shortcuts help panel ──────────────────────────
+  function openShortcutsPanel() {
+    const overlay = $('shortcuts-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+  }
+
+  function closeShortcutsPanel() {
+    const overlay = $('shortcuts-overlay');
+    if (overlay) overlay.classList.add('hidden');
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1505,6 +1569,7 @@ const App = (() => {
     if (view === 'schedule') renderSchedule();
     else if (view === 'budget') renderBoatBudget();
     else renderRoleCards();
+    _updateBreadcrumb(view.charAt(0).toUpperCase() + view.slice(1));
   }
 
   function filterBoats(f) {
@@ -3290,6 +3355,7 @@ const App = (() => {
       $(`pb-btab-${v}`).classList.toggle('active', v === view);
     });
     renderPictureBoats();
+    _updateBreadcrumb(view.charAt(0).toUpperCase() + view.slice(1));
   }
 
   function pbFilterBoats(f) {
@@ -4077,6 +4143,7 @@ const App = (() => {
       $(`tb-btab-${v}`).classList.toggle('active', v === view);
     });
     renderTransport();
+    _updateBreadcrumb(view.charAt(0).toUpperCase() + view.slice(1));
   }
 
   function tbFilterVehicles(f) {
@@ -4928,6 +4995,7 @@ const App = (() => {
     state.fuelTab = tab;
     _FUEL_TABS.forEach(t => $(`fsn-${t}`)?.classList.toggle('active', t === tab));
     renderFuelTab();
+    _updateBreadcrumb(tab.charAt(0).toUpperCase() + tab.slice(1));
   }
 
   // ── Helper: get assignments for a source type ──────────────────────────────
@@ -5716,6 +5784,7 @@ const App = (() => {
       $(`lb-btab-${v}`)?.classList.toggle('active', v === view);
     });
     renderLabour();
+    _updateBreadcrumb(view.charAt(0).toUpperCase() + view.slice(1));
   }
 
   // ── Worker sidebar ───────────────────────────────────────────
@@ -6601,6 +6670,7 @@ const App = (() => {
       $(`sb-btab-${v}`)?.classList.toggle('active', v === view);
     });
     renderSecurityBoats();
+    _updateBreadcrumb(view.charAt(0).toUpperCase() + view.slice(1));
   }
 
   function sbFilterBoats(f) {
@@ -7479,6 +7549,7 @@ const App = (() => {
   function locSetView(view) {
     state.locView = view;
     renderLocations();
+    _updateBreadcrumb(view === 'schedule' ? 'Schedule' : 'Sites');
   }
 
   function renderLocSchedule() {
@@ -8086,6 +8157,7 @@ const App = (() => {
     $('gd-basecamp-panel')?.classList.toggle('hidden', tab !== 'basecamp');
     if (tab === 'location') renderGuardLocation();
     else renderGuardCamp();
+    _updateBreadcrumb(tab === 'location' ? 'Location Guards' : 'Base Camp');
   }
 
   function _updateGcBadge() {
@@ -8455,6 +8527,8 @@ const App = (() => {
     state.guardView = view;
     if (state.guardSubTab === 'location') renderGuardLocation();
     else renderGuardCamp();
+    const sub = state.guardSubTab === 'location' ? 'Location' : 'Camp';
+    _updateBreadcrumb(`${sub} / ${view.charAt(0).toUpperCase() + view.slice(1)}`);
   }
 
   async function gdlRefresh() {
@@ -9874,6 +9948,7 @@ const App = (() => {
   function fnbSetSubTab(tab) {
     state.fnbSubTab = tab;
     renderFnb();
+    _updateBreadcrumb(tab.charAt(0).toUpperCase() + tab.slice(1));
   }
 
   function fnbSetViewMode(mode) {
@@ -10461,6 +10536,9 @@ const App = (() => {
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
+        closeShortcutsPanel();
+        const moreSheet = $('bnav-more-sheet');
+        if (moreSheet && !moreSheet.classList.contains('hidden')) { moreSheet.classList.add('hidden'); }
         closeDayModal();
         closeAssignModal();
         closeAddBoatModal();
@@ -10511,6 +10589,22 @@ const App = (() => {
           state.lbPendingDate    = null;
           renderLbWorkerList();
           renderLbRoleCards();
+        }
+      }
+      // ? key — open shortcuts help (only when not in an input)
+      const tag = (e.target.tagName || '').toLowerCase();
+      const isInput = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
+      if (e.key === '?' && !isInput && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        openShortcutsPanel();
+      }
+      // Number keys 1-0 for quick tab navigation (not in inputs)
+      if (!isInput && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const numTabs = ['dashboard', 'pdt', 'locations', 'boats', 'picture-boats', 'security-boats', 'transport', 'fuel', 'labour', 'guards'];
+        const idx = '1234567890'.indexOf(e.key);
+        if (idx >= 0 && idx < numTabs.length) {
+          e.preventDefault();
+          setTab(numTabs[idx]);
         }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -11166,6 +11260,9 @@ const App = (() => {
     _undoFromToast,
     // FAB
     fabAction,
+    // Bottom nav & breadcrumb & shortcuts
+    toggleBottomNavMore, _updateBreadcrumb,
+    openShortcutsPanel, closeShortcutsPanel,
     init,
   };
 })();

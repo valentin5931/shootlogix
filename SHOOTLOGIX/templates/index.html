@@ -77,6 +77,7 @@
       EXPORT
     </button>
     <button class="tab-btn" onclick="App.toggleTheme()" title="Toggle light/dark mode" id="theme-toggle-btn" style="font-size:1rem;padding:.3rem .5rem">🌙</button>
+    <button class="tab-btn" onclick="App.openShortcutsPanel()" title="Keyboard shortcuts (?)" style="font-size:.85rem;padding:.3rem .5rem;font-weight:700">?</button>
   </nav>
 
   <!-- ── Main panels ─────────────────────────────────────────────────────── -->
@@ -535,6 +536,112 @@
     </div>
 
   </div><!-- /main-content -->
+
+  <!-- ── Breadcrumb bar (contextual) ─────────────────────────────── -->
+  <div id="breadcrumb-bar" class="breadcrumb-bar">
+    <span id="bc-module" class="bc-segment"></span>
+    <span class="bc-sep">/</span>
+    <span id="bc-view" class="bc-segment"></span>
+    <span class="bc-sep bc-entity-sep" style="display:none">/</span>
+    <span id="bc-entity" class="bc-segment bc-entity" style="display:none"></span>
+  </div>
+
+  <!-- ── Bottom navigation bar (mobile) ──────────────────────────── -->
+  <nav id="bottom-nav" class="bottom-nav">
+    <button class="bnav-btn" data-tab="dashboard" onclick="App.setTab('dashboard')">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9"/><path d="M9 21V9h6v12"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="bnav-btn" data-tab="pdt" onclick="App.setTab('pdt')">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+      <span>PDT</span>
+    </button>
+    <button class="bnav-btn" data-tab="boats" onclick="App.setTab('boats')">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 20c2-1 4-2 6-2s4 1 6 2 4 1 6 0"/><path d="M4 18l1-9h14l1 9"/><path d="M12 3v6"/></svg>
+      <span>Boats</span>
+    </button>
+    <button class="bnav-btn" data-tab="budget" onclick="App.setTab('budget')">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+      <span>Budget</span>
+    </button>
+    <button class="bnav-btn" id="bnav-more-btn" onclick="App.toggleBottomNavMore()">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span>More</span>
+    </button>
+  </nav>
+
+  <!-- ── Bottom nav "More" sheet ─────────────────────────────────── -->
+  <div id="bnav-more-sheet" class="bnav-more-sheet hidden">
+    <div class="bnav-more-backdrop" onclick="App.toggleBottomNavMore()"></div>
+    <div class="bnav-more-content">
+      <div class="bnav-more-header">All modules</div>
+      <div class="bnav-more-grid">
+        <button class="bnav-more-item" data-tab="locations" onclick="App.setTab('locations');App.toggleBottomNavMore()">
+          <span class="dot" style="background:#22C55E"></span>Locations
+        </button>
+        <button class="bnav-more-item" data-tab="picture-boats" onclick="App.setTab('picture-boats');App.toggleBottomNavMore()">
+          <span class="dot" style="background:#8B5CF6"></span>Pic. Boats
+        </button>
+        <button class="bnav-more-item" data-tab="security-boats" onclick="App.setTab('security-boats');App.toggleBottomNavMore()">
+          <span class="dot" style="background:#EF4444"></span>Sec. Boats
+        </button>
+        <button class="bnav-more-item" data-tab="transport" onclick="App.setTab('transport');App.toggleBottomNavMore()">
+          <span class="dot" style="background:#22C55E"></span>Transport
+        </button>
+        <button class="bnav-more-item" data-tab="fuel" onclick="App.setTab('fuel');App.toggleBottomNavMore()">
+          <span class="dot" style="background:#F59E0B"></span>Fuel
+        </button>
+        <button class="bnav-more-item" data-tab="labour" onclick="App.setTab('labour');App.toggleBottomNavMore()">
+          <span class="dot" style="background:#F59E0B"></span>Labour
+        </button>
+        <button class="bnav-more-item" data-tab="guards" onclick="App.setTab('guards');App.toggleBottomNavMore()">
+          <span class="dot" style="background:#06B6D4"></span>Guards
+        </button>
+        <button class="bnav-more-item" data-tab="fnb" onclick="App.setTab('fnb');App.toggleBottomNavMore()">
+          <span class="dot" style="background:#F97316"></span>FNB
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Keyboard shortcuts help panel ───────────────────────────── -->
+  <div id="shortcuts-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeShortcutsPanel()">
+    <div class="shortcuts-panel">
+      <div class="shortcuts-header">
+        <h3>Keyboard Shortcuts</h3>
+        <button class="shortcuts-close" onclick="App.closeShortcutsPanel()">&times;</button>
+      </div>
+      <div class="shortcuts-body">
+        <div class="shortcuts-section">
+          <div class="shortcuts-title">General</div>
+          <div class="shortcut-row"><kbd>?</kbd><span>Show this help</span></div>
+          <div class="shortcut-row"><kbd>Esc</kbd><span>Close modal / deselect</span></div>
+          <div class="shortcut-row"><kbd>Ctrl+K</kbd><span>Open search</span></div>
+          <div class="shortcut-row"><kbd>Ctrl+Z</kbd><span>Undo last action (boats)</span></div>
+        </div>
+        <div class="shortcuts-section">
+          <div class="shortcuts-title">Navigation</div>
+          <div class="shortcut-row"><kbd>1</kbd><span>Dashboard</span></div>
+          <div class="shortcut-row"><kbd>2</kbd><span>PDT</span></div>
+          <div class="shortcut-row"><kbd>3</kbd><span>Locations</span></div>
+          <div class="shortcut-row"><kbd>4</kbd><span>Boats</span></div>
+          <div class="shortcut-row"><kbd>5</kbd><span>Picture Boats</span></div>
+          <div class="shortcut-row"><kbd>6</kbd><span>Security Boats</span></div>
+          <div class="shortcut-row"><kbd>7</kbd><span>Transport</span></div>
+          <div class="shortcut-row"><kbd>8</kbd><span>Fuel</span></div>
+          <div class="shortcut-row"><kbd>9</kbd><span>Labour</span></div>
+          <div class="shortcut-row"><kbd>0</kbd><span>Guards</span></div>
+        </div>
+        <div class="shortcuts-section">
+          <div class="shortcuts-title">Schedule</div>
+          <div class="shortcut-row"><kbd>Enter</kbd><span>Confirm cell / next cell</span></div>
+          <div class="shortcut-row"><kbd>Tab</kbd><span>Next cell</span></div>
+          <div class="shortcut-row"><kbd>Click+Drag</kbd><span>Multi-select cells</span></div>
+          <div class="shortcut-row"><kbd>Shift+Click</kbd><span>Extend selection</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ── FAB (Floating Action Button) — mobile contextual ──────────── -->
   <button id="fab-btn" class="fab" style="display:none" onclick="App.fabAction()">
