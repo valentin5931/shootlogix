@@ -3200,6 +3200,229 @@ def get_budget(prod_id):
     }
 
 
+def _is_assignment_active_on(date_str, assignment):
+    """Check if an assignment is active on a specific date.
+
+    Checks: date within [start, end], not overridden as 'empty',
+    respects include_sunday flag.
+    """
+    start = assignment.get("start_date")
+    end = assignment.get("end_date")
+    if not start or not end:
+        return False
+    if date_str < start[:10] or date_str > end[:10]:
+        # Check if explicitly overridden outside range
+        try:
+            overrides = json.loads(assignment.get("day_overrides") or "{}")
+        except Exception:
+            overrides = {}
+        status = overrides.get(date_str)
+        return bool(status and status != "empty")
+
+    try:
+        overrides = json.loads(assignment.get("day_overrides") or "{}")
+    except Exception:
+        overrides = {}
+
+    if date_str in overrides:
+        return overrides[date_str] and overrides[date_str] != "empty"
+
+    # Check Sunday exclusion
+    if not assignment.get("include_sunday", 1):
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        if d.weekday() == 6:
+            return False
+
+    return True
+
+
+def get_daily_budget(prod_id):
+    """Compute cost breakdown per shooting day across all departments."""
+    prod = get_production(prod_id)
+    if not prod:
+        return {"days": [], "averages": {}}
+
+    shooting_days = get_shooting_days(prod_id)
+    if not shooting_days:
+        return {"days": [], "averages": {}}
+
+    # Build date -> day info map (with day type from events)
+    day_map = {}
+    for sd in shooting_days:
+        date = sd.get("date", "")[:10]
+        if not date:
+            continue
+        events = sd.get("events", [])
+        # Determine day type: game > arena > council > off > standard
+        day_type = "standard"
+        for ev in events:
+            et = ev.get("event_type", "")
+            if et == "game":
+                day_type = "game"
+                break
+            elif et == "arena":
+                day_type = "arena"
+            elif et == "council" and day_type not in ("arena",):
+                day_type = "council"
+            elif et == "off" and day_type == "standard":
+                day_type = "off"
+        day_map[date] = {
+            "date": date,
+            "day_number": sd.get("day_number"),
+            "day_type": day_type,
+            "location": sd.get("location", ""),
+            "boats": 0, "picture_boats": 0, "security_boats": 0,
+            "transport": 0, "labour": 0, "guards": 0,
+            "locations": 0, "fnb": 0, "fuel": 0,
+            "total": 0,
+        }
+
+    all_dates = sorted(day_map.keys())
+    if not all_dates:
+        return {"days": [], "averages": {}}
+    num_days = len(all_dates)
+
+    def _daily_rate(assignment, rate_key):
+        return assignment.get("price_override") or assignment.get(rate_key) or 0
+
+    # --- BOATS ---
+    boat_asgns = get_boat_assignments(prod_id, context='boats')
+    for a in boat_asgns:
+        rate = _daily_rate(a, "boat_daily_rate_estimate")
+        for date in all_dates:
+            if _is_assignment_active_on(date, a):
+                day_map[date]["boats"] += rate
+
+    # --- PICTURE BOATS ---
+    pb_asgns = get_picture_boat_assignments(prod_id)
+    for a in pb_asgns:
+        rate = _daily_rate(a, "boat_daily_rate_estimate")
+        for date in all_dates:
+            if _is_assignment_active_on(date, a):
+                day_map[date]["picture_boats"] += rate
+
+    # --- SECURITY BOATS ---
+    sb_asgns = get_security_boat_assignments(prod_id)
+    for a in sb_asgns:
+        rate = _daily_rate(a, "boat_daily_rate_estimate")
+        for date in all_dates:
+            if _is_assignment_active_on(date, a):
+                day_map[date]["security_boats"] += rate
+
+    # --- TRANSPORT ---
+    tr_asgns = get_transport_assignments(prod_id)
+    for a in tr_asgns:
+        rate = _daily_rate(a, "vehicle_daily_rate_estimate")
+        for date in all_dates:
+            if _is_assignment_active_on(date, a):
+                day_map[date]["transport"] += rate
+
+    # --- LABOUR ---
+    lb_asgns = get_helper_assignments(prod_id)
+    for a in lb_asgns:
+        rate = _daily_rate(a, "helper_daily_rate_estimate")
+        for date in all_dates:
+            if _is_assignment_active_on(date, a):
+                day_map[date]["labour"] += rate
+
+    # --- GUARDS (Base Camp) ---
+    gc_asgns = get_guard_camp_assignments(prod_id)
+    for a in gc_asgns:
+        rate = _daily_rate(a, "helper_daily_rate_estimate")
+        for date in all_dates:
+            if _is_assignment_active_on(date, a):
+                day_map[date]["guards"] += rate
+
+    # --- GUARDS (Location) ---
+    guard_loc_schedules = get_guard_location_schedules(prod_id)
+    for gls in guard_loc_schedules:
+        date = (gls.get("date") or "")[:10]
+        if date in day_map:
+            nb = gls.get("nb_guards", 2)
+            day_map[date]["guards"] += nb * 45
+
+    # --- LOCATIONS ---
+    loc_schedules = get_location_schedules(prod_id)
+    loc_sites = get_location_sites(prod_id)
+    site_pricing = {}
+    for s in loc_sites:
+        site_pricing[s["name"]] = {
+            "price_p": s.get("price_p") or 0,
+            "price_f": s.get("price_f") or 0,
+            "price_w": s.get("price_w") or 0,
+            "global_deal": s.get("global_deal"),
+        }
+    # For global_deal locations, distribute evenly across their scheduled days
+    loc_global_days = {}
+    for ls in loc_schedules:
+        loc_name = ls["location_name"]
+        pricing = site_pricing.get(loc_name, {})
+        if pricing.get("global_deal") and pricing["global_deal"] > 0:
+            loc_global_days.setdefault(loc_name, [])
+            if ls["status"] in ("P", "F", "W"):
+                loc_global_days[loc_name].append(ls)
+        else:
+            date = (ls.get("date") or "")[:10]
+            if date in day_map and ls["status"] in ("P", "F", "W"):
+                price_key = f"price_{ls['status'].lower()}"
+                day_map[date]["locations"] += pricing.get(price_key, 0)
+
+    # Distribute global deals evenly
+    for loc_name, entries in loc_global_days.items():
+        if entries:
+            deal = site_pricing[loc_name]["global_deal"]
+            per_day = deal / len(entries)
+            for ls in entries:
+                date = (ls.get("date") or "")[:10]
+                if date in day_map:
+                    day_map[date]["locations"] += per_day
+
+    # --- FNB (distribute evenly across all days) ---
+    fnb_budget = get_fnb_budget_data(prod_id)
+    fnb_total = sum(c.get("purchase_total", 0) or 0 for c in fnb_budget.get("categories", []))
+    if fnb_total > 0 and num_days > 0:
+        fnb_per_day = fnb_total / num_days
+        for date in all_dates:
+            day_map[date]["fnb"] = round(fnb_per_day, 2)
+
+    # --- FUEL (distribute evenly across all days) ---
+    fuel_total = 145000 + 10300 + 21000 + 3000  # hardcoded totals
+    fuel_per_day = fuel_total / num_days if num_days > 0 else 0
+    for date in all_dates:
+        day_map[date]["fuel"] = round(fuel_per_day, 2)
+
+    # Compute totals per day and round
+    days_list = []
+    for date in all_dates:
+        d = day_map[date]
+        for key in ("boats", "picture_boats", "security_boats", "transport",
+                     "labour", "guards", "locations"):
+            d[key] = round(d[key], 2)
+        d["total"] = round(sum(d[k] for k in (
+            "boats", "picture_boats", "security_boats", "transport",
+            "labour", "guards", "locations", "fnb", "fuel"
+        )), 2)
+        days_list.append(d)
+
+    # Compute averages by day type
+    type_totals = {}
+    for d in days_list:
+        dt = d["day_type"]
+        type_totals.setdefault(dt, {"sum": 0, "count": 0})
+        type_totals[dt]["sum"] += d["total"]
+        type_totals[dt]["count"] += 1
+
+    averages = {}
+    for dt, info in type_totals.items():
+        averages[dt] = round(info["sum"] / info["count"], 2) if info["count"] > 0 else 0
+
+    return {
+        "days": days_list,
+        "averages": averages,
+        "grand_total": round(sum(d["total"] for d in days_list), 2),
+    }
+
+
 # ─── History / Undo ───────────────────────────────────────────────────────────
 
 def get_history(prod_id, limit=50, entity_type=None, entity_id=None):

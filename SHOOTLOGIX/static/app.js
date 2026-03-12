@@ -4150,9 +4150,151 @@ const App = (() => {
         </div>`).join('')}`;
 
       container.innerHTML = html;
+      // After rendering department budget, render daily budget below it
+      _renderDailyBudget(container);
     } catch (e) {
       container.innerHTML = `<div style="color:var(--red);padding:2rem">Error: ${esc(e.message)}</div>`;
     }
+  }
+
+  // ── Daily Budget (AXE 6.2) ─────────────────────────────────────────────
+
+  let _dailySortDesc = true;
+
+  async function _renderDailyBudget(parentContainer) {
+    const wrapper = document.createElement('div');
+    wrapper.id = 'daily-budget-section';
+    wrapper.style.cssText = 'margin-top:1.5rem';
+    wrapper.innerHTML = '<div style="color:var(--text-3);padding:1rem;text-align:center;font-size:.8rem">Loading daily budget...</div>';
+    parentContainer.appendChild(wrapper);
+
+    try {
+      const data = await api('GET', `/api/productions/${state.prodId}/budget/daily`);
+      const days = data.days || [];
+      const averages = data.averages || {};
+      if (!days.length) {
+        wrapper.innerHTML = '<div style="color:var(--text-4);padding:1rem;font-size:.8rem">No shooting days found.</div>';
+        return;
+      }
+
+      _dailyBudgetData = { days, averages, grandTotal: data.grand_total || 0 };
+      _buildDailyBudgetHTML(wrapper);
+    } catch (e) {
+      wrapper.innerHTML = `<div style="color:var(--red);padding:1rem">Error loading daily budget: ${esc(e.message)}</div>`;
+    }
+  }
+
+  let _dailyBudgetData = null;
+
+  function _buildDailyBudgetHTML(wrapper) {
+    const { days, averages, grandTotal } = _dailyBudgetData;
+    const sorted = [...days].sort((a, b) => _dailySortDesc ? b.total - a.total : a.total - b.total);
+
+    // Day type colors and labels
+    const typeColors = { game: '#3B82F6', arena: '#22C55E', council: '#EF4444', off: '#6B7280', standard: '#F59E0B' };
+    const typeLabels = { game: 'Game', arena: 'Arena', council: 'Council', off: 'Off', standard: 'Standard' };
+
+    // Averages comparison cards
+    const avgKeys = Object.keys(averages).sort((a, b) => (averages[b] || 0) - (averages[a] || 0));
+    const maxAvg = Math.max(...Object.values(averages), 1);
+    const avgHTML = avgKeys.length > 0 ? `
+      <div style="margin-bottom:1rem">
+        <div style="font-size:.75rem;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">Average Cost by Day Type</div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          ${avgKeys.map(k => {
+            const color = typeColors[k] || '#6b7280';
+            const pct = (averages[k] / maxAvg * 100).toFixed(0);
+            return `
+            <div style="flex:1;min-width:120px;background:var(--bg-card);border-radius:8px;padding:.6rem .8rem;border:1px solid var(--border)">
+              <div style="display:flex;align-items:center;gap:.35rem;margin-bottom:.35rem">
+                <span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block"></span>
+                <span style="font-size:.7rem;font-weight:600;color:var(--text-2);text-transform:uppercase">${typeLabels[k] || k}</span>
+              </div>
+              <div style="font-size:1.1rem;font-weight:700;color:var(--text-0)">${fmtMoney(averages[k])}</div>
+              <div style="margin-top:.3rem;height:4px;background:var(--bg-surface);border-radius:2px;overflow:hidden">
+                <div style="width:${pct}%;height:100%;background:${color};border-radius:2px"></div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : '';
+
+    // Table header
+    const deptCols = [
+      { key: 'boats', label: 'Boats' },
+      { key: 'picture_boats', label: 'PB' },
+      { key: 'security_boats', label: 'SB' },
+      { key: 'transport', label: 'Transport' },
+      { key: 'labour', label: 'Labour' },
+      { key: 'guards', label: 'Guards' },
+      { key: 'locations', label: 'Loc.' },
+      { key: 'fnb', label: 'FNB' },
+      { key: 'fuel', label: 'Fuel' },
+    ];
+
+    const sortIcon = _dailySortDesc ? '&#9660;' : '&#9650;';
+
+    const tableHTML = `
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table class="budget-table" style="min-width:700px">
+          <thead>
+            <tr>
+              <th style="position:sticky;left:0;z-index:2;background:var(--bg-card)">Date</th>
+              <th>Day</th>
+              <th>Type</th>
+              ${deptCols.map(c => `<th style="text-align:right;font-size:.65rem">${c.label}</th>`).join('')}
+              <th style="text-align:right;cursor:pointer" onclick="App._toggleDailySort()">Total ${sortIcon}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sorted.map((d, i) => {
+              const color = typeColors[d.day_type] || '#6b7280';
+              const maxDay = sorted[0]?.total || 1;
+              const barW = (d.total / maxDay * 100).toFixed(1);
+              return `<tr style="${i % 2 ? 'background:var(--bg-surface)' : ''}">
+                <td style="position:sticky;left:0;z-index:1;background:inherit;font-size:.72rem;white-space:nowrap;color:var(--text-2)">${fmtDate(d.date)}</td>
+                <td style="text-align:center;font-size:.72rem;color:var(--text-3)">J${d.day_number || '?'}</td>
+                <td style="text-align:center">
+                  <span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:.6rem;font-weight:700;color:#fff;background:${color};text-transform:uppercase">${typeLabels[d.day_type] || d.day_type}</span>
+                </td>
+                ${deptCols.map(c => `<td style="text-align:right;font-size:.7rem;color:var(--text-3)">${d[c.key] > 0 ? fmtMoney(d[c.key]) : '<span style="opacity:.3">-</span>'}</td>`).join('')}
+                <td style="text-align:right;font-weight:700;color:var(--text-0);position:relative">
+                  <div style="position:absolute;left:0;top:0;bottom:0;width:${barW}%;background:rgba(59,130,246,.08);border-radius:3px"></div>
+                  <span style="position:relative">${fmtMoney(d.total)}</span>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="font-weight:700;border-top:2px solid var(--border)">
+              <td style="position:sticky;left:0;z-index:1;background:var(--bg-card)">TOTAL</td>
+              <td></td>
+              <td></td>
+              ${deptCols.map(c => {
+                const sum = days.reduce((s, d) => s + (d[c.key] || 0), 0);
+                return `<td style="text-align:right;font-size:.7rem;color:var(--text-2)">${fmtMoney(sum)}</td>`;
+              }).join('')}
+              <td style="text-align:right;color:var(--green)">${fmtMoney(grandTotal)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>`;
+
+    wrapper.innerHTML = `
+      <div class="budget-dept-card">
+        <div class="budget-dept-header">
+          <span style="font-weight:700;font-size:.85rem;color:var(--text-0)">Cost per Shooting Day</span>
+          <span style="font-size:.7rem;color:var(--text-4)">${days.length} days</span>
+        </div>
+        ${avgHTML}
+        ${tableHTML}
+      </div>`;
+  }
+
+  function _toggleDailySort() {
+    _dailySortDesc = !_dailySortDesc;
+    const wrapper = document.getElementById('daily-budget-section');
+    if (wrapper && _dailyBudgetData) _buildDailyBudgetHTML(wrapper);
   }
 
   // ── Global Budget Export (KLAS7_BUDGET_YYMMDD.xlsx) ──────────────────────
@@ -11458,7 +11600,7 @@ const App = (() => {
     // Boat view popup + detail / edit
     openBoatView, closeBoatView,
     openBoatDetail, closeBoatDetail, saveBoatEdit, triggerPhotoUpload, uploadBoatPhoto,
-    undoBoat, toggleExport, exportCSV, exportJSON, budgetExportXlsx, logisticsExportXlsx,
+    undoBoat, toggleExport, exportCSV, exportJSON, budgetExportXlsx, logisticsExportXlsx, _toggleDailySort,
     showConfirm, cancelConfirm, confirmDeleteBoat,
     _onScheduleMouseDown, _onScheduleMouseOver, multiSelectFill, multiSelectClear, multiSelectCancel,
     // Picture Boats

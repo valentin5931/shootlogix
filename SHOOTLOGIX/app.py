@@ -45,7 +45,7 @@ from database import (
     get_fuel_logs,
     get_transport_schedules,
     get_guard_schedules,
-    get_budget,
+    get_budget, get_daily_budget,
     get_history, undo_last_boat_assignment, undo_history_entry,
     get_setting, set_setting,
     working_days,
@@ -4128,6 +4128,15 @@ def api_dashboard(prod_id):
         "alerts": alerts,
         "burn_data": burn_data,
     })
+
+
+# ─── Budget Daily (AXE 6.2) ──────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/budget/daily", methods=["GET"])
+def api_budget_daily(prod_id):
+    """Return cost breakdown per shooting day."""
+    prod_or_404(prod_id)
+    return jsonify_cached(get_daily_budget(prod_id))
 
 
 # ─── Bootstrap ────────────────────────────────────────────────────────────────
