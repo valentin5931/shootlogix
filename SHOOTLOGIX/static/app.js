@@ -1797,6 +1797,8 @@ const App = (() => {
     $('am-notes').value = existingAsgn?.notes || '';
     $('am-price-display').textContent = rate > 0 ? `$${rate.toLocaleString()}/day` : 'Rate not set';
     $('am-include-sunday').checked = existingAsgn?.include_sunday !== 0;
+    _updateBillingLabel();
+    $('am-include-sunday').onchange = _updateBillingLabel;
 
     const datesInfo = $('am-dates-info');
     if (existingAsgn?.start_date) {
@@ -1814,6 +1816,11 @@ const App = (() => {
     $('assign-modal-overlay').classList.add('hidden');
     state.selectedBoat  = null;
     state.pendingFuncId = null;
+  }
+
+  function _updateBillingLabel() {
+    const el = $('am-billing-label');
+    if (el) el.textContent = $('am-include-sunday').checked ? 'Monthly (7d/7)' : 'Per working day (Mon-Sat)';
   }
 
   async function confirmAssignment() {
