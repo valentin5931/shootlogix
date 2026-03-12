@@ -1049,6 +1049,23 @@ select.form-control { cursor: pointer; }
 
 .schedule-table th { background: var(--bg-surface); color: var(--text-3); }
 
+/* ── Sticky headers: first row (dates) + first column (entity names) ──── */
+.schedule-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-surface);
+}
+.schedule-table .role-name-cell {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg-card);
+}
+.schedule-table thead .role-name-cell {
+  z-index: 3;
+}
+
 .schedule-day-th {
   cursor: default;
   min-width: 22px;
