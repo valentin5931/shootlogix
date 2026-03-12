@@ -2800,12 +2800,32 @@ const App = (() => {
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
+  // ── Context-sensitive labels for reused boat-detail modal ──────────────
+  function _setDetailLabels(ctx) {
+    const captainLabel = $('bd-captain-label');
+    const captainInput = $('bd-captain');
+    if (ctx === 'transport') {
+      if (captainLabel) captainLabel.textContent = 'Driver';
+      if (captainInput) captainInput.placeholder = 'Driver name';
+    } else if (ctx === 'labour') {
+      if (captainLabel) captainLabel.textContent = 'Role';
+      if (captainInput) captainInput.placeholder = 'Role / position';
+    } else if (ctx === 'guard_camp') {
+      if (captainLabel) captainLabel.textContent = 'Role';
+      if (captainInput) captainInput.placeholder = 'Guard role / shift';
+    } else {
+      if (captainLabel) captainLabel.textContent = 'Captain';
+      if (captainInput) captainInput.placeholder = 'Captain name';
+    }
+  }
+
   function closeBoatDetail() {
     $('boat-detail-overlay').classList.add('hidden');
     // Restore all potentially hidden rows
     ['bd-group', 'bd-category', 'bd-waves', 'bd-night', 'bd-capacity'].forEach(id => {
       const el = $(id); if (el) { const row = el.closest('tr'); if (row) row.style.display = ''; }
     });
+    _setDetailLabels('boat');
     $('bd-delete-btn').classList.add('hidden');
     _detailBoatId          = null;
     _detailIsPicture       = false;
@@ -4541,11 +4561,14 @@ const App = (() => {
     // Fields — reuse boat modal fields that overlap
     $('bd-name').value     = v.name                || '';
     $('bd-nr').value       = v.vehicle_nr          || '';
-    $('bd-captain').value  = v.driver              || '';  // driver → captain field
+    $('bd-captain').value  = v.driver              || '';
     $('bd-vendor').value   = v.vendor              || '';
     $('bd-rate-est').value = v.daily_rate_estimate || '';
     $('bd-rate-act').value = v.daily_rate_actual   || '';
     $('bd-notes').value    = v.notes               || '';
+
+    // Context-specific labels
+    _setDetailLabels('transport');
 
     // Hide boat-only fields
     const hideIds = ['bd-group', 'bd-category', 'bd-waves', 'bd-night', 'bd-capacity'];
@@ -5847,6 +5870,7 @@ const App = (() => {
     $('bd-rate-est').value = w.daily_rate_estimate  || '';
     $('bd-rate-act').value = w.daily_rate_actual    || '';
     $('bd-notes').value    = w.notes               || '';
+    _setDetailLabels('labour');
     const hideIds = ['bd-group', 'bd-category', 'bd-waves', 'bd-night', 'bd-capacity'];
     hideIds.forEach(id => { const el = $(id); if (el) { const row = el.closest('tr'); if (row) row.style.display = 'none'; } });
     $('bd-delete-btn').classList.remove('hidden');
@@ -8740,6 +8764,7 @@ const App = (() => {
     $('bd-rate-est').value = w.daily_rate_estimate  || '';
     $('bd-rate-act').value = w.daily_rate_actual    || '';
     $('bd-notes').value    = w.notes               || '';
+    _setDetailLabels('guard_camp');
     const hideIds = ['bd-group', 'bd-category', 'bd-waves', 'bd-night', 'bd-capacity'];
     hideIds.forEach(id => { const el = $(id); if (el) { const row = el.closest('tr'); if (row) row.style.display = 'none'; } });
     $('bd-delete-btn').classList.remove('hidden');
