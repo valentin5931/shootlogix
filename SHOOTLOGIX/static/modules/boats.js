@@ -167,6 +167,29 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     } catch (e) { toast('Duplicate error: ' + e.message, 'error'); }
   }
 
+  // ── Duplicate assignment (AXE 10.2) ────────────────────────
+  async function duplicateAssignment(atype, assignmentId, offsetDays) {
+    const offset = offsetDays !== undefined ? offsetDays : 7;
+    try {
+      const copy = await api('POST', `/api/assignments/${atype}/${assignmentId}/duplicate`, { offset_days: offset });
+      toast(`Assignment duplicated (+${offset}d)`);
+      // Reload current tab to reflect changes
+      const tab = state.activeTab || 'boats';
+      if (typeof App.renderTab === 'function') App.renderTab(tab);
+      return copy;
+    } catch (e) { toast('Duplicate error: ' + e.message, 'error'); return null; }
+  }
+
+  // ── Duplicate FNB category (AXE 10.2) ─────────────────────
+  async function duplicateFnbCategory(catId) {
+    try {
+      const result = await api('POST', `/api/fnb-categories/${catId}/duplicate`);
+      toast(`Category "${result.category.name}" duplicated with ${result.items.length} items`);
+      if (typeof App.renderTab === 'function') App.renderTab('fnb');
+      return result;
+    } catch (e) { toast('Duplicate error: ' + e.message, 'error'); return null; }
+  }
+
   // ── Role / function cards ──────────────────────────────────
   function _assignmentForFunc(funcId) {
     return state.assignments.find(a => a.boat_function_id === funcId) || null;
@@ -226,6 +249,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
           </div>
           <div style="display:flex;flex-direction:column;gap:.2rem">
             <button class="btn btn-sm btn-secondary btn-icon" onclick="App.editAssignmentById(${asgn.id})" title="Edit">✎</button>
+            <button class="btn btn-sm btn-secondary btn-icon" onclick="App.duplicateAssignment('${state.activeTab === 'transport' ? 'transport' : state.activeTab === 'labour' ? 'helper' : state.activeTab === 'guards' ? 'guard_camp' : state.activeTab === 'picture-boats' ? 'picture_boat' : state.activeTab === 'security-boats' ? 'security_boat' : 'boat'}',${asgn.id})" title="Duplicate (+7d)">&#x2398;</button>
             <button class="btn btn-sm btn-danger btn-icon" onclick="App.removeAssignmentById(${asgn.id})" title="Remove">✕</button>
           </div>
         </div>
@@ -1344,6 +1368,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
             <span style="flex:1;font-size:.75rem;overflow:hidden;text-overflow:ellipsis;color:var(--text-0)">${esc(boatName)}</span>
             <button class="btn btn-sm btn-icon btn-secondary"
               onclick="App.editAssignmentById(${a.id});App.closeSchedulePopover()" title="Edit">✎</button>
+            <button class="btn btn-sm btn-icon btn-secondary"
+              onclick="App.duplicateAssignment('${state.activeTab === 'transport' ? 'transport' : state.activeTab === 'labour' ? 'helper' : state.activeTab === 'guards' ? 'guard_camp' : state.activeTab === 'picture-boats' ? 'picture_boat' : state.activeTab === 'security-boats' ? 'security_boat' : 'boat'}',${a.id});App.closeSchedulePopover()" title="Duplicate (+7d)">&#x2398;</button>
             ${hasOvr ? `<button class="btn btn-sm btn-icon btn-secondary"
               onclick="App.resetDayOverrides(${a.id})" title="Reset day overrides">↺</button>` : ''}
             <button class="btn btn-sm btn-icon btn-danger"
@@ -2041,6 +2067,8 @@ Object.assign(window.App, {
   _updateBillingLabel,
   assignFromDate,
   duplicateEntity,
+  duplicateAssignment,
+  duplicateFnbCategory,
   onFuncDragStart,
   onFuncDragEnd,
   onFuncDragOver,

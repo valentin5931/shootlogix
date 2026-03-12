@@ -87,6 +87,8 @@ from database import (
     get_comments, get_comment_counts, create_comment, delete_comment,
     get_notifications, get_unread_notification_count, create_notification,
     create_notifications_for_production, mark_notification_read, mark_all_notifications_read,
+    # AXE 10.2 — Duplication
+    duplicate_assignment, duplicate_fnb_category,
 )
 
 from validation import ValidationError, validate_assignment, validate_fuel_entry, validate_shooting_day, validate_date_range, validate_positive_number, validate_required, validate_guard_schedule, validate_assignment_overlap
@@ -2796,6 +2798,33 @@ def api_duplicate_guard_camp_worker(worker_id):
     return jsonify(dict(new_row)), 201
 
 
+# ─── Assignment Duplication (AXE 10.2) ────────────────────────────────────────
+
+_ASSIGNMENT_TABLES = {
+    "boat": "boat_assignments",
+    "picture_boat": "picture_boat_assignments",
+    "security_boat": "security_boat_assignments",
+    "transport": "transport_assignments",
+    "helper": "helper_assignments",
+    "guard_camp": "guard_camp_assignments",
+}
+
+
+@app.route("/api/assignments/<string:atype>/<int:assignment_id>/duplicate", methods=["POST"])
+def api_duplicate_assignment(atype, assignment_id):
+    """Duplicate an assignment with dates shifted +7 days (configurable).
+    Body: { offset_days?: 7 }"""
+    table = _ASSIGNMENT_TABLES.get(atype)
+    if not table:
+        return jsonify({"error": f"Unknown assignment type: {atype}"}), 400
+    data = request.json or {}
+    offset = int(data.get("offset_days", 7))
+    result = duplicate_assignment(table, assignment_id, offset)
+    if not result:
+        return jsonify({"error": "Assignment not found"}), 404
+    return jsonify(result), 201
+
+
 @app.route("/api/guard-camp-workers/<int:worker_id>/upload-image", methods=["POST"])
 def api_upload_guard_camp_worker_image(worker_id):
     if 'image' not in request.files:
@@ -3047,6 +3076,15 @@ def api_update_fnb_category(cat_id):
 def api_delete_fnb_category(cat_id):
     delete_fnb_category(cat_id)
     return jsonify({"deleted": cat_id})
+
+
+@app.route("/api/fnb-categories/<int:cat_id>/duplicate", methods=["POST"])
+def api_duplicate_fnb_category(cat_id):
+    """Duplicate a FNB category with all its items."""
+    result = duplicate_fnb_category(cat_id)
+    if not result:
+        return jsonify({"error": "Category not found"}), 404
+    return jsonify(result), 201
 
 
 @app.route("/api/productions/<int:prod_id>/fnb-items", methods=["GET"])

@@ -205,6 +205,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
             onclick="App.editFnbCategory(${cat.id})">
           <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${cat.color};margin-right:.4rem;vertical-align:middle"></span>
           <span style="font-size:.75rem;font-weight:700;color:${cat.color}">${esc(cat.name)}</span>
+          <button class="btn btn-xs" style="margin-left:.5rem;font-size:.55rem;padding:0 .3rem;opacity:.6" title="Duplicate category with items"
+            onclick="event.stopPropagation();App.duplicateFnbCategory(${cat.id})">&#x2398; Dup</button>
         </td>
         <td></td>`;
 
