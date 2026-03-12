@@ -8535,6 +8535,9 @@ const App = (() => {
   function showAddGuardModal() {
     $('ngp-name').value = '';
     $('ngp-rate').value = '45';
+    $('ngp-guards-prep').value = '2';
+    $('ngp-guards-film').value = '2';
+    $('ngp-guards-wrap').value = '2';
     $('ngp-notes').value = '';
     $('ngp-edit-id').value = '';
     $('gp-modal-title').textContent = 'Add Guard Post';
@@ -8548,6 +8551,9 @@ const App = (() => {
     if (!post) return;
     $('ngp-name').value = post.name || '';
     $('ngp-rate').value = String(post.daily_rate || 45);
+    $('ngp-guards-prep').value = String(post.guards_prep ?? 2);
+    $('ngp-guards-film').value = String(post.guards_film ?? 2);
+    $('ngp-guards-wrap').value = String(post.guards_wrap ?? 2);
     $('ngp-notes').value = post.notes || '';
     $('ngp-edit-id').value = String(post.id);
     $('gp-modal-title').textContent = 'Edit Guard Post';
@@ -8567,6 +8573,9 @@ const App = (() => {
     const data = {
       name,
       daily_rate: parseFloat($('ngp-rate').value) || 45,
+      guards_prep: parseInt($('ngp-guards-prep').value) || 2,
+      guards_film: parseInt($('ngp-guards-film').value) || 2,
+      guards_wrap: parseInt($('ngp-guards-wrap').value) || 2,
       notes: $('ngp-notes').value.trim(),
     };
     try {

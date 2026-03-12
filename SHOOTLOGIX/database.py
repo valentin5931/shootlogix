@@ -764,6 +764,14 @@ def _migrate_db():
             except Exception:
                 pass  # table may not exist yet
 
+        # guard_posts: guards_prep / guards_film / guards_wrap (variable guard count per phase)
+        gp_cols = [r[1] for r in conn.execute("PRAGMA table_info(guard_posts)").fetchall()]
+        if 'guards_prep' not in gp_cols:
+            conn.execute("ALTER TABLE guard_posts ADD COLUMN guards_prep INTEGER DEFAULT 2")
+            conn.execute("ALTER TABLE guard_posts ADD COLUMN guards_film INTEGER DEFAULT 2")
+            conn.execute("ALTER TABLE guard_posts ADD COLUMN guards_wrap INTEGER DEFAULT 2")
+            print("Migration: added guard_posts.guards_prep/guards_film/guards_wrap")
+
 
 # ─── Working days ─────────────────────────────────────────────────────────────
 
@@ -2532,12 +2540,16 @@ def lock_guard_location_schedules(prod_id, dates, locked):
 def sync_guard_location_from_locations(prod_id):
     """Sync guard_location_schedules from location_schedules.
     For each location/date with P/F/W activity, ensure a guard_location_schedule
-    entry exists (with default nb_guards based on location_type).
+    entry exists (with default nb_guards from guard_post config per phase).
     Remove entries where the location no longer has activity.
     Returns the full list of guard_location_schedules."""
     loc_sites = get_location_sites(prod_id)
     loc_schedules = get_location_schedules(prod_id)
     type_by_name = {s['name']: s.get('location_type', 'game') for s in loc_sites}
+
+    # Build guard_post lookup by name for phase-based defaults
+    guard_posts = get_guard_posts(prod_id)
+    gp_by_name = {gp['name']: gp for gp in guard_posts}
 
     # Build set of active (location_name, date) from location_schedules
     active_pairs = set()
@@ -2552,18 +2564,24 @@ def sync_guard_location_from_locations(prod_id):
         ).fetchall()
         existing_pairs = {(r['location_name'], r['date']): dict(r) for r in existing}
 
-        # Insert missing entries with default nb_guards
+        # Insert missing entries with default nb_guards from guard_post config
         for ls in loc_schedules:
             key = (ls['location_name'], ls['date'])
             if key not in existing_pairs:
-                loc_type = type_by_name.get(ls['location_name'], 'game')
-                default_guards = 4 if loc_type == 'tribal_camp' else 2
+                status = ls.get('status', 'P')
+                gp = gp_by_name.get(ls['location_name'])
+                if gp:
+                    phase_map = {'P': 'guards_prep', 'F': 'guards_film', 'W': 'guards_wrap'}
+                    default_guards = gp.get(phase_map.get(status, 'guards_film'), 2) or 2
+                else:
+                    loc_type = type_by_name.get(ls['location_name'], 'game')
+                    default_guards = 4 if loc_type == 'tribal_camp' else 2
                 conn.execute(
                     """INSERT OR IGNORE INTO guard_location_schedules
                        (production_id, location_name, date, status, nb_guards, locked)
                        VALUES (?,?,?,?,?,0)""",
                     (prod_id, ls['location_name'], ls['date'],
-                     ls.get('status', 'P'), default_guards)
+                     status, default_guards)
                 )
 
         # Remove entries where the location no longer has activity
@@ -2674,7 +2692,7 @@ def get_guard_posts(prod_id):
 
 
 def create_guard_post(data):
-    cols = ["production_id", "name", "daily_rate", "notes"]
+    cols = ["production_id", "name", "daily_rate", "notes", "guards_prep", "guards_film", "guards_wrap"]
     fields = {k: data[k] for k in cols if k in data}
     placeholders = ", ".join("?" * len(fields))
     col_names = ", ".join(fields.keys())
@@ -2688,7 +2706,7 @@ def create_guard_post(data):
 
 
 def update_guard_post(post_id, data):
-    allowed = ["name", "daily_rate", "notes"]
+    allowed = ["name", "daily_rate", "notes", "guards_prep", "guards_film", "guards_wrap"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
