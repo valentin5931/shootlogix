@@ -1574,10 +1574,29 @@ const App = (() => {
           ${rate}
           ${isAssigned && boatAsgns.length ? `<div style="font-size:.6rem;color:var(--accent);margin-top:.1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">→ ${boatAsgns.map(a => esc(a.function_name || '')).join(', ')}</div>` : ''}
         </div>
-        <button class="boat-edit-btn" title="Edit boat"
-          onclick="event.stopPropagation();App.openBoatDetail(${b.id})">✎</button>
+        <div style="display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;align-self:flex-start">
+          <button class="boat-edit-btn" title="Edit boat"
+            onclick="event.stopPropagation();App.openBoatDetail(${b.id})">&#x270E;</button>
+          <button class="card-delete-btn" title="Delete boat"
+            onclick="event.stopPropagation();App.confirmDeleteBoat(${b.id},'${esc(b.name).replace(/'/g,"\\'")}',${boatAsgns.length})">&#x1F5D1;</button>
+        </div>
       </div>`;
     }).join('');
+  }
+
+  // ── Delete boat from card ──────────────────────────────────
+  function confirmDeleteBoat(boatId, boatName, assignmentCount) {
+    const impact = assignmentCount > 0 ? `\n${assignmentCount} assignment(s) will also be deleted.` : '';
+    showConfirm(`Delete boat "${boatName}"?${impact}`, async () => {
+      try {
+        await api('DELETE', `/api/boats/${boatId}`);
+        state.boats = state.boats.filter(b => b.id !== boatId);
+        state.assignments = state.assignments.filter(a => a.boat_id !== boatId);
+        closeBoatDetail();
+        renderBoats();
+        toast('Boat deleted');
+      } catch (e) { toast('Error: ' + e.message, 'error'); }
+    });
   }
 
   // ── Role / function cards ──────────────────────────────────
@@ -3134,10 +3153,29 @@ const App = (() => {
           ${rate}
           ${isAssigned && boatAsgns.length ? `<div style="font-size:.6rem;color:var(--accent);margin-top:.1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">→ ${boatAsgns.map(a => esc(a.function_name || '')).join(', ')}</div>` : ''}
         </div>
-        <button class="boat-edit-btn" title="Edit boat"
-          onclick="event.stopPropagation();App.openPictureBoatDetail(${b.id})">✎</button>
+        <div style="display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;align-self:flex-start">
+          <button class="boat-edit-btn" title="Edit boat"
+            onclick="event.stopPropagation();App.openPictureBoatDetail(${b.id})">&#x270E;</button>
+          <button class="card-delete-btn" title="Delete picture boat"
+            onclick="event.stopPropagation();App.confirmDeletePictureBoat(${b.id},'${esc(b.name).replace(/'/g,"\\'")}',${boatAsgns.length})">&#x1F5D1;</button>
+        </div>
       </div>`;
     }).join('');
+  }
+
+  // ── Delete picture boat from card ──────────────────────────
+  function confirmDeletePictureBoat(pbId, boatName, assignmentCount) {
+    const impact = assignmentCount > 0 ? `\n${assignmentCount} assignment(s) will also be deleted.` : '';
+    showConfirm(`Delete picture boat "${boatName}"?${impact}`, async () => {
+      try {
+        await api('DELETE', `/api/picture-boats/${pbId}`);
+        state.pictureBoats = state.pictureBoats.filter(b => b.id !== pbId);
+        state.pictureAssignments = state.pictureAssignments.filter(a => a.picture_boat_id !== pbId);
+        closeBoatDetail();
+        renderPictureBoats();
+        toast('Picture boat deleted');
+      } catch (e) { toast('Error: ' + e.message, 'error'); }
+    });
   }
 
   function renderPbRoleCards() {
@@ -3901,10 +3939,29 @@ const App = (() => {
           ${rate}
           ${isAssigned && vAsgns.length ? `<div style="font-size:.6rem;color:var(--accent);margin-top:.1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">→ ${vAsgns.map(a => esc(a.function_name || '')).join(', ')}</div>` : ''}
         </div>
-        <button class="boat-edit-btn" title="Edit vehicle"
-          onclick="event.stopPropagation();App.openTransportVehicleDetail(${v.id})">✎</button>
+        <div style="display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;align-self:flex-start">
+          <button class="boat-edit-btn" title="Edit vehicle"
+            onclick="event.stopPropagation();App.openTransportVehicleDetail(${v.id})">&#x270E;</button>
+          <button class="card-delete-btn" title="Delete vehicle"
+            onclick="event.stopPropagation();App.confirmDeleteVehicle(${v.id},'${esc(v.name).replace(/'/g,"\\'")}',${vAsgns.length})">&#x1F5D1;</button>
+        </div>
       </div>`;
     }).join('');
+  }
+
+  // ── Delete vehicle from card ──────────────────────────────
+  function confirmDeleteVehicle(vehicleId, vehicleName, assignmentCount) {
+    const impact = assignmentCount > 0 ? `\n${assignmentCount} assignment(s) will also be deleted.` : '';
+    showConfirm(`Delete vehicle "${vehicleName}"?${impact}`, async () => {
+      try {
+        await api('DELETE', `/api/transport-vehicles/${vehicleId}`);
+        state.transportVehicles = state.transportVehicles.filter(v => v.id !== vehicleId);
+        state.transportAssignments = state.transportAssignments.filter(a => a.vehicle_id !== vehicleId);
+        closeBoatDetail();
+        renderTransport();
+        toast('Vehicle deleted');
+      } catch (e) { toast('Error: ' + e.message, 'error'); }
+    });
   }
 
   function renderTbRoleCards() {
@@ -5516,10 +5573,29 @@ const App = (() => {
           ${rate}
           ${isAssigned && wAsgns.length ? `<div style="font-size:.6rem;color:var(--accent);margin-top:.1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">&rarr; ${wAsgns.map(a => esc(a.function_name || '')).join(', ')}</div>` : ''}
         </div>
-        <button class="boat-edit-btn" title="Edit worker"
-          onclick="event.stopPropagation();App.openWorkerDetail(${w.id})">&#x270E;</button>
+        <div style="display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;align-self:flex-start">
+          <button class="boat-edit-btn" title="Edit worker"
+            onclick="event.stopPropagation();App.openWorkerDetail(${w.id})">&#x270E;</button>
+          <button class="card-delete-btn" title="Delete worker"
+            onclick="event.stopPropagation();App.confirmDeleteWorker(${w.id},'${esc(w.name).replace(/'/g,"\\'")}',${wAsgns.length})">&#x1F5D1;</button>
+        </div>
       </div>`;
     }).join('');
+  }
+
+  // ── Delete worker from card ──────────────────────────────
+  function confirmDeleteWorker(workerId, workerName, assignmentCount) {
+    const impact = assignmentCount > 0 ? `\n${assignmentCount} assignment(s) will also be deleted.` : '';
+    showConfirm(`Delete worker "${workerName}"?${impact}`, async () => {
+      try {
+        await api('DELETE', `/api/helpers/${workerId}`);
+        state.labourWorkers = state.labourWorkers.filter(w => w.id !== workerId);
+        state.labourAssignments = state.labourAssignments.filter(a => a.helper_id !== workerId);
+        closeBoatDetail();
+        renderLabour();
+        toast('Worker deleted');
+      } catch (e) { toast('Error: ' + e.message, 'error'); }
+    });
   }
 
   // ── Inline rate editing (Labour) ──────────────────────────────
@@ -6381,10 +6457,29 @@ const App = (() => {
           ${rate}
           ${isAssigned && boatAsgns.length ? `<div style="font-size:.6rem;color:var(--accent);margin-top:.1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${boatAsgns.map(a => esc(a.function_name || '')).join(', ')}</div>` : ''}
         </div>
-        <button class="boat-edit-btn" title="Edit boat"
-          onclick="event.stopPropagation();App.openSecurityBoatDetail(${b.id})">&#9998;</button>
+        <div style="display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;align-self:flex-start">
+          <button class="boat-edit-btn" title="Edit boat"
+            onclick="event.stopPropagation();App.openSecurityBoatDetail(${b.id})">&#9998;</button>
+          <button class="card-delete-btn" title="Delete security boat"
+            onclick="event.stopPropagation();App.confirmDeleteSecurityBoat(${b.id},'${esc(b.name).replace(/'/g,"\\'")}',${boatAsgns.length})">&#x1F5D1;</button>
+        </div>
       </div>`;
     }).join('');
+  }
+
+  // ── Delete security boat from card ──────────────────────────
+  function confirmDeleteSecurityBoat(sbId, boatName, assignmentCount) {
+    const impact = assignmentCount > 0 ? `\n${assignmentCount} assignment(s) will also be deleted.` : '';
+    showConfirm(`Delete security boat "${boatName}"?${impact}`, async () => {
+      try {
+        await api('DELETE', `/api/security-boats/${sbId}`);
+        state.securityBoats = state.securityBoats.filter(b => b.id !== sbId);
+        state.securityAssignments = state.securityAssignments.filter(a => a.security_boat_id !== sbId);
+        closeBoatDetail();
+        renderSecurityBoats();
+        toast('Security boat deleted');
+      } catch (e) { toast('Error: ' + e.message, 'error'); }
+    });
   }
 
   // ── Security Boats Cards view (role cards with drag-drop) ────
@@ -8414,10 +8509,29 @@ const App = (() => {
           ${rate}
           ${isAssigned && wAsgns.length ? `<div style="font-size:.6rem;color:var(--accent);margin-top:.1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">&rarr; ${wAsgns.map(a => esc(a.function_name || '')).join(', ')}</div>` : ''}
         </div>
-        <button class="boat-edit-btn" title="Edit guard"
-          onclick="event.stopPropagation();App.gcOpenWorkerDetail(${w.id})">&#x270E;</button>
+        <div style="display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;align-self:flex-start">
+          <button class="boat-edit-btn" title="Edit guard"
+            onclick="event.stopPropagation();App.gcOpenWorkerDetail(${w.id})">&#x270E;</button>
+          <button class="card-delete-btn" title="Delete guard"
+            onclick="event.stopPropagation();App.confirmDeleteGuardCampWorker(${w.id},'${esc(w.name).replace(/'/g,"\\'")}',${wAsgns.length})">&#x1F5D1;</button>
+        </div>
       </div>`;
     }).join('');
+  }
+
+  // ── Delete guard camp worker from card ──────────────────────
+  function confirmDeleteGuardCampWorker(workerId, workerName, assignmentCount) {
+    const impact = assignmentCount > 0 ? `\n${assignmentCount} assignment(s) will also be deleted.` : '';
+    showConfirm(`Delete guard "${workerName}"?${impact}`, async () => {
+      try {
+        await api('DELETE', `/api/guard-camp-workers/${workerId}`);
+        state.gcWorkers = state.gcWorkers.filter(w => w.id !== workerId);
+        state.gcAssignments = state.gcAssignments.filter(a => a.helper_id !== workerId);
+        closeBoatDetail();
+        renderGuardCamp();
+        toast('Guard deleted');
+      } catch (e) { toast('Error: ' + e.message, 'error'); }
+    });
   }
 
   // ── Role / function cards (Guard Camp) ─────────────────────────
@@ -10513,7 +10627,7 @@ const App = (() => {
     openBoatView, closeBoatView,
     openBoatDetail, closeBoatDetail, saveBoatEdit, triggerPhotoUpload, uploadBoatPhoto,
     undoBoat, toggleExport, exportCSV, exportJSON, budgetExportXlsx, logisticsExportXlsx,
-    showConfirm, cancelConfirm,
+    showConfirm, cancelConfirm, confirmDeleteBoat,
     // Picture Boats
     pbSetBoatView, pbFilterBoats, pbOpenBoatView,
     pbOnBoatDragStart, pbOnBoatDragEnd, pbOnDragOver, pbOnDragLeave, pbOnDrop,
@@ -10521,7 +10635,7 @@ const App = (() => {
     pbEditAssignmentById, pbRemoveAssignmentById, pbConfirmDeleteFunc,
     pbOnDateCellClick, pbOnFuncCellClick, pbAssignFromDate,
     showAddPictureBoatModal, closeAddPictureBoatModal, createPictureBoat,
-    openPictureBoatDetail, deletePictureBoat, _detailBoatIdForBtn,
+    openPictureBoatDetail, deletePictureBoat, confirmDeletePictureBoat, _detailBoatIdForBtn,
     pbToggleExport, pbExportCSV, pbExportJSON,
     openGroupsModal, closeGroupsModal, addGroup, removeGroup,
     // Transport
@@ -10532,7 +10646,7 @@ const App = (() => {
     tbOnDateCellClick, tbOnFuncCellClick, tbAssignFromDate,
     tbToggleDayLock, tbToggleExport, tbExportCSV, tbExportJSON,
     showAddTransportVehicleModal, closeAddTransportVehicleModal, createTransportVehicle,
-    openTransportVehicleDetail,
+    openTransportVehicleDetail, confirmDeleteVehicle,
     // Fuel
     fuelSetTab, fuelAutoFill, fuelToggleDayLock,
     fuelCellInput, fuelRowTypeChange,
@@ -10548,7 +10662,7 @@ const App = (() => {
     lbOnDateCellClick, lbOnFuncCellClick, lbAssignFromDate,
     lbToggleDayLock, lbToggleExport, lbExportCSV,
     showAddWorkerModal, closeAddWorkerModal, createWorker,
-    openWorkerDetail, lbStartInlineRateEdit, lbSaveWorkerRate, renderLbWorkerList,
+    openWorkerDetail, confirmDeleteWorker, lbStartInlineRateEdit, lbSaveWorkerRate, renderLbWorkerList,
     // Security Boats
     sbSetView, sbFilterBoats, sbOpenBoatView,
     sbOnBoatDragStart, sbOnBoatDragEnd, sbOnDragOver, sbOnDragLeave, sbOnDrop,
@@ -10557,7 +10671,7 @@ const App = (() => {
     sbOnDateCellClick, sbOnFuncCellClick, sbAssignFromDate,
     sbToggleDayLock, sbToggleExport, sbExportCSV, sbExportJSON,
     showAddSecurityBoatModal, closeAddSecurityBoatModal, saveSecurityBoat,
-    deleteSecurityBoatFromModal, openSecurityBoatDetail, deleteSecurityBoat,
+    deleteSecurityBoatFromModal, openSecurityBoatDetail, deleteSecurityBoat, confirmDeleteSecurityBoat,
     // Locations
     locSetView, locSetSubTab, locCellClick, locToggleLock, locAutoFill, locExportCSV,
     showAddLocationModal, closeAddLocationModal, editLocationSite,
@@ -10578,7 +10692,7 @@ const App = (() => {
     gcOnDateCellClick, gcOnFuncCellClick, gcAssignFromDate,
     gcToggleDayLock, gcToggleExport, gcExportCSV,
     gcShowAddWorkerModal, gcCloseAddWorkerModal, gcCreateWorker,
-    gcOpenWorkerDetail,
+    gcOpenWorkerDetail, confirmDeleteGuardCampWorker,
     // FNB
     fnbSetSubTab, fnbSetViewMode, fnbCellClick, fnbCellClear, fnbExportCSV,
     showFnbCatModal, closeFnbCatModal, editFnbCategory, saveFnbCategory, deleteFnbCategory,

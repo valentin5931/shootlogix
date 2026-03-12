@@ -1846,6 +1846,7 @@ def update_guard_camp_worker(worker_id, data):
 
 def delete_guard_camp_worker(worker_id):
     with get_db() as conn:
+        conn.execute("DELETE FROM guard_camp_assignments WHERE helper_id=?", (worker_id,))
         conn.execute("DELETE FROM guard_camp_workers WHERE id=?", (worker_id,))
 
 
@@ -2755,6 +2756,9 @@ def update_fnb_category(cat_id, data):
 
 def delete_fnb_category(cat_id):
     with get_db() as conn:
+        # Cascade: delete entries for items in this category, then items, then category
+        conn.execute("DELETE FROM fnb_entries WHERE item_id IN (SELECT id FROM fnb_items WHERE category_id=?)", (cat_id,))
+        conn.execute("DELETE FROM fnb_items WHERE category_id=?", (cat_id,))
         conn.execute("DELETE FROM fnb_categories WHERE id=?", (cat_id,))
 
 
@@ -2809,6 +2813,7 @@ def update_fnb_item(item_id, data):
 
 def delete_fnb_item(item_id):
     with get_db() as conn:
+        conn.execute("DELETE FROM fnb_entries WHERE item_id=?", (item_id,))
         conn.execute("DELETE FROM fnb_items WHERE id=?", (item_id,))
 
 

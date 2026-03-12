@@ -1409,6 +1409,24 @@ body.schedule-dragging * { cursor: col-resize !important; }
 }
 .boat-edit-btn:hover { color: var(--accent); background: rgba(59,130,246,.1); }
 
+/* ── Card delete button ─────────────────────────────────────────────────── */
+
+.card-delete-btn {
+  background: none;
+  border: none;
+  color: var(--text-4);
+  font-size: .7rem;
+  cursor: pointer;
+  padding: .2rem .3rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  transition: color .15s, background .15s;
+  opacity: 0;
+}
+.boat-card:hover .card-delete-btn { opacity: 1; }
+.card-delete-btn:hover { color: var(--red); background: rgba(239,68,68,.12); }
+
 /* ── Boat view popup (large card) ────────────────────────────────────────── */
 
 .boat-view-box {
