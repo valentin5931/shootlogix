@@ -2084,6 +2084,47 @@ body.schedule-dragging * { cursor: col-resize !important; }
   border-color: var(--danger, #EF4444);
 }
 
+/* Permissions grid (RBAC V2) */
+.perm-table {
+  font-size: 0.85rem;
+}
+.perm-table th, .perm-table td {
+  text-align: center;
+  padding: 0.4rem 0.5rem;
+}
+.perm-table th:first-child, .perm-table td:first-child {
+  text-align: left;
+  min-width: 120px;
+}
+.perm-table input[type="radio"],
+.perm-table input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+.perm-table input:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.perm-grid-wrapper {
+  max-width: 750px;
+}
+.perm-shortcuts .btn-sm {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.75rem;
+}
+.perm-global label {
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+
+@media (max-width: 768px) {
+  .perm-table { font-size: 0.75rem; }
+  .perm-table th, .perm-table td { padding: 0.3rem 0.25rem; }
+  .perm-table th:first-child, .perm-table td:first-child { min-width: 80px; }
+  .perm-grid-wrapper { overflow-x: auto; }
+}
+
 /* ═══════════════════════════════════════════════════════════
    DASHBOARD
    ═══════════════════════════════════════════════════════════ */

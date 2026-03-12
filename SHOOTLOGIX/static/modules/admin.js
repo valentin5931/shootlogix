@@ -37,6 +37,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     if (tab === 'users') _adminLoadUsers();
     else if (tab === 'projects') _adminLoadProjects();
     else if (tab === 'invitations') _adminLoadInvitations();
+    else if (tab === 'permissions') _adminLoadPermissions();
   }
 
   async function _adminLoadUsers() {
@@ -312,6 +313,233 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
 
 
+  // ═══════════════════════════════════════════════════════════════
+  // PERMISSIONS (RBAC V2)
+  // ═══════════════════════════════════════════════════════════════
+
+  const ALL_MODULES = [
+    'pdt', 'locations', 'boats', 'picture-boats', 'security-boats',
+    'transport', 'fuel', 'labour', 'guards', 'fnb', 'budget',
+  ];
+
+  const MODULE_LABELS = {
+    'pdt': 'PDT', 'locations': 'Locations', 'boats': 'Boats',
+    'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
+    'transport': 'Transport', 'fuel': 'Fuel', 'labour': 'Labour',
+    'guards': 'Guards', 'fnb': 'F&B', 'budget': 'Budget',
+  };
+
+  let _permProjects = [];
+  let _permMembers = [];
+  let _permCurrentPerms = null;
+  let _permCurrentUserId = null;
+  let _permCurrentProjId = null;
+
+  async function _adminLoadPermissions() {
+    try {
+      _permProjects = await api('GET', '/api/admin/projects');
+      const sel = $('admin-perm-project');
+      if (sel) {
+        sel.innerHTML = _permProjects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+      }
+      await adminPermLoadMembers();
+    } catch (e) { toast('Failed to load permissions: ' + e.message, 'error'); }
+  }
+
+  async function adminPermLoadMembers() {
+    const sel = $('admin-perm-project');
+    if (!sel || !sel.value) return;
+    _permCurrentProjId = sel.value;
+    try {
+      _permMembers = await api('GET', `/api/admin/projects/${sel.value}/members`);
+      const userSel = $('admin-perm-user');
+      if (userSel) {
+        userSel.innerHTML = _permMembers.map(m =>
+          `<option value="${m.user_id}">${esc(m.nickname)}${m.is_admin ? ' (ADMIN)' : ''}</option>`
+        ).join('');
+      }
+      await adminPermLoadPerms();
+    } catch (e) { toast('Failed to load members: ' + e.message, 'error'); }
+  }
+
+  async function adminPermLoadPerms() {
+    const userSel = $('admin-perm-user');
+    if (!userSel || !userSel.value) { $('admin-perm-grid').innerHTML = ''; return; }
+    _permCurrentUserId = userSel.value;
+    try {
+      const data = await api('GET', `/api/admin/projects/${_permCurrentProjId}/members/${_permCurrentUserId}/permissions`);
+      _permCurrentPerms = data;
+      _renderPermGrid(data);
+    } catch (e) { toast('Failed to load permissions: ' + e.message, 'error'); }
+  }
+
+  function _renderPermGrid(data) {
+    const el = $('admin-perm-grid');
+    if (!el) return;
+
+    if (data.is_admin) {
+      el.innerHTML = '<p style="color:var(--text-3);padding:1rem">Admin users have full access. No permissions to configure.</p>';
+      return;
+    }
+
+    const mods = data.modules || {};
+    const glob = data.global || {};
+
+    let html = `<div class="perm-grid-wrapper">
+      <div class="perm-shortcuts" style="margin-bottom:0.75rem;display:flex;gap:0.5rem">
+        <button class="btn btn-sm" onclick="App.adminPermPreset('all-write')">All Write</button>
+        <button class="btn btn-sm" onclick="App.adminPermPreset('all-read')">All Read</button>
+        <button class="btn btn-sm" onclick="App.adminPermPreset('none')">None</button>
+      </div>
+      <table class="admin-table perm-table">
+        <thead>
+          <tr>
+            <th>Module</th>
+            <th>None</th>
+            <th>Read</th>
+            <th>Write</th>
+            <th>Export</th>
+            <th>Import</th>
+            <th title="See financial data">$$$ Read</th>
+            <th title="Edit prices/rates">$$$ Write</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+    for (const mod of ALL_MODULES) {
+      const p = mods[mod] || { access: 'none', can_export: false, can_import: false, money_read: false, money_write: false };
+      html += `<tr data-module="${mod}">
+        <td><strong>${MODULE_LABELS[mod]}</strong></td>
+        <td><input type="radio" name="access-${mod}" value="none" ${p.access === 'none' ? 'checked' : ''} onchange="App.adminPermChanged()"></td>
+        <td><input type="radio" name="access-${mod}" value="read" ${p.access === 'read' ? 'checked' : ''} onchange="App.adminPermChanged()"></td>
+        <td><input type="radio" name="access-${mod}" value="write" ${p.access === 'write' ? 'checked' : ''} onchange="App.adminPermChanged()"></td>
+        <td><input type="checkbox" class="perm-cb" data-perm="can_export" data-mod="${mod}" ${p.can_export ? 'checked' : ''}></td>
+        <td><input type="checkbox" class="perm-cb" data-perm="can_import" data-mod="${mod}" ${p.can_import ? 'checked' : ''}></td>
+        <td><input type="checkbox" class="perm-cb" data-perm="money_read" data-mod="${mod}" ${p.money_read ? 'checked' : ''}></td>
+        <td><input type="checkbox" class="perm-cb" data-perm="money_write" data-mod="${mod}" ${p.money_write ? 'checked' : ''}></td>
+      </tr>`;
+    }
+
+    html += `</tbody></table>
+      <div class="perm-global" style="margin-top:1rem;padding:0.75rem;background:var(--bg-2);border-radius:8px">
+        <strong>Global Permissions</strong>
+        <div style="display:flex;gap:1.5rem;margin-top:0.5rem">
+          <label style="display:flex;align-items:center;gap:0.4rem">
+            <input type="checkbox" id="perm-lock-unlock" ${glob.can_lock_unlock ? 'checked' : ''}>
+            Lock / Unlock dates
+          </label>
+          <label style="display:flex;align-items:center;gap:0.4rem">
+            <input type="checkbox" id="perm-view-history" ${glob.can_view_history ? 'checked' : ''}>
+            View activity history
+          </label>
+        </div>
+      </div>
+      <div style="margin-top:1rem;display:flex;gap:0.5rem">
+        <button class="btn btn-primary btn-sm" onclick="App.adminPermSave()">Save Permissions</button>
+      </div>
+    </div>`;
+
+    el.innerHTML = html;
+    adminPermChanged(); // Apply initial validation state
+  }
+
+  function adminPermChanged() {
+    // Enforce constraints: can_import requires write, money_write requires money_read
+    for (const mod of ALL_MODULES) {
+      const access = document.querySelector(`input[name="access-${mod}"]:checked`)?.value || 'none';
+      const importCb = document.querySelector(`[data-perm="can_import"][data-mod="${mod}"]`);
+      const moneyReadCb = document.querySelector(`[data-perm="money_read"][data-mod="${mod}"]`);
+      const moneyWriteCb = document.querySelector(`[data-perm="money_write"][data-mod="${mod}"]`);
+      const exportCb = document.querySelector(`[data-perm="can_export"][data-mod="${mod}"]`);
+
+      // If access is 'none', disable all checkboxes
+      if (access === 'none') {
+        [exportCb, importCb, moneyReadCb, moneyWriteCb].forEach(cb => {
+          if (cb) { cb.disabled = true; cb.checked = false; }
+        });
+      } else {
+        [exportCb, moneyReadCb].forEach(cb => { if (cb) cb.disabled = false; });
+        // import requires write
+        if (importCb) {
+          importCb.disabled = access !== 'write';
+          if (access !== 'write') importCb.checked = false;
+        }
+        // money_write requires money_read
+        if (moneyWriteCb) {
+          moneyWriteCb.disabled = !moneyReadCb?.checked;
+          if (!moneyReadCb?.checked) moneyWriteCb.checked = false;
+        }
+      }
+    }
+  }
+
+  function adminPermPreset(preset) {
+    for (const mod of ALL_MODULES) {
+      const radios = document.querySelectorAll(`input[name="access-${mod}"]`);
+      radios.forEach(r => {
+        if (preset === 'all-write') r.checked = r.value === 'write';
+        else if (preset === 'all-read') r.checked = r.value === 'read';
+        else if (preset === 'none') r.checked = r.value === 'none';
+      });
+
+      const exportCb = document.querySelector(`[data-perm="can_export"][data-mod="${mod}"]`);
+      const importCb = document.querySelector(`[data-perm="can_import"][data-mod="${mod}"]`);
+      const mrCb = document.querySelector(`[data-perm="money_read"][data-mod="${mod}"]`);
+      const mwCb = document.querySelector(`[data-perm="money_write"][data-mod="${mod}"]`);
+
+      if (preset === 'all-write') {
+        if (exportCb) exportCb.checked = true;
+        if (importCb) importCb.checked = true;
+        if (mrCb) mrCb.checked = true;
+        if (mwCb) mwCb.checked = false;
+      } else if (preset === 'all-read') {
+        if (exportCb) exportCb.checked = true;
+        if (importCb) importCb.checked = false;
+        if (mrCb) mrCb.checked = true;
+        if (mwCb) mwCb.checked = false;
+      } else {
+        [exportCb, importCb, mrCb, mwCb].forEach(cb => { if (cb) cb.checked = false; });
+      }
+    }
+    adminPermChanged();
+  }
+
+  async function adminPermSave() {
+    if (!_permCurrentUserId || !_permCurrentProjId) return;
+
+    const modules = {};
+    for (const mod of ALL_MODULES) {
+      const access = document.querySelector(`input[name="access-${mod}"]:checked`)?.value || 'none';
+      modules[mod] = {
+        access,
+        can_export: !!document.querySelector(`[data-perm="can_export"][data-mod="${mod}"]`)?.checked,
+        can_import: !!document.querySelector(`[data-perm="can_import"][data-mod="${mod}"]`)?.checked,
+        money_read: !!document.querySelector(`[data-perm="money_read"][data-mod="${mod}"]`)?.checked,
+        money_write: !!document.querySelector(`[data-perm="money_write"][data-mod="${mod}"]`)?.checked,
+      };
+    }
+
+    const global_perms = {
+      can_lock_unlock: !!$('perm-lock-unlock')?.checked,
+      can_view_history: !!$('perm-view-history')?.checked,
+    };
+
+    try {
+      await api('PUT', `/api/admin/projects/${_permCurrentProjId}/members/${_permCurrentUserId}/permissions`, {
+        modules, global: global_perms,
+      });
+      toast('Permissions saved');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // Listen for money_read changes to enforce money_write dependency
+  document.addEventListener('change', (e) => {
+    if (e.target.matches && e.target.matches('[data-perm="money_read"]')) {
+      adminPermChanged();
+    }
+  });
+
+
 // Register module functions on App
 Object.assign(window.App, {
   _adminLoadInvitations,
@@ -333,4 +561,11 @@ Object.assign(window.App, {
   adminShowCreateProject,
   adminShowCreateUser,
   adminShowInvite,
+  // Permissions (RBAC V2)
+  _adminLoadPermissions,
+  adminPermLoadMembers,
+  adminPermLoadPerms,
+  adminPermChanged,
+  adminPermPreset,
+  adminPermSave,
 });

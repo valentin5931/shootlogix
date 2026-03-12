@@ -5,8 +5,11 @@ Tables managed:
   - users (modified: add nickname, is_admin, created_at columns)
   - project_memberships (new: user_id, production_id, role)
   - refresh_tokens (new: for JWT refresh token storage)
+  - user_permissions (new: granular per-module permissions — RBAC V2)
+  - user_global_permissions (new: cross-module permissions — RBAC V2)
 
-Roles: ADMIN, UNIT, TRANSPO, READER
+Roles: ADMIN, UNIT, TRANSPO, READER (V1 — kept for backward compat)
+RBAC V2: ADMIN flag + per-user, per-module configurable permissions
 """
 import os
 import sys
@@ -129,6 +132,74 @@ def migrate_auth_tables():
                 ON users(nickname)
             """)
 
+        # --- RBAC V2: Create user_permissions table ---
+        if "user_permissions" not in tables:
+            if is_postgres():
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_permissions (
+                        id              SERIAL PRIMARY KEY,
+                        user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        production_id   INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+                        module          TEXT NOT NULL,
+                        access          TEXT NOT NULL DEFAULT 'none',
+                        can_export      INTEGER DEFAULT 0,
+                        can_import      INTEGER DEFAULT 0,
+                        money_read      INTEGER DEFAULT 0,
+                        money_write     INTEGER DEFAULT 0,
+                        UNIQUE(user_id, production_id, module)
+                    )
+                """)
+            else:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_permissions (
+                        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        production_id   INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+                        module          TEXT NOT NULL,
+                        access          TEXT NOT NULL DEFAULT 'none',
+                        can_export      INTEGER DEFAULT 0,
+                        can_import      INTEGER DEFAULT 0,
+                        money_read      INTEGER DEFAULT 0,
+                        money_write     INTEGER DEFAULT 0,
+                        UNIQUE(user_id, production_id, module)
+                    )
+                """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_user_permissions_user_prod
+                ON user_permissions(user_id, production_id)
+            """)
+            print("Auth migration: created user_permissions table (RBAC V2)")
+
+        # --- RBAC V2: Create user_global_permissions table ---
+        if "user_global_permissions" not in tables:
+            if is_postgres():
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_global_permissions (
+                        id              SERIAL PRIMARY KEY,
+                        user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        production_id   INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+                        can_lock_unlock INTEGER DEFAULT 0,
+                        can_view_history INTEGER DEFAULT 0,
+                        UNIQUE(user_id, production_id)
+                    )
+                """)
+            else:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_global_permissions (
+                        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        production_id   INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+                        can_lock_unlock INTEGER DEFAULT 0,
+                        can_view_history INTEGER DEFAULT 0,
+                        UNIQUE(user_id, production_id)
+                    )
+                """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_user_global_perms_user_prod
+                ON user_global_permissions(user_id, production_id)
+            """)
+            print("Auth migration: created user_global_permissions table (RBAC V2)")
+
     print("Auth migration: complete")
 
 
@@ -189,8 +260,10 @@ def update_user_password(user_id, password_hash):
 
 
 def delete_user(user_id):
-    """Delete a user and all their memberships."""
+    """Delete a user and all their memberships and permissions."""
     with get_auth_db() as conn:
+        conn.execute("DELETE FROM user_permissions WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM user_global_permissions WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM project_memberships WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM refresh_tokens WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
@@ -309,3 +382,164 @@ def cleanup_expired_tokens():
             conn.execute(
                 "DELETE FROM refresh_tokens WHERE expires_at < datetime('now')"
             )
+
+
+# --- RBAC V2: Permission helpers ---
+
+# All 11 modules governed by the permission system
+ALL_MODULES = [
+    "pdt", "locations", "boats", "picture-boats", "security-boats",
+    "transport", "fuel", "labour", "guards", "fnb", "budget",
+]
+
+# Default permission sets for V1 role migration
+_ROLE_DEFAULTS = {
+    "UNIT": {
+        "modules": {m: {"access": "write", "can_export": 1, "can_import": 1,
+                        "money_read": 1, "money_write": 0} for m in ALL_MODULES},
+        "global": {"can_lock_unlock": 0, "can_view_history": 1},
+    },
+    "TRANSPO": {
+        "modules": {m: {"access": "write", "can_export": 1, "can_import": 0,
+                        "money_read": 1, "money_write": 0}
+                    for m in ["boats", "picture-boats", "security-boats", "transport", "fuel"]},
+        "global": {"can_lock_unlock": 0, "can_view_history": 0},
+    },
+    "READER": {
+        "modules": {m: {"access": "read", "can_export": 1, "can_import": 0,
+                        "money_read": 1, "money_write": 0} for m in ALL_MODULES},
+        "global": {"can_lock_unlock": 0, "can_view_history": 0},
+    },
+}
+# UNIT: fuel gets money_write
+_ROLE_DEFAULTS["UNIT"]["modules"]["fuel"]["money_write"] = 1
+# TRANSPO: modules not listed default to 'none'
+for _m in ALL_MODULES:
+    if _m not in _ROLE_DEFAULTS["TRANSPO"]["modules"]:
+        _ROLE_DEFAULTS["TRANSPO"]["modules"][_m] = {
+            "access": "none", "can_export": 0, "can_import": 0,
+            "money_read": 0, "money_write": 0,
+        }
+
+
+def get_user_permissions(user_id, production_id):
+    """Load all module permissions for a user on a production.
+    Returns dict: {module: {access, can_export, can_import, money_read, money_write}}
+    """
+    with get_auth_db() as conn:
+        rows = conn.execute("""
+            SELECT module, access, can_export, can_import, money_read, money_write
+            FROM user_permissions
+            WHERE user_id = ? AND production_id = ?
+        """, (user_id, production_id)).fetchall()
+        return {r["module"]: {
+            "access": r["access"],
+            "can_export": bool(r["can_export"]),
+            "can_import": bool(r["can_import"]),
+            "money_read": bool(r["money_read"]),
+            "money_write": bool(r["money_write"]),
+        } for r in rows}
+
+
+def get_user_global_permissions(user_id, production_id):
+    """Load global permissions for a user on a production.
+    Returns dict: {can_lock_unlock, can_view_history}
+    """
+    with get_auth_db() as conn:
+        row = conn.execute("""
+            SELECT can_lock_unlock, can_view_history
+            FROM user_global_permissions
+            WHERE user_id = ? AND production_id = ?
+        """, (user_id, production_id)).fetchone()
+        if row:
+            return {
+                "can_lock_unlock": bool(row["can_lock_unlock"]),
+                "can_view_history": bool(row["can_view_history"]),
+            }
+        return {"can_lock_unlock": False, "can_view_history": False}
+
+
+def set_user_permissions(user_id, production_id, modules_dict, global_perms=None):
+    """Set all permissions for a user on a production (full replace).
+    modules_dict: {module: {access, can_export, can_import, money_read, money_write}}
+    global_perms: {can_lock_unlock, can_view_history} or None
+    """
+    with get_auth_db() as conn:
+        # Clear existing module permissions
+        conn.execute(
+            "DELETE FROM user_permissions WHERE user_id = ? AND production_id = ?",
+            (user_id, production_id)
+        )
+        # Insert new module permissions
+        for module, perms in modules_dict.items():
+            if module not in ALL_MODULES:
+                continue
+            conn.execute(
+                """INSERT INTO user_permissions
+                   (user_id, production_id, module, access, can_export, can_import, money_read, money_write)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (user_id, production_id, module,
+                 perms.get("access", "none"),
+                 1 if perms.get("can_export") else 0,
+                 1 if perms.get("can_import") else 0,
+                 1 if perms.get("money_read") else 0,
+                 1 if perms.get("money_write") else 0)
+            )
+
+        # Global permissions
+        if global_perms is not None:
+            conn.execute(
+                "DELETE FROM user_global_permissions WHERE user_id = ? AND production_id = ?",
+                (user_id, production_id)
+            )
+            conn.execute(
+                """INSERT INTO user_global_permissions
+                   (user_id, production_id, can_lock_unlock, can_view_history)
+                   VALUES (?, ?, ?, ?)""",
+                (user_id, production_id,
+                 1 if global_perms.get("can_lock_unlock") else 0,
+                 1 if global_perms.get("can_view_history") else 0)
+            )
+
+
+def migrate_v1_role_to_v2(user_id, production_id, role):
+    """Auto-migrate a V1 role to V2 granular permissions.
+    Called when a user has a membership but no user_permissions rows yet.
+    """
+    if role == "ADMIN":
+        return  # ADMIN uses is_admin flag, no per-module permissions needed
+
+    defaults = _ROLE_DEFAULTS.get(role, _ROLE_DEFAULTS["READER"])
+    set_user_permissions(
+        user_id, production_id,
+        defaults["modules"],
+        defaults["global"],
+    )
+
+
+def ensure_user_permissions(user_id, production_id, role):
+    """Ensure V2 permissions exist for a user. If not, auto-migrate from V1 role.
+    Returns the full permissions dict.
+    """
+    perms = get_user_permissions(user_id, production_id)
+    if not perms:
+        migrate_v1_role_to_v2(user_id, production_id, role)
+        perms = get_user_permissions(user_id, production_id)
+    return perms
+
+
+def delete_user_permissions(user_id, production_id=None):
+    """Delete permissions for a user (all productions or specific one)."""
+    with get_auth_db() as conn:
+        if production_id is not None:
+            conn.execute(
+                "DELETE FROM user_permissions WHERE user_id = ? AND production_id = ?",
+                (user_id, production_id)
+            )
+            conn.execute(
+                "DELETE FROM user_global_permissions WHERE user_id = ? AND production_id = ?",
+                (user_id, production_id)
+            )
+        else:
+            conn.execute("DELETE FROM user_permissions WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM user_global_permissions WHERE user_id = ?", (user_id,))

@@ -1525,18 +1525,33 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   function _setDetailLabels(ctx) {
     const captainLabel = $('bd-captain-label');
     const captainInput = $('bd-captain');
+    const nameInput    = $('bd-name');
+    const modalTitle   = document.querySelector('#boat-detail-overlay .modal-title');
+    const capacityLabel = $('bd-capacity-label');
     if (ctx === 'transport') {
-      if (captainLabel) captainLabel.textContent = 'Driver';
-      if (captainInput) captainInput.placeholder = 'Driver name';
+      if (modalTitle)    modalTitle.textContent = 'Edit vehicle';
+      if (nameInput)     nameInput.placeholder  = 'Vehicle name';
+      if (captainLabel)  captainLabel.textContent = 'Driver';
+      if (captainInput)  captainInput.placeholder = 'Driver name';
+      if (capacityLabel) capacityLabel.textContent = 'Capacity';
     } else if (ctx === 'labour') {
-      if (captainLabel) captainLabel.textContent = 'Role';
-      if (captainInput) captainInput.placeholder = 'Role / position';
+      if (modalTitle)    modalTitle.textContent = 'Edit worker';
+      if (nameInput)     nameInput.placeholder  = 'Worker name';
+      if (captainLabel)  captainLabel.textContent = 'Role';
+      if (captainInput)  captainInput.placeholder = 'Role / position';
+      if (capacityLabel) capacityLabel.textContent = 'Team size';
     } else if (ctx === 'guard_camp') {
-      if (captainLabel) captainLabel.textContent = 'Role';
-      if (captainInput) captainInput.placeholder = 'Guard role / shift';
+      if (modalTitle)    modalTitle.textContent = 'Edit guard';
+      if (nameInput)     nameInput.placeholder  = 'Guard name';
+      if (captainLabel)  captainLabel.textContent = 'Role';
+      if (captainInput)  captainInput.placeholder = 'Guard role / shift';
+      if (capacityLabel) capacityLabel.textContent = 'Shift size';
     } else {
-      if (captainLabel) captainLabel.textContent = 'Captain';
-      if (captainInput) captainInput.placeholder = 'Captain name';
+      if (modalTitle)    modalTitle.textContent = 'Edit boat';
+      if (nameInput)     nameInput.placeholder  = 'Boat name';
+      if (captainLabel)  captainLabel.textContent = 'Captain';
+      if (captainInput)  captainInput.placeholder = 'Captain name';
+      if (capacityLabel) capacityLabel.textContent = 'Capacity';
     }
   }
 

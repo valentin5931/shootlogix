@@ -191,8 +191,8 @@ def jsonify_cached(data):
 from auth.routes import auth_bp
 from auth.admin_routes import admin_bp
 from auth.tokens import decode_access_token
-from auth.rbac import check_role_access, get_user_allowed_tabs
-from auth.models import get_membership
+from auth.rbac import check_role_access, check_permission_access, get_user_allowed_tabs
+from auth.models import get_membership, ensure_user_permissions, get_user_global_permissions
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(admin_bp)
@@ -268,8 +268,43 @@ def enforce_auth():
             else:
                 return jsonify({"error": "You are not assigned to any project", "code": "NO_PROJECT"}), 403
 
-    # RBAC: check role-based access
-    if g.role:
+    # RBAC V2: load granular permissions for non-admin users
+    if g.is_admin:
+        g.permissions = None  # ADMIN has full access, no per-module check needed
+        g.global_permissions = {"can_lock_unlock": True, "can_view_history": True}
+    else:
+        # Determine production_id for permission lookup
+        _perm_prod_id = None
+        import re as _re
+        _pm = _re.search(r'/api/productions/(\d+)', path)
+        if _pm:
+            _perm_prod_id = int(_pm.group(1))
+        else:
+            _ph = request.headers.get("X-Project-Id")
+            if _ph:
+                try:
+                    _perm_prod_id = int(_ph)
+                except (ValueError, TypeError):
+                    pass
+
+        if _perm_prod_id and g.role:
+            g.permissions = ensure_user_permissions(g.user_id, _perm_prod_id, g.role)
+            g.global_permissions = get_user_global_permissions(g.user_id, _perm_prod_id)
+        else:
+            g.permissions = {}
+            g.global_permissions = {"can_lock_unlock": False, "can_view_history": False}
+
+    # RBAC: check access using V2 permissions (or V1 fallback for admin)
+    if g.is_admin:
+        pass  # Full access
+    elif g.permissions:
+        allowed, reason = check_permission_access(
+            g.permissions, g.global_permissions, path, request.method, is_admin=False
+        )
+        if not allowed:
+            return jsonify({"error": reason, "code": "FORBIDDEN"}), 403
+    elif g.role:
+        # Fallback to V1 role check if no permissions loaded
         allowed, reason = check_role_access(g.role, path, request.method)
         if not allowed:
             return jsonify({"error": reason, "code": "FORBIDDEN"}), 403

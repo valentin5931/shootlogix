@@ -37,6 +37,11 @@ from auth.models import (
     delete_membership,
     get_auth_db,
     VALID_ROLES,
+    ALL_MODULES,
+    get_user_permissions,
+    get_user_global_permissions,
+    set_user_permissions,
+    ensure_user_permissions,
 )
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/api/admin")
@@ -295,3 +300,82 @@ def remove_member(project_id, user_id):
 
     delete_membership(user_id, project_id)
     return jsonify({"message": "User removed from project"})
+
+
+# ─── Permissions (RBAC V2) ─────────────────────────────────────────────────
+
+@admin_bp.route("/projects/<int:project_id>/members/<int:user_id>/permissions", methods=["GET"])
+@require_admin
+def get_member_permissions(project_id, user_id):
+    """Get granular permissions for a user on a project.
+    Auto-migrates from V1 role if no V2 permissions exist yet."""
+    membership = get_membership(user_id, project_id)
+    if not membership:
+        return jsonify({"error": "User is not a member of this project"}), 404
+
+    user = get_user_by_id(user_id)
+    if user and user.get("is_admin"):
+        return jsonify({
+            "is_admin": True,
+            "message": "Admin users have full access — no configurable permissions",
+            "modules": {},
+            "global": {"can_lock_unlock": True, "can_view_history": True},
+        })
+
+    modules = ensure_user_permissions(user_id, project_id, membership["role"])
+    global_perms = get_user_global_permissions(user_id, project_id)
+
+    return jsonify({
+        "is_admin": False,
+        "modules": modules,
+        "global": global_perms,
+        "all_modules": ALL_MODULES,
+    })
+
+
+@admin_bp.route("/projects/<int:project_id>/members/<int:user_id>/permissions", methods=["PUT"])
+@require_admin
+def update_member_permissions(project_id, user_id):
+    """Set granular permissions for a user on a project.
+    Body: { modules: {module: {access, can_export, ...}}, global: {can_lock_unlock, ...} }
+    """
+    membership = get_membership(user_id, project_id)
+    if not membership:
+        return jsonify({"error": "User is not a member of this project"}), 404
+
+    user = get_user_by_id(user_id)
+    if user and user.get("is_admin"):
+        return jsonify({"error": "Cannot set permissions for admin users"}), 400
+
+    data = request.json or {}
+    modules_dict = data.get("modules", {})
+    global_perms = data.get("global")
+
+    # Validate
+    for module, perms in modules_dict.items():
+        if module not in ALL_MODULES:
+            return jsonify({"error": f"Unknown module: {module}"}), 400
+        if perms.get("access") not in ("none", "read", "write"):
+            return jsonify({"error": f"Invalid access level for {module}"}), 400
+        # money_write requires money_read
+        if perms.get("money_write") and not perms.get("money_read"):
+            return jsonify({"error": f"money_write requires money_read for {module}"}), 400
+        # can_import requires write access
+        if perms.get("can_import") and perms.get("access") != "write":
+            return jsonify({"error": f"can_import requires write access for {module}"}), 400
+
+    # Ensure all 11 modules are present (fill missing with 'none')
+    for m in ALL_MODULES:
+        if m not in modules_dict:
+            modules_dict[m] = {
+                "access": "none", "can_export": False, "can_import": False,
+                "money_read": False, "money_write": False,
+            }
+
+    set_user_permissions(user_id, project_id, modules_dict, global_perms)
+
+    return jsonify({
+        "message": "Permissions updated",
+        "modules": get_user_permissions(user_id, project_id),
+        "global": get_user_global_permissions(user_id, project_id),
+    })

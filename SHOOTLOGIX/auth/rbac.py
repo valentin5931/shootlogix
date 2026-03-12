@@ -1,12 +1,20 @@
 """
-auth/rbac.py — Role-Based Access Control for ShootLogix.
+auth/rbac.py — Role-Based Access Control for ShootLogix (V2).
 
-Maps API routes to required permissions based on the role matrix:
-  ADMIN:   full access to everything
-  UNIT:    full access all tabs, cannot modify prices (except fuel), cannot manage users/projects
-  TRANSPO: access limited to BOATS, PICTURE BOATS, SECURITY BOATS, TRANSPORT, FUEL
-           same edit rights as UNIT on those tabs
-  READER:  read-only access to all tabs, can export
+RBAC V2: Two-tier system:
+  - ADMIN (is_admin flag): full access to everything
+  - USER: configurable per-user, per-module permissions
+
+Permission model per module:
+  - access: 'none' | 'read' | 'write'
+  - can_export: bool (independent of access level)
+  - can_import: bool (requires write access)
+  - money_read: bool (see financial columns)
+  - money_write: bool (edit prices — requires money_read)
+
+Global permissions:
+  - can_lock_unlock: bool (lock/unlock dates)
+  - can_view_history: bool (activity feed)
 
 Tab-to-route mapping:
   PDT       -> /shooting-days, /events, /parse-pdt, /upload-pdt
@@ -21,15 +29,6 @@ Tab-to-route mapping:
   FNB       -> /fnb-categories, /fnb-items, /fnb-entries, /fnb-tracking, /fnb-summary, /fnb-budget
   BUDGET    -> /budget, /export/budget-global
 """
-
-# Tabs accessible by each role (ADMIN has access to everything so not listed)
-ROLE_TABS = {
-    "UNIT":    {"pdt", "locations", "boats", "picture-boats", "security-boats",
-                "transport", "fuel", "labour", "guards", "fnb", "budget"},
-    "TRANSPO": {"boats", "picture-boats", "security-boats", "transport", "fuel"},
-    "READER":  {"pdt", "locations", "boats", "picture-boats", "security-boats",
-                "transport", "fuel", "labour", "guards", "fnb", "budget"},
-}
 
 # Route path fragments mapped to tabs
 # Order matters: more specific patterns first
@@ -105,6 +104,17 @@ EXPORT_TAB_MAP = [
 # Read-only methods
 READ_METHODS = {"GET", "HEAD", "OPTIONS"}
 
+# Routes related to imports (CSV upload, etc.)
+IMPORT_ROUTES = [
+    "/upload-pdt", "/parse-pdt", "/import",
+    "/sync-pdt-locations",
+]
+
+# Routes related to price/money editing
+PRICE_ROUTES = [
+    "/fuel-prices", "/fuel-locked-prices",
+]
+
 
 def get_tab_for_route(path):
     """Determine which tab a route belongs to. Returns tab name or None."""
@@ -120,24 +130,40 @@ def get_tab_for_route(path):
     return None
 
 
-def check_role_access(role, path, method):
+def is_export_route(path):
+    """Check if a route is an export endpoint."""
+    return any(frag in path for frag, _ in EXPORT_TAB_MAP)
+
+
+def is_import_route(path):
+    """Check if a route involves importing data."""
+    return any(frag in path for frag in IMPORT_ROUTES)
+
+
+def is_price_route(path):
+    """Check if a route involves price/money editing."""
+    return any(frag in path for frag in PRICE_ROUTES)
+
+
+def check_permission_access(permissions, global_perms, path, method, is_admin=False):
     """
-    Check if a role has access to a given route.
+    Check if a user's V2 permissions allow access to a given route.
+
+    Args:
+        permissions: dict {module: {access, can_export, can_import, money_read, money_write}}
+        global_perms: dict {can_lock_unlock, can_view_history}
+        path: request path
+        method: HTTP method
+        is_admin: True if user has ADMIN flag
 
     Returns:
         (allowed, reason) tuple.
-        allowed: True if access is permitted.
-        reason: String explaining denial if not allowed.
     """
     # ADMIN has full access
-    if role == "ADMIN":
+    if is_admin:
         return True, None
 
-    # First determine the tab — if it belongs to a specific tab, use tab-based checks
-    tab = get_tab_for_route(path)
-
-    # Productions CRUD (only the direct /api/productions endpoint, not sub-routes)
-    # Sub-routes like /api/productions/1/boats are handled by tab-based checks
+    # Productions CRUD (only direct /api/productions endpoint)
     import re
     if re.match(r'^/api/productions/?$', path) or re.match(r'^/api/productions/\d+/?$', path):
         if method in READ_METHODS:
@@ -145,45 +171,115 @@ def check_role_access(role, path, method):
         else:
             return False, "Only ADMIN can create or modify productions"
 
-    # Departments: all roles can read
+    # Departments: all users can read
+    tab = get_tab_for_route(path)
     if "/departments" in path and tab is None:
         return True, None
 
-    # Working days: read-only utility, all roles can access
+    # Working days: utility, all users can access
     if "/working-days" in path:
         return True, None
 
-    # Health check: everyone
+    # Health check
     if "/health" in path:
         return True, None
 
-    # Reload: only ADMIN
+    # Reload: ADMIN only
     if "/reload" in path:
         return False, "Only ADMIN can reload data"
 
     if tab is None:
-        # Unknown route — deny for safety (ADMIN already returned above)
         return False, "Access denied"
 
-    # Check if role has access to this tab
+    # Get module permission
+    module_perm = permissions.get(tab)
+    if not module_perm or module_perm["access"] == "none":
+        return False, f"You do not have access to {tab.upper()}"
+
+    # Export check
+    if is_export_route(path):
+        if not module_perm.get("can_export"):
+            return False, f"You do not have export permission for {tab.upper()}"
+        return True, None
+
+    # Import check
+    if is_import_route(path) and method not in READ_METHODS:
+        if not module_perm.get("can_import"):
+            return False, f"You do not have import permission for {tab.upper()}"
+        # Import also requires write access
+        if module_perm["access"] != "write":
+            return False, f"Write access required for import on {tab.upper()}"
+        return True, None
+
+    # Price route write check
+    if is_price_route(path) and method not in READ_METHODS:
+        if not module_perm.get("money_write"):
+            return False, f"You do not have permission to modify prices on {tab.upper()}"
+        return True, None
+
+    # Write check
+    if method not in READ_METHODS:
+        if module_perm["access"] != "write":
+            return False, f"Read-only access: you cannot modify data on {tab.upper()}"
+        return True, None
+
+    # Read access
+    return True, None
+
+
+# --- Backward compatibility ---
+# Keep old function signature for any code still calling it during transition
+
+# V1 role-to-tab mapping (kept for reference / fallback)
+ROLE_TABS = {
+    "UNIT":    {"pdt", "locations", "boats", "picture-boats", "security-boats",
+                "transport", "fuel", "labour", "guards", "fnb", "budget"},
+    "TRANSPO": {"boats", "picture-boats", "security-boats", "transport", "fuel"},
+    "READER":  {"pdt", "locations", "boats", "picture-boats", "security-boats",
+                "transport", "fuel", "labour", "guards", "fnb", "budget"},
+}
+
+
+def check_role_access(role, path, method):
+    """V1 backward compat: check role-based access. Used during migration."""
+    if role == "ADMIN":
+        return True, None
+
+    tab = get_tab_for_route(path)
+
+    import re
+    if re.match(r'^/api/productions/?$', path) or re.match(r'^/api/productions/\d+/?$', path):
+        if method in READ_METHODS:
+            return True, None
+        else:
+            return False, "Only ADMIN can create or modify productions"
+
+    if "/departments" in path and tab is None:
+        return True, None
+    if "/working-days" in path:
+        return True, None
+    if "/health" in path:
+        return True, None
+    if "/reload" in path:
+        return False, "Only ADMIN can reload data"
+
+    if tab is None:
+        return False, "Access denied"
+
     allowed_tabs = ROLE_TABS.get(role, set())
     if tab not in allowed_tabs:
         return False, f"Your role ({role}) does not have access to {tab.upper()}"
 
-    # READER: read-only access to all their tabs
     if role == "READER":
         if method not in READ_METHODS:
             return False, "Read-only access: you cannot modify data"
         return True, None
 
-    # UNIT and TRANSPO: can read and write on their tabs
-    # Price restrictions are handled at a more granular level (Step 6/UI)
-    # Here we allow the write if they have tab access
     return True, None
 
 
 def get_user_allowed_tabs(role):
-    """Return the set of tab names accessible to a role."""
+    """Return the set of tab names accessible to a role (V1 compat)."""
     if role == "ADMIN":
         return {"pdt", "locations", "boats", "picture-boats", "security-boats",
                 "transport", "fuel", "labour", "guards", "fnb", "budget", "admin"}

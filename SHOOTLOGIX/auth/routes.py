@@ -25,6 +25,8 @@ from auth.models import (
     delete_user_refresh_tokens,
     get_user_memberships,
     get_auth_db,
+    ensure_user_permissions,
+    get_user_global_permissions,
 )
 from auth.tokens import (
     create_access_token,
@@ -189,9 +191,23 @@ def me():
     else:
         memberships = get_user_memberships(g.user_id)
 
+    # RBAC V2: attach per-project permissions to each membership
+    enriched = []
+    for m in memberships:
+        entry = dict(m)
+        prod_id = m.get("production_id")
+        if user.get("is_admin"):
+            entry["permissions"] = None  # Admin = full access
+            entry["global_permissions"] = {"can_lock_unlock": True, "can_view_history": True}
+        elif prod_id:
+            role = m.get("role", "READER")
+            entry["permissions"] = ensure_user_permissions(g.user_id, prod_id, role)
+            entry["global_permissions"] = get_user_global_permissions(g.user_id, prod_id)
+        enriched.append(entry)
+
     return jsonify({
         "id": user["id"],
         "nickname": user["nickname"],
         "is_admin": bool(user.get("is_admin")),
-        "memberships": memberships,
+        "memberships": enriched,
     })

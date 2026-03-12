@@ -518,6 +518,7 @@
           <button class="admin-tab active" data-atab="users" onclick="App.adminSetTab('users')">Users</button>
           <button class="admin-tab" data-atab="projects" onclick="App.adminSetTab('projects')">Projects</button>
           <button class="admin-tab" data-atab="invitations" onclick="App.adminSetTab('invitations')">Invitations</button>
+          <button class="admin-tab" data-atab="permissions" onclick="App.adminSetTab('permissions')">Permissions</button>
         </div>
 
         <!-- Users sub-panel -->
@@ -553,6 +554,24 @@
           <div class="admin-toolbar" style="margin-top:1rem">
             <button class="btn btn-primary btn-sm" onclick="App.adminShowInvite()">+ Invite User</button>
           </div>
+        </div>
+
+        <!-- Permissions sub-panel (RBAC V2) -->
+        <div id="admin-permissions" class="admin-sub">
+          <div class="admin-toolbar">
+            <h3>User Permissions</h3>
+          </div>
+          <div class="form-row" style="margin-bottom:1rem;gap:1rem">
+            <div class="form-group" style="flex:1">
+              <label class="form-label">Project</label>
+              <select id="admin-perm-project" class="form-control" onchange="App.adminPermLoadMembers()"></select>
+            </div>
+            <div class="form-group" style="flex:1">
+              <label class="form-label">User</label>
+              <select id="admin-perm-user" class="form-control" onchange="App.adminPermLoadPerms()"></select>
+            </div>
+          </div>
+          <div id="admin-perm-grid"></div>
         </div>
       </div>
     </div>

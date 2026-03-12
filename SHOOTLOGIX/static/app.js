@@ -17,8 +17,10 @@ const App = (() => {
   // Auth state
   let authState = {
     user: null,         // { id, nickname, is_admin }
-    memberships: [],    // [{ production_id, production_name, role, ... }]
+    memberships: [],    // [{ production_id, production_name, role, permissions, global_permissions }]
     currentRole: null,  // role on current project
+    permissions: null,  // V2: { module: { access, can_export, can_import, money_read, money_write } }
+    globalPermissions: null,  // V2: { can_lock_unlock, can_view_history }
   };
 
   let state = {
@@ -537,7 +539,8 @@ const App = (() => {
     URL.revokeObjectURL(a.href);
   }
 
-  // ── Auth: permissions & UI restrictions ──────────────────
+  // ── Auth: permissions & UI restrictions (RBAC V2) ────────
+  // V1 fallback tabs (used only when no V2 permissions loaded)
   const ROLE_ALLOWED_TABS = {
     ADMIN:   ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
     UNIT:    ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
@@ -545,28 +548,77 @@ const App = (() => {
     READER:  ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
   };
 
+  function _getModulePerm(tab) {
+    if (!authState.permissions) return null;
+    return authState.permissions[tab] || null;
+  }
+
   function _canViewTab(tab) {
+    if (_isAdmin()) return true;
+    if (tab === 'dashboard') return true;
+    // V2: check per-module permission
+    const perm = _getModulePerm(tab);
+    if (perm) return perm.access !== 'none';
+    // V1 fallback
     const role = authState.currentRole || 'READER';
-    if (role === 'ADMIN') return true;
     return (ROLE_ALLOWED_TABS[role] || []).includes(tab);
   }
 
-  function _canEdit() {
+  function _canEdit(tab) {
+    if (_isAdmin()) return true;
+    // V2: check write access for the given tab (or current tab)
+    const t = tab || state.tab;
+    const perm = _getModulePerm(t);
+    if (perm) return perm.access === 'write';
+    // V1 fallback
     const role = authState.currentRole || 'READER';
     return role !== 'READER';
   }
 
-  function _canEditPrices() {
-    return authState.currentRole === 'ADMIN';
+  function _canEditPrices(tab) {
+    if (_isAdmin()) return true;
+    // V2: check money_write for the given tab
+    const t = tab || state.tab;
+    const perm = _getModulePerm(t);
+    if (perm) return !!perm.money_write;
+    return false;
   }
 
   function _canEditFuelPrices() {
+    if (_isAdmin()) return true;
+    const perm = _getModulePerm('fuel');
+    if (perm) return !!perm.money_write;
+    // V1 fallback
     const role = authState.currentRole || 'READER';
-    return role === 'ADMIN' || role === 'UNIT' || role === 'TRANSPO';
+    return role === 'UNIT' || role === 'TRANSPO';
   }
 
   function _isAdmin() {
     return authState.currentRole === 'ADMIN' || (authState.user && authState.user.is_admin);
+  }
+
+  function _canExport(tab) {
+    if (_isAdmin()) return true;
+    const t = tab || state.tab;
+    const perm = _getModulePerm(t);
+    if (perm) return !!perm.can_export;
+    return authState.currentRole !== 'READER';
+  }
+
+  function _canImport(tab) {
+    if (_isAdmin()) return true;
+    const t = tab || state.tab;
+    const perm = _getModulePerm(t);
+    if (perm) return !!perm.can_import && perm.access === 'write';
+    return false;
+  }
+
+  function _canViewMoney(tab) {
+    if (_isAdmin()) return true;
+    const t = tab || state.tab;
+    const perm = _getModulePerm(t);
+    if (perm) return !!perm.money_read;
+    return true; // V1: all roles except TRANSPO could see money
   }
 
   function _applyUIRestrictions() {
@@ -673,6 +725,18 @@ const App = (() => {
     _hideProjectSelector();
     state.prodId = prodId;
     authState.currentRole = role;
+    // V2: load permissions from membership data
+    const membership = authState.memberships.find(m => m.production_id == prodId);
+    if (membership && membership.permissions) {
+      authState.permissions = membership.permissions;
+      authState.globalPermissions = membership.global_permissions || {};
+    } else if (authState.user && authState.user.is_admin) {
+      authState.permissions = null; // Admin = full access
+      authState.globalPermissions = { can_lock_unlock: true, can_view_history: true };
+    } else {
+      authState.permissions = {};
+      authState.globalPermissions = {};
+    }
     localStorage.setItem('currentProdId', prodId);
     localStorage.setItem('currentRole', role);
     _updateTopbarUser();
@@ -1673,6 +1737,7 @@ const App = (() => {
     VCOL_WIDTH_DESKTOP, VCOL_WIDTH_MOBILE, VCOL_BUFFER,
     _saveScheduleScroll, _restoreScheduleScroll, _scheduleCellBg,
     _canEdit, _canEditPrices, _canEditFuelPrices, _isAdmin, _canViewTab,
+    _canExport, _canImport, _canViewMoney, _getModulePerm,
     _applyPriceRestrictions, _applyUIRestrictions,
     authFetch, authDownload, _getAccessToken,
     STATUS_LABEL, SCHEDULE_START, SCHEDULE_END, EV_DEFAULTS,
@@ -1713,6 +1778,7 @@ const App = (() => {
     // Auth
     logout, authState,
     _canEdit, _canEditPrices, _canEditFuelPrices, _isAdmin, _canViewTab,
+    _canExport, _canImport, _canViewMoney, _getModulePerm,
     _applyPriceRestrictions,
     // Core UI
     showConfirm, cancelConfirm,
