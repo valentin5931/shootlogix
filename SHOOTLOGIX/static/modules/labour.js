@@ -812,7 +812,14 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
   // ── Export ───────────────────────────────────────────────────
   function lbToggleExport() { $('lb-export-menu').classList.toggle('hidden'); }
-  function lbExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/labour/csv`); $('lb-export-menu').classList.add('hidden'); }
+  function lbExportCSV()  {
+    $('lb-export-menu').classList.add('hidden');
+    SL.openExportDateModal('labour', 'Labour', [
+      { key: 'csv', label: 'CSV' },
+    ], (from, to, fmt) => {
+      SL._exportWithDates(`/api/productions/${state.prodId}/export/labour/csv`, from, to);
+    });
+  }
 
   // ── Budget view ──────────────────────────────────────────────
   function renderLbBudget() {

@@ -453,15 +453,40 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     const guardSchedules = state.guardLocSchedules || [];
     const sites = state.locationSites || [];
     if (!guardSchedules.length) { toast('No location guard data to export', 'info'); return; }
+
+    SL.openExportDateModal('guards', 'Guards (Location)', [
+      { key: 'csv', label: 'CSV' },
+    ], (dateFrom, dateTo, fmt) => {
+      _doGdlExport(guardSchedules, sites, dateFrom, dateTo);
+    });
+  }
+
+  function _doGdlExport(guardSchedules, sites, dateFrom, dateTo) {
     const typeByName = {};
     sites.forEach(s => { typeByName[s.name] = s.location_type || 'game'; });
 
+    // Filter by date range
+    let filtered = guardSchedules;
+    if (dateFrom || dateTo) {
+      filtered = guardSchedules.filter(g => {
+        if (dateFrom && g.date < dateFrom) return false;
+        if (dateTo && g.date > dateTo) return false;
+        return true;
+      });
+    }
+    if (!filtered.length) { toast('No data in selected date range', 'info'); return; }
+
+    const prodName = (state.production && state.production.name) || 'PRODUCTION';
     const now = new Date();
-    const fname = `KLAS7_GUARDS-LOCATION_${String(now.getFullYear()).slice(2)}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.csv`;
+    let fname = `${prodName}_GUARDS-LOCATION_${String(now.getFullYear()).slice(2)}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+    if (dateFrom && dateTo) {
+      fname += `_${dateFrom.replace(/-/g,'').slice(2)}-${dateTo.replace(/-/g,'').slice(2)}`;
+    }
+    fname += '.csv';
 
     let csv = 'Location,Type,Date,Status,Guards,Rate,Cost\n';
     const byLoc = {};
-    guardSchedules.forEach(g => {
+    filtered.forEach(g => {
       const locType = typeByName[g.location_name] || 'game';
       const nb = g.nb_guards || 0;
       const cost = nb * GUARD_RATE_LOCATION;
@@ -1350,7 +1375,14 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
   // ── Export ───────────────────────────────────────────────────
   function gcToggleExport() { $('gc-export-menu').classList.toggle('hidden'); }
-  function gcExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/guard-camp/csv`); $('gc-export-menu').classList.add('hidden'); }
+  function gcExportCSV()  {
+    $('gc-export-menu').classList.add('hidden');
+    SL.openExportDateModal('guards', 'Guards', [
+      { key: 'csv', label: 'CSV' },
+    ], (from, to, fmt) => {
+      SL._exportWithDates(`/api/productions/${state.prodId}/export/guard-camp/csv`, from, to);
+    });
+  }
 
   // ── Budget view (combined: Location + Base Camp) ───────────
   async function renderGcBudget() {

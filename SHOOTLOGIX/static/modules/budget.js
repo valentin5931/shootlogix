@@ -555,10 +555,16 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
   // ── Global Budget Export (KLAS7_BUDGET_YYMMDD.xlsx) ──────────────────────
 
-  async function _asyncExport(asyncUrl, fallbackUrl) {
+  async function _asyncExport(asyncUrl, fallbackUrl, dateFrom, dateTo) {
+    // Append date params to URLs
+    const params = [];
+    if (dateFrom) params.push(`from=${dateFrom}`);
+    if (dateTo) params.push(`to=${dateTo}`);
+    const qs = params.length ? '?' + params.join('&') : '';
+
     try {
       toast('Export in progress...', 'info');
-      const { job_id } = await api('POST', asyncUrl);
+      const { job_id } = await api('POST', asyncUrl + qs);
       // Poll for completion
       const poll = async () => {
         const status = await api('GET', `/api/exports/${job_id}`);
@@ -574,40 +580,59 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       setTimeout(poll, 2000);
     } catch (e) {
       // Fallback to sync export
-      authDownload(fallbackUrl);
+      SL._exportWithDates(fallbackUrl, dateFrom, dateTo);
     }
   }
 
   function budgetExportXlsx() {
-    _asyncExport(
-      `/api/productions/${state.prodId}/export/budget-global/async`,
-      `/api/productions/${state.prodId}/export/budget-global`
-    );
+    SL.openExportDateModal('budget', 'Budget (XLSX)', [
+      { key: 'xlsx', label: 'XLSX' },
+    ], (from, to, fmt) => {
+      _asyncExport(
+        `/api/productions/${state.prodId}/export/budget-global/async`,
+        `/api/productions/${state.prodId}/export/budget-global`,
+        from, to
+      );
+    });
   }
 
   function budgetExportPdf() {
-    authDownload(`/api/productions/${state.prodId}/export/budget-pdf`);
+    SL.openExportDateModal('budget', 'Budget (PDF)', [
+      { key: 'pdf', label: 'PDF' },
+    ], (from, to, fmt) => {
+      SL._exportWithDates(`/api/productions/${state.prodId}/export/budget-pdf`, from, to);
+    });
   }
 
   function dailyReportPdf() {
-    authDownload(`/api/productions/${state.prodId}/export/daily-report-pdf`);
+    SL.openExportDateModal('budget', 'Daily Report', [
+      { key: 'pdf', label: 'PDF' },
+    ], (from, to, fmt) => {
+      SL._exportWithDates(`/api/productions/${state.prodId}/export/daily-report-pdf`, from, to);
+    });
   }
 
   function vendorSummaryExport() {
-    // Show format picker: CSV or PDF
-    const fmt = confirm('OK = PDF format\nCancel = CSV format') ? 'pdf' : 'csv';
-    if (fmt === 'pdf') {
-      authDownload(`/api/productions/${state.prodId}/export/vendor-summary-pdf`);
-    } else {
-      authDownload(`/api/productions/${state.prodId}/export/vendor-summary`);
-    }
+    SL.openExportDateModal('budget', 'Vendor Summary', [
+      { key: 'csv', label: 'CSV' }, { key: 'pdf', label: 'PDF' },
+    ], (from, to, fmt) => {
+      const base = fmt === 'pdf'
+        ? `/api/productions/${state.prodId}/export/vendor-summary-pdf`
+        : `/api/productions/${state.prodId}/export/vendor-summary`;
+      SL._exportWithDates(base, from, to);
+    });
   }
 
   function logisticsExportXlsx() {
-    _asyncExport(
-      `/api/productions/${state.prodId}/export/logistics/async`,
-      `/api/productions/${state.prodId}/export/logistics`
-    );
+    SL.openExportDateModal('budget', 'Logistics (XLSX)', [
+      { key: 'xlsx', label: 'XLSX' },
+    ], (from, to, fmt) => {
+      _asyncExport(
+        `/api/productions/${state.prodId}/export/logistics/async`,
+        `/api/productions/${state.prodId}/export/logistics`,
+        from, to
+      );
+    });
   }
 
 

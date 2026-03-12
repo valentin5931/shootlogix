@@ -3760,6 +3760,7 @@ def get_module_date_range(production_id, module):
         'fuel': "SELECT MIN(date) as first_date, MAX(date) as last_date FROM fuel_entries WHERE production_id=?",
         'fnb': "SELECT MIN(date) as first_date, MAX(date) as last_date FROM fnb_daily_tracking WHERE production_id=?",
         'budget': "SELECT MIN(start_date) as first_date, MAX(end_date) as last_date FROM boat_assignments ba JOIN boat_functions bf ON ba.boat_function_id=bf.id WHERE bf.production_id=?",
+        'locations': "SELECT MIN(date) as first_date, MAX(date) as last_date FROM location_schedules WHERE production_id=?",
     }
     query = date_queries.get(module)
     if not query:

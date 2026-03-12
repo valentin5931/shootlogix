@@ -829,7 +829,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   // ── Fuel Budget Export (KLAS7_FUEL_YYMMDD.csv) ─────────────────────────────
 
   function fuelBudgetExportCSV() {
-    authDownload(`/api/productions/${state.prodId}/export/fuel-budget/csv`);
+    SL.openExportDateModal('fuel', 'Fuel Budget', [
+      { key: 'csv', label: 'CSV' },
+    ], (from, to, fmt) => {
+      SL._exportWithDates(`/api/productions/${state.prodId}/export/fuel-budget/csv`, from, to);
+    });
   }
 
   function fuelToggleExport() {
@@ -837,13 +841,20 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
 
   function fuelExportCSV() {
-    authDownload(`/api/productions/${state.prodId}/export/fuel/csv`);
     $('fuel-exp-menu').classList.add('hidden');
+    SL.openExportDateModal('fuel', 'Fuel', [
+      { key: 'csv', label: 'CSV' }, { key: 'json', label: 'JSON' },
+    ], (from, to, fmt) => {
+      const base = fmt === 'json'
+        ? `/api/productions/${state.prodId}/export/fuel/json`
+        : `/api/productions/${state.prodId}/export/fuel/csv`;
+      SL._exportWithDates(base, from, to);
+    });
   }
 
   function fuelExportJSON() {
-    authDownload(`/api/productions/${state.prodId}/export/fuel/json`);
     $('fuel-exp-menu').classList.add('hidden');
+    fuelExportCSV();
   }
 
 

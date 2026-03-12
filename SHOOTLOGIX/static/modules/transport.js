@@ -675,8 +675,18 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
 
   function tbToggleExport() { $('tb-export-menu').classList.toggle('hidden'); }
-  function tbExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/transport/csv`);  $('tb-export-menu').classList.add('hidden'); }
-  function tbExportJSON() { authDownload(`/api/productions/${state.prodId}/export/transport/json`); $('tb-export-menu').classList.add('hidden'); }
+  function tbExportCSV()  {
+    $('tb-export-menu').classList.add('hidden');
+    SL.openExportDateModal('transport', 'Transport', [
+      { key: 'csv', label: 'CSV' }, { key: 'json', label: 'JSON' },
+    ], (from, to, fmt) => {
+      const base = fmt === 'json'
+        ? `/api/productions/${state.prodId}/export/transport/json`
+        : `/api/productions/${state.prodId}/export/transport/csv`;
+      SL._exportWithDates(base, from, to);
+    });
+  }
+  function tbExportJSON() { tbExportCSV(); }
 
   function showAddTransportVehicleModal() {
     ['ntv-name','ntv-price','ntv-driver','ntv-vendor','ntv-notes','ntv-nr'].forEach(id => { const el = $(id); if(el) el.value = ''; });

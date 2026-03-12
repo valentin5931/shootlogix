@@ -445,6 +445,25 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     const sites = state.locationSites || [];
     if (!schedules.length) { toast('No location data to export', 'info'); return; }
 
+    SL.openExportDateModal('locations', 'Locations', [
+      { key: 'csv', label: 'CSV' },
+    ], (dateFrom, dateTo, fmt) => {
+      _doLocExport(schedules, sites, dateFrom, dateTo);
+    });
+  }
+
+  function _doLocExport(schedules, sites, dateFrom, dateTo) {
+    // Filter schedules by date range
+    let filtered = schedules;
+    if (dateFrom || dateTo) {
+      filtered = schedules.filter(s => {
+        if (dateFrom && s.date < dateFrom) return false;
+        if (dateTo && s.date > dateTo) return false;
+        return true;
+      });
+    }
+    if (!filtered.length) { toast('No data in selected date range', 'info'); return; }
+
     // Build pricing lookup from sites
     const pricing = {};
     sites.forEach(s => {
@@ -458,7 +477,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
     // Group schedules by location
     const byLoc = {};
-    schedules.forEach(s => {
+    filtered.forEach(s => {
       if (!byLoc[s.location_name]) byLoc[s.location_name] = [];
       byLoc[s.location_name].push(s);
     });
@@ -490,11 +509,16 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       csv += `"${locName} - TOTAL","","${daysSummary.join(' + ')}","","","","","${total.toFixed(2)}"\n`;
     }
 
+    const prodName = (state.production && state.production.name) || 'PRODUCTION';
     const now = new Date();
     const yy = String(now.getFullYear()).slice(2);
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const dd = String(now.getDate()).padStart(2, '0');
-    const fname = `KLAS7_LOCATIONS_${yy}${mm}${dd}.csv`;
+    let fname = `${prodName}_LOCATIONS_${yy}${mm}${dd}`;
+    if (dateFrom && dateTo) {
+      fname += `_${dateFrom.replace(/-/g,'').slice(2)}-${dateTo.replace(/-/g,'').slice(2)}`;
+    }
+    fname += '.csv';
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const a = document.createElement('a');

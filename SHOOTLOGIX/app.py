@@ -4217,13 +4217,18 @@ def api_export_budget_global_async(prod_id):
     prod_or_404(prod_id)
     _cleanup_old_exports()
 
+    # Capture date params from request to pass to background thread
+    date_from = request.args.get("from", "")
+    date_to = request.args.get("to", "")
+    qs = f"?from={date_from}&to={date_to}" if (date_from or date_to) else ""
+
     job_id = str(uuid.uuid4())[:8]
     _export_jobs[job_id] = {"status": "processing", "created_at": _time.time(), "path": None, "filename": None}
 
     def _do_export():
         try:
-            # Call the sync export function within app context
-            with app.test_request_context():
+            # Call the sync export function within app context, passing date params
+            with app.test_request_context(f"/api/productions/{prod_id}/export/budget-global{qs}"):
                 resp = api_export_budget_global(prod_id)
                 data = resp.get_data()
                 fname = resp.headers.get("Content-Disposition", "").split("filename=")[-1] or "export.xlsx"
@@ -4248,12 +4253,17 @@ def api_export_logistics_async(prod_id):
     prod_or_404(prod_id)
     _cleanup_old_exports()
 
+    # Capture date params from request to pass to background thread
+    date_from = request.args.get("from", "")
+    date_to = request.args.get("to", "")
+    qs = f"?from={date_from}&to={date_to}" if (date_from or date_to) else ""
+
     job_id = str(uuid.uuid4())[:8]
     _export_jobs[job_id] = {"status": "processing", "created_at": _time.time(), "path": None, "filename": None}
 
     def _do_export():
         try:
-            with app.test_request_context():
+            with app.test_request_context(f"/api/productions/{prod_id}/export/logistics{qs}"):
                 resp = api_export_logistics(prod_id)
                 data = resp.get_data()
                 fname = resp.headers.get("Content-Disposition", "").split("filename=")[-1] or "export.xlsx"

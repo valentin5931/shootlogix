@@ -600,8 +600,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
   // ── FNB Export ────────────────────────────────────────────────
   function fnbExportCSV() {
-    // Server-side simplified export (totals by category, Up to Date + Estimate)
-    authDownload(`/api/productions/${state.prodId}/export/fnb-budget/csv`);
+    SL.openExportDateModal('fnb', 'FNB', [
+      { key: 'csv', label: 'CSV' },
+    ], (from, to, fmt) => {
+      SL._exportWithDates(`/api/productions/${state.prodId}/export/fnb-budget/csv`, from, to);
+    });
   }
 
 
