@@ -917,7 +917,7 @@ const App = (() => {
     if (panel) panel.classList.add('active');
 
     if (tab === 'dashboard')       renderDashboard();
-    if (tab === 'pdt')             renderPDT();
+    if (tab === 'pdt')             { if (_pdtView === 'calendar') { _initCalMonth(); renderPDTCalendar(); } else renderPDT(); }
     if (tab === 'boats')           { _tabCtx = 'boats';     renderBoats(); }
     if (tab === 'picture-boats')   { _tabCtx = 'picture';   renderPictureBoats(); }
     if (tab === 'transport')       { _tabCtx = 'transport'; _loadAndRenderTransport(); }
@@ -1074,6 +1074,254 @@ const App = (() => {
       });
     }
     tbody.innerHTML = rows.join('');
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  PDT CALENDAR VIEW (AXE 7.1)
+  // ═══════════════════════════════════════════════════════════
+
+  let _pdtView = 'table';   // 'table' | 'calendar'
+  let _pdtCalMonth = null;   // { year, month } currently displayed
+  let _pdtCalExpanded = null; // date string of expanded day (or null)
+
+  function setPDTView(view) {
+    _pdtView = view;
+    document.querySelectorAll('.pdt-view-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.pdtView === view);
+    });
+    const tableCt = $('pdt-table-container');
+    const calCt   = $('pdt-calendar-container');
+    if (view === 'table') {
+      tableCt.style.display = '';
+      calCt.style.display = 'none';
+      renderPDT();
+    } else {
+      tableCt.style.display = 'none';
+      calCt.style.display = '';
+      _initCalMonth();
+      renderPDTCalendar();
+    }
+  }
+
+  function _initCalMonth() {
+    if (_pdtCalMonth) return;
+    const days = state.shootingDays;
+    if (days.length) {
+      const first = new Date(days[0].date + 'T00:00:00');
+      _pdtCalMonth = { year: first.getFullYear(), month: first.getMonth() };
+    } else {
+      const now = new Date();
+      _pdtCalMonth = { year: now.getFullYear(), month: now.getMonth() };
+    }
+  }
+
+  function pdtCalPrev() {
+    _pdtCalMonth.month--;
+    if (_pdtCalMonth.month < 0) { _pdtCalMonth.month = 11; _pdtCalMonth.year--; }
+    _pdtCalExpanded = null;
+    renderPDTCalendar();
+  }
+
+  function pdtCalNext() {
+    _pdtCalMonth.month++;
+    if (_pdtCalMonth.month > 11) { _pdtCalMonth.month = 0; _pdtCalMonth.year++; }
+    _pdtCalExpanded = null;
+    renderPDTCalendar();
+  }
+
+  function renderPDTCalendar() {
+    _initCalMonth();
+    const { year, month } = _pdtCalMonth;
+    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    $('pdt-cal-month-label').textContent = `${MONTHS[month]} ${year}`;
+
+    // Build date → shooting day lookup
+    const dayMap = {};
+    for (const d of state.shootingDays) {
+      if (d.date) dayMap[d.date] = d;
+    }
+
+    // Calendar grid: starts on Monday (ISO)
+    const firstOfMonth = new Date(year, month, 1);
+    const lastOfMonth  = new Date(year, month + 1, 0);
+    const startDow = (firstOfMonth.getDay() + 6) % 7; // 0=Mon
+    const daysInMonth = lastOfMonth.getDate();
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const cells = [];
+
+    // Day-of-week headers
+    const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    for (const dow of DOW) {
+      cells.push(`<div class="pdt-cal-dow">${dow}</div>`);
+    }
+
+    // Leading empty cells (previous month)
+    const prevMonth = new Date(year, month, 0);
+    for (let i = startDow - 1; i >= 0; i--) {
+      const d = prevMonth.getDate() - i;
+      cells.push(`<div class="pdt-cal-cell outside"><span class="pdt-cal-date">${d}</span></div>`);
+    }
+
+    // Days of current month
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const sd = dayMap[dateStr];
+      const isToday = dateStr === todayStr;
+      const isExpanded = dateStr === _pdtCalExpanded;
+      const classes = ['pdt-cal-cell'];
+      if (sd) classes.push('has-day');
+      if (isToday) classes.push('today');
+      if (isExpanded) classes.push('expanded');
+
+      let eventsHtml = '';
+      if (sd) {
+        const events = (sd.events && sd.events.length)
+          ? sd.events
+          : [{ event_type: sd.conseil_soir ? 'game' : (sd.game_name === 'OFF GAME' ? 'off' : 'game'),
+               name: sd.game_name || '', location: sd.location || '' }];
+        eventsHtml = '<div class="pdt-cal-events">';
+        for (const ev of events) {
+          const etype = ev.event_type || 'game';
+          const evCls = EV_CLASS[etype] || 'ev-game';
+          const label = ev.name || EV_LABEL[etype] || etype.toUpperCase();
+          eventsHtml += `<div class="pdt-cal-ev ${evCls}">${esc(label)}</div>`;
+        }
+        eventsHtml += '</div>';
+      }
+
+      const dayNumHtml = sd ? `<span class="pdt-cal-day-num">D${sd.day_number}</span>` : '';
+      const onclick = sd ? `onclick="App.pdtCalToggleDay('${dateStr}')"` : '';
+
+      cells.push(`<div class="${classes.join(' ')}" ${onclick}>
+        <span class="pdt-cal-date">${d}</span>${dayNumHtml}
+        ${eventsHtml}
+      </div>`);
+
+      // Insert inline detail row after the end of the week row if this day is expanded
+      if (isExpanded && sd) {
+        // Figure out position in week (0-based from Monday)
+        const cellDow = (new Date(year, month, d).getDay() + 6) % 7;
+        // Pad remaining cells to complete the week row
+        const remaining = 6 - cellDow;
+        for (let r = d + 1; r <= Math.min(d + remaining, daysInMonth); r++) {
+          const rDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(r).padStart(2, '0')}`;
+          const rSd = dayMap[rDateStr];
+          const rIsToday = rDateStr === todayStr;
+          const rClasses = ['pdt-cal-cell'];
+          if (rSd) rClasses.push('has-day');
+          if (rIsToday) rClasses.push('today');
+
+          let rEvHtml = '';
+          if (rSd) {
+            const revents = (rSd.events && rSd.events.length)
+              ? rSd.events
+              : [{ event_type: rSd.conseil_soir ? 'game' : (rSd.game_name === 'OFF GAME' ? 'off' : 'game'),
+                   name: rSd.game_name || '', location: rSd.location || '' }];
+            rEvHtml = '<div class="pdt-cal-events">';
+            for (const ev of revents) {
+              const etype = ev.event_type || 'game';
+              rEvHtml += `<div class="pdt-cal-ev ${EV_CLASS[etype] || 'ev-game'}">${esc(ev.name || EV_LABEL[etype] || etype.toUpperCase())}</div>`;
+            }
+            rEvHtml += '</div>';
+          }
+          const rDayNum = rSd ? `<span class="pdt-cal-day-num">D${rSd.day_number}</span>` : '';
+          const rOnclick = rSd ? `onclick="App.pdtCalToggleDay('${rDateStr}')"` : '';
+          cells.push(`<div class="${rClasses.join(' ')}" ${rOnclick}>
+            <span class="pdt-cal-date">${r}</span>${rDayNum}${rEvHtml}
+          </div>`);
+        }
+        // Pad with empty cells if week extends beyond month
+        for (let r = daysInMonth + 1; r <= d + remaining; r++) {
+          cells.push(`<div class="pdt-cal-cell outside"><span class="pdt-cal-date">${r - daysInMonth}</span></div>`);
+        }
+        d += remaining; // skip the days we already rendered
+
+        // Now insert the detail row spanning the full week
+        cells.push(_buildCalDetail(sd));
+      }
+    }
+
+    // Trailing empty cells
+    const totalCells = cells.length - 7; // minus DOW headers
+    const trailingNeeded = (7 - (totalCells % 7)) % 7;
+    for (let i = 1; i <= trailingNeeded; i++) {
+      cells.push(`<div class="pdt-cal-cell outside"><span class="pdt-cal-date">${i}</span></div>`);
+    }
+
+    $('pdt-cal-grid').innerHTML = cells.join('');
+  }
+
+  function _buildCalDetail(sd) {
+    const events = (sd.events && sd.events.length)
+      ? sd.events
+      : [{ event_type: sd.conseil_soir ? 'game' : (sd.game_name === 'OFF GAME' ? 'off' : 'game'),
+           name: sd.game_name, location: sd.location,
+           heure_rehearsal: sd.heure_rehearsal, heure_host: sd.heure_animateur,
+           heure_event: sd.heure_game, heure_depart: sd.heure_depart_candidats,
+           maree_hauteur: sd.maree_hauteur, maree_statut: sd.maree_statut }];
+
+    let evRows = '';
+    for (const ev of events) {
+      const etype = ev.event_type || 'game';
+      const evCls = EV_CLASS[etype] || 'ev-game';
+      const evLbl = EV_LABEL[etype] || etype.toUpperCase();
+      const loc = ev.location || sd.location || '';
+      const name = ev.name || sd.game_name || '';
+
+      const times = [];
+      if (ev.heure_rehearsal) times.push(`<span class="pdt-cal-detail-ev-time"><strong>Rehearsal</strong> ${esc(ev.heure_rehearsal)}</span>`);
+      if (ev.heure_host) times.push(`<span class="pdt-cal-detail-ev-time"><strong>Host</strong> ${esc(ev.heure_host)}</span>`);
+      if (ev.heure_event) times.push(`<span class="pdt-cal-detail-ev-time"><strong>Event</strong> ${esc(ev.heure_event)}</span>`);
+      if (ev.heure_depart) times.push(`<span class="pdt-cal-detail-ev-time"><strong>Dep</strong> ${esc(ev.heure_depart)}</span>`);
+      if (ev.heure_arrivee) times.push(`<span class="pdt-cal-detail-ev-time"><strong>Arr</strong> ${esc(ev.heure_arrivee)}</span>`);
+      if (ev.heure_teaser) times.push(`<span class="pdt-cal-detail-ev-time"><strong>Teaser</strong> ${esc(ev.heure_teaser)}</span>`);
+      if (ev.heure_fin) times.push(`<span class="pdt-cal-detail-ev-time"><strong>End</strong> ${esc(ev.heure_fin)}</span>`);
+
+      const tideHtml = ev.maree_hauteur != null
+        ? `<span class="pdt-cal-detail-ev-time"><strong>Tide</strong> ${ev.maree_hauteur}m ${ev.maree_statut || ''}</span>`
+        : '';
+      if (tideHtml) times.push(tideHtml);
+
+      evRows += `<div class="pdt-cal-detail-ev">
+        <span class="event-badge ${evCls}">${evLbl}</span>
+        <div class="pdt-cal-detail-ev-info">
+          <span class="pdt-cal-detail-ev-name">${esc(name) || evLbl}</span>
+          ${loc ? `<span class="pdt-cal-detail-ev-loc">${esc(loc)}</span>` : ''}
+          ${times.length ? `<div class="pdt-cal-detail-ev-times">${times.join('')}</div>` : ''}
+          ${ev.reward || ev.notes ? `<span class="pdt-cal-detail-ev-time" style="margin-top:2px">${esc(ev.reward || '')} ${esc(ev.notes || '')}</span>` : ''}
+        </div>
+      </div>`;
+    }
+
+    const statusLabel = STATUS_LABEL[sd.status] || sd.status || 'Draft';
+    let metaItems = '';
+    if (sd.nb_candidats != null) metaItems += `<span>Candidates: ${sd.nb_candidats}</span>`;
+    metaItems += `<span>Status: ${esc(statusLabel)}</span>`;
+    if (sd.recompense) metaItems += `<span>Reward: ${esc(sd.recompense)}</span>`;
+    if (sd.notes) metaItems += `<span>Notes: ${esc(sd.notes)}</span>`;
+
+    return `<div class="pdt-cal-detail">
+      <div class="pdt-cal-detail-header">
+        <span class="pdt-cal-detail-title">D${sd.day_number}</span>
+        <span class="pdt-cal-detail-date">${fmtDateLong(sd.date)} - ${sd.date}</span>
+        <button class="pdt-cal-detail-close" onclick="App.pdtCalToggleDay(null)" title="Close">✕</button>
+      </div>
+      <div class="pdt-cal-detail-events">${evRows}</div>
+      <div class="pdt-cal-detail-meta">${metaItems}</div>
+      <div class="pdt-cal-detail-edit">
+        <button class="btn btn-sm btn-secondary" onclick="App.editDay(${sd.id})">✎ Edit day</button>
+      </div>
+    </div>`;
+  }
+
+  function pdtCalToggleDay(dateStr) {
+    if (_pdtCalExpanded === dateStr || dateStr === null) {
+      _pdtCalExpanded = null;
+    } else {
+      _pdtCalExpanded = dateStr;
+    }
+    renderPDTCalendar();
   }
 
   // PDT — Import PDF (server-side fallback, kept for backward compat)
@@ -11892,6 +12140,7 @@ const App = (() => {
   return {
     setTab,
     parsePDT, triggerPDTUpload, handlePDTFileUpload,
+    setPDTView, pdtCalPrev, pdtCalNext, pdtCalToggleDay,
     addDay, editDay, closeDayModal, saveDay, deleteDay,
     addEventToDay, deleteEventFromDay, _updateDayEventField, _renderDayEvents, toggleEventsSection,
     setBoatView, filterBoats,

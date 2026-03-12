@@ -91,11 +91,15 @@
         <button class="btn btn-primary btn-sm" onclick="App.triggerPDTUpload()" title="Upload a PDT PDF and merge with existing data">Upload PDT PDF</button>
         <button class="btn btn-secondary btn-sm" onclick="App.addDay()">+ Add day</button>
         <span id="pdt-count" style="font-size:.78rem;color:var(--text-3);margin-left:.5rem"></span>
-        <div style="margin-left:auto">
+        <div style="margin-left:auto;display:flex;align-items:center;gap:.5rem">
           <span id="pdt-status" style="font-size:.75rem;color:var(--text-3)"></span>
+          <div class="pdt-view-toggle">
+            <button class="pdt-view-btn active" data-pdt-view="table" onclick="App.setPDTView('table')" title="Table view">☰</button>
+            <button class="pdt-view-btn" data-pdt-view="calendar" onclick="App.setPDTView('calendar')" title="Calendar view">▦</button>
+          </div>
         </div>
       </div>
-      <div class="pdt-table-wrap">
+      <div id="pdt-table-container" class="pdt-table-wrap">
         <table class="pdt-table">
           <thead>
             <tr>
@@ -116,6 +120,20 @@
           </thead>
           <tbody id="pdt-tbody"></tbody>
         </table>
+      </div>
+      <div id="pdt-calendar-container" class="pdt-calendar-wrap" style="display:none">
+        <div id="pdt-cal-header" class="pdt-cal-header">
+          <button class="btn btn-icon btn-sm" onclick="App.pdtCalPrev()" title="Previous month">◀</button>
+          <span id="pdt-cal-month-label" class="pdt-cal-month-label"></span>
+          <button class="btn btn-icon btn-sm" onclick="App.pdtCalNext()" title="Next month">▶</button>
+        </div>
+        <div class="pdt-cal-legend">
+          <span class="pdt-cal-legend-item"><span class="pdt-cal-dot ev-game-dot"></span>Game</span>
+          <span class="pdt-cal-legend-item"><span class="pdt-cal-dot ev-arena-dot"></span>Arena</span>
+          <span class="pdt-cal-legend-item"><span class="pdt-cal-dot ev-council-dot"></span>Council</span>
+          <span class="pdt-cal-legend-item"><span class="pdt-cal-dot ev-off-dot"></span>Off</span>
+        </div>
+        <div id="pdt-cal-grid" class="pdt-cal-grid"></div>
       </div>
     </div>
 
