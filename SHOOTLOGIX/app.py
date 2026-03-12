@@ -4043,7 +4043,18 @@ def api_dashboard(prod_id):
 
     burn_rate = total_actual / max(days_elapsed, 1)
 
-    # Alerts
+    # Variance % per department
+    for dept_name, dept_data in departments.items():
+        est = dept_data["estimate"]
+        act = dept_data["actual"]
+        if est > 0:
+            dept_data["variance_pct"] = round((act - est) / est * 100, 1)
+            dept_data["usage_pct"] = round(act / est * 100, 1)
+        else:
+            dept_data["variance_pct"] = 0.0
+            dept_data["usage_pct"] = 0.0
+
+    # Alerts (75% = caution, 90% = warning, 100%+ = over_budget)
     alerts = []
     for dept_name, dept_data in departments.items():
         est = dept_data["estimate"]
@@ -4064,6 +4075,29 @@ def api_dashboard(prod_id):
                     "pct": pct,
                     "msg": f"{dept_name.replace('_', ' ').title()} approaching budget ({pct}%)"
                 })
+            elif pct >= 75:
+                alerts.append({
+                    "type": "caution",
+                    "dept": dept_name,
+                    "pct": pct,
+                    "msg": f"{dept_name.replace('_', ' ').title()} at {pct}% of budget"
+                })
+
+    # Cumulative burn rate data per shooting day (for burn rate chart)
+    burn_data = []
+    if pdt_dates and total_actual > 0:
+        elapsed_dates = [d for d in pdt_dates if d <= today]
+        if elapsed_dates:
+            daily_rate = total_actual / len(elapsed_dates)
+            cumulative = 0
+            for i, d in enumerate(pdt_dates):
+                if d <= today:
+                    cumulative += daily_rate
+                    burn_data.append({"date": d, "cumulative": round(cumulative, 2), "is_actual": True})
+                else:
+                    # Linear projection from current burn rate
+                    cumulative += daily_rate
+                    burn_data.append({"date": d, "cumulative": round(cumulative, 2), "is_actual": False})
 
     # Next arena day
     next_arena = None
@@ -4087,10 +4121,12 @@ def api_dashboard(prod_id):
             "days_elapsed": days_elapsed,
             "days_remaining": days_remaining,
             "burn_rate_per_day": round(burn_rate, 2),
+            "projected_total": round(burn_rate * (days_elapsed + days_remaining), 2),
             "next_arena": next_arena,
             "fuel_liters": round(fuel_liters, 0),
         },
         "alerts": alerts,
+        "burn_data": burn_data,
     })
 
 
