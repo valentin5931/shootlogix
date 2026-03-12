@@ -48,6 +48,10 @@ from database import (
     get_budget, get_daily_budget,
     get_history, undo_last_boat_assignment, undo_history_entry,
     get_setting, set_setting,
+    # Budget snapshots & price log (AXE 6.3)
+    create_budget_snapshot, get_budget_snapshots, get_budget_snapshot,
+    compare_budget_snapshots, delete_budget_snapshot,
+    log_price_change, get_price_change_log,
     working_days,
     # New modules
     get_location_schedules, upsert_location_schedule,
@@ -87,6 +91,31 @@ import time as _time
 _export_jobs = {}  # { job_id: { status, path, filename, created_at, error } }
 _EXPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'exports')
 os.makedirs(_EXPORT_DIR, exist_ok=True)
+
+
+# ─── Price Change Logger Helper (AXE 6.3) ────────────────────────────────────
+_PRICE_FIELDS = {
+    'daily_rate_estimate', 'daily_rate_actual', 'rate_estimate', 'rate_actual',
+    'price_override', 'price_p', 'price_f', 'price_w', 'global_deal',
+    'unit_price', 'unit_price_estimate', 'unit_price_actual',
+}
+
+def _log_price_changes(prod_id, entity_type, entity_id, entity_name, old_data, new_data):
+    """Compare old and new data dicts; log any price field changes."""
+    user_id = getattr(g, 'user_id', None)
+    nickname = getattr(g, 'nickname', None)
+    for field in _PRICE_FIELDS:
+        old_val = old_data.get(field)
+        new_val = new_data.get(field)
+        if new_val is not None and old_val != new_val:
+            try:
+                log_price_change(
+                    prod_id, entity_type, entity_id, entity_name,
+                    field, float(old_val) if old_val is not None else None,
+                    float(new_val), user_id, nickname
+                )
+            except (ValueError, TypeError):
+                pass
 
 
 def _cleanup_old_exports():
@@ -541,9 +570,18 @@ def api_get_boat(boat_id):
 
 @app.route("/api/boats/<int:boat_id>", methods=["PUT"])
 def api_update_boat(boat_id):
-    update_boat(boat_id, request.json or {})
+    data = request.json or {}
+    # AXE 6.3: capture old data for price change logging
+    with get_db() as conn:
+        old = conn.execute("SELECT * FROM boats WHERE id=?", (boat_id,)).fetchone()
+    if old:
+        old = dict(old)
+        prod_id = old.get('production_id')
+    update_boat(boat_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM boats WHERE id=?", (boat_id,)).fetchone()
+    if row and old:
+        _log_price_changes(prod_id, 'boat', boat_id, old.get('name', ''), old, data)
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -640,9 +678,16 @@ def api_update_assignment(assignment_id):
     if data.get("boat_id") and data.get("start_date") and data.get("end_date"):
         validate_assignment_overlap('boat_assignments', 'boat_id', data['boat_id'],
                                     data['start_date'], data['end_date'], exclude_id=assignment_id)
+    # AXE 6.3: capture old data for price change logging
+    with get_db() as conn:
+        old = conn.execute("SELECT ba.*, bf.production_id FROM boat_assignments ba LEFT JOIN boat_functions bf ON ba.boat_function_id=bf.id WHERE ba.id=?", (assignment_id,)).fetchone()
+    old_d = dict(old) if old else {}
     update_boat_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM boat_assignments WHERE id=?", (assignment_id,)).fetchone()
+    if old_d.get('production_id'):
+        _log_price_changes(old_d['production_id'], 'boat_assignment', assignment_id,
+                          old_d.get('boat_name_override', f'Assignment #{assignment_id}'), old_d, data)
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -805,9 +850,15 @@ def api_get_helper(helper_id):
 
 @app.route("/api/helpers/<int:helper_id>", methods=["PUT"])
 def api_update_helper(helper_id):
-    update_helper(helper_id, request.json or {})
+    data = request.json or {}
+    with get_db() as conn:
+        old = conn.execute("SELECT * FROM helpers WHERE id=?", (helper_id,)).fetchone()
+    old_d = dict(old) if old else {}
+    update_helper(helper_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM helpers WHERE id=?", (helper_id,)).fetchone()
+    if old_d.get('production_id'):
+        _log_price_changes(old_d['production_id'], 'helper', helper_id, old_d.get('name', ''), old_d, data)
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -1384,9 +1435,15 @@ def api_get_transport_vehicle(vehicle_id):
 
 @app.route("/api/transport-vehicles/<int:vehicle_id>", methods=["PUT"])
 def api_update_transport_vehicle(vehicle_id):
-    update_transport_vehicle(vehicle_id, request.json or {})
+    data = request.json or {}
+    with get_db() as conn:
+        old = conn.execute("SELECT * FROM transport_vehicles WHERE id=?", (vehicle_id,)).fetchone()
+    old_d = dict(old) if old else {}
+    update_transport_vehicle(vehicle_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM transport_vehicles WHERE id=?", (vehicle_id,)).fetchone()
+    if old_d.get('production_id'):
+        _log_price_changes(old_d['production_id'], 'vehicle', vehicle_id, old_d.get('name', ''), old_d, data)
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -1624,6 +1681,19 @@ def api_lock_fuel_day():
     diesel_price = float(data.get("diesel_price", 0))
     petrol_price = float(data.get("petrol_price", 0))
     set_fuel_locked_price(date, diesel_price, petrol_price)
+    # AXE 6.3: auto-snapshot on fuel lock
+    # Need prod_id — try X-Project-Id header
+    prod_id_header = request.headers.get("X-Project-Id")
+    if prod_id_header:
+        try:
+            create_budget_snapshot(
+                int(prod_id_header), trigger_type='lock',
+                trigger_detail=f"Fuel lock: {date}",
+                user_id=getattr(g, 'user_id', None),
+                user_nickname=getattr(g, 'nickname', None)
+            )
+        except Exception:
+            pass
     return jsonify({"ok": True, "date": date, "diesel_price": diesel_price, "petrol_price": petrol_price})
 
 
@@ -2093,6 +2163,8 @@ def api_update_location(loc_id):
     # Cascade rename in schedules
     if 'name' in data and data['name'] != old_name:
         rename_location_in_schedules(old['production_id'], old_name, data['name'])
+    # AXE 6.3: log price changes for locations
+    _log_price_changes(old['production_id'], 'location', loc_id, old_name, old, data)
     return jsonify(result or {})
 
 
@@ -2188,6 +2260,17 @@ def api_lock_location_schedules(prod_id):
     dates = data.get('dates', [])
     locked = data.get('locked', True)
     lock_location_schedules(prod_id, dates, locked)
+    # AXE 6.3: auto-snapshot on lock
+    if locked and dates:
+        try:
+            create_budget_snapshot(
+                prod_id, trigger_type='lock',
+                trigger_detail=f"Location lock: {', '.join(dates[:5])}{'...' if len(dates) > 5 else ''}",
+                user_id=getattr(g, 'user_id', None),
+                user_nickname=getattr(g, 'nickname', None)
+            )
+        except Exception:
+            pass  # snapshot failure should not block lock
     return jsonify({"ok": True})
 
 
@@ -2283,6 +2366,17 @@ def api_lock_guard_location_schedules(prod_id):
     dates = data.get('dates', [])
     locked = data.get('locked', True)
     lock_guard_location_schedules(prod_id, dates, locked)
+    # AXE 6.3: auto-snapshot on lock
+    if locked and dates:
+        try:
+            create_budget_snapshot(
+                prod_id, trigger_type='lock',
+                trigger_detail=f"Guard lock: {', '.join(dates[:5])}{'...' if len(dates) > 5 else ''}",
+                user_id=getattr(g, 'user_id', None),
+                user_nickname=getattr(g, 'nickname', None)
+            )
+        except Exception:
+            pass
     return jsonify({"ok": True})
 
 
@@ -4676,6 +4770,78 @@ def api_budget_daily(prod_id):
     """Return cost breakdown per shooting day."""
     prod_or_404(prod_id)
     return jsonify_cached(get_daily_budget(prod_id))
+
+
+# ─── Budget Snapshots & Price Log (AXE 6.3) ──────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/budget/snapshots", methods=["GET"])
+def api_budget_snapshots(prod_id):
+    """List budget snapshots for a production."""
+    prod_or_404(prod_id)
+    limit = int(request.args.get("limit", 50))
+    return jsonify(get_budget_snapshots(prod_id, limit))
+
+
+@app.route("/api/productions/<int:prod_id>/budget/snapshots", methods=["POST"])
+def api_create_budget_snapshot(prod_id):
+    """Manually create a budget snapshot."""
+    prod_or_404(prod_id)
+    data = request.json or {}
+    note = data.get('note', '')
+    snap_id = create_budget_snapshot(
+        prod_id, trigger_type='manual',
+        trigger_detail=note or 'Manual snapshot',
+        user_id=getattr(g, 'user_id', None),
+        user_nickname=getattr(g, 'nickname', None)
+    )
+    return jsonify({"ok": True, "snapshot_id": snap_id}), 201
+
+
+@app.route("/api/productions/<int:prod_id>/budget/snapshots/<int:snap_id>", methods=["GET"])
+def api_budget_snapshot_detail(prod_id, snap_id):
+    """Get a single snapshot with full budget data."""
+    prod_or_404(prod_id)
+    snap = get_budget_snapshot(snap_id)
+    if not snap or snap['production_id'] != prod_id:
+        abort(404)
+    return jsonify(snap)
+
+
+@app.route("/api/productions/<int:prod_id>/budget/snapshots/<int:snap_id>", methods=["DELETE"])
+def api_delete_budget_snapshot(prod_id, snap_id):
+    """Delete a budget snapshot."""
+    prod_or_404(prod_id)
+    snap = get_budget_snapshot(snap_id)
+    if not snap or snap['production_id'] != prod_id:
+        abort(404)
+    delete_budget_snapshot(snap_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/productions/<int:prod_id>/budget/snapshots/compare", methods=["GET"])
+def api_compare_budget_snapshots(prod_id):
+    """Compare two budget snapshots. Query params: a=<id>&b=<id>"""
+    prod_or_404(prod_id)
+    snap_a = request.args.get("a")
+    snap_b = request.args.get("b")
+    if not snap_a or not snap_b:
+        return jsonify({"error": "Query params a and b required"}), 400
+    result = compare_budget_snapshots(int(snap_a), int(snap_b))
+    if not result:
+        return jsonify({"error": "One or both snapshots not found"}), 404
+    return jsonify(result)
+
+
+@app.route("/api/productions/<int:prod_id>/budget/price-log", methods=["GET"])
+def api_price_change_log(prod_id):
+    """Get price change log entries."""
+    prod_or_404(prod_id)
+    limit = int(request.args.get("limit", 100))
+    entity_type = request.args.get("entity_type")
+    entity_id = request.args.get("entity_id")
+    if entity_id:
+        entity_id = int(entity_id)
+    return jsonify(get_price_change_log(prod_id, limit, entity_type, entity_id))
 
 
 # ─── Bootstrap ────────────────────────────────────────────────────────────────

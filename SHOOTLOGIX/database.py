@@ -646,6 +646,35 @@ CREATE TABLE IF NOT EXISTS fuel_locked_prices (
     locked_at     TEXT DEFAULT (datetime('now'))
 );
 
+-- Budget snapshots (AXE 6.3): full budget state at a point in time
+CREATE TABLE IF NOT EXISTS budget_snapshots (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    production_id   INTEGER NOT NULL REFERENCES productions(id),
+    trigger_type    TEXT NOT NULL,         -- 'lock', 'manual', 'scheduled'
+    trigger_detail  TEXT,                  -- e.g. locked date or note
+    user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    user_nickname   TEXT,
+    snapshot_data   TEXT NOT NULL,         -- JSON: full budget at time of snapshot
+    grand_total_estimate REAL DEFAULT 0,
+    grand_total_actual   REAL DEFAULT 0,
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+
+-- Price change log (AXE 6.3): tracks every rate/price modification
+CREATE TABLE IF NOT EXISTS price_change_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    production_id   INTEGER NOT NULL REFERENCES productions(id),
+    entity_type     TEXT NOT NULL,         -- 'boat', 'vehicle', 'helper', 'location', 'guard', 'fnb_item', 'fuel'
+    entity_id       INTEGER,
+    entity_name     TEXT,
+    field_changed   TEXT NOT NULL,         -- 'daily_rate_estimate', 'price_override', 'price_p', etc.
+    old_value       REAL,
+    new_value       REAL,
+    user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    user_nickname   TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+
 -- ═══════════════════════════════════════════════
 -- INDEXES FOR PERFORMANCE
 -- ═══════════════════════════════════════════════
@@ -679,6 +708,11 @@ CREATE INDEX IF NOT EXISTS idx_history_table_record ON history(table_name, recor
 CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at);
 CREATE INDEX IF NOT EXISTS idx_budget_lines_prod ON budget_lines(production_id);
 CREATE INDEX IF NOT EXISTS idx_documents_prod ON documents(production_id);
+CREATE INDEX IF NOT EXISTS idx_budget_snapshots_prod ON budget_snapshots(production_id);
+CREATE INDEX IF NOT EXISTS idx_budget_snapshots_created ON budget_snapshots(created_at);
+CREATE INDEX IF NOT EXISTS idx_price_change_log_prod ON price_change_log(production_id);
+CREATE INDEX IF NOT EXISTS idx_price_change_log_entity ON price_change_log(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_price_change_log_created ON price_change_log(created_at);
         """)
 
     print("Database initialized — ShootLogix schema v1")
@@ -3523,6 +3557,163 @@ def undo_last_boat_assignment(prod_id):
 
         conn.execute("DELETE FROM history WHERE id=?", (last["id"],))
         return {"message": "Undo successful", "restored": old}
+
+
+# ─── Budget Snapshots (AXE 6.3) ───────────────────────────────────────────────
+
+def create_budget_snapshot(prod_id, trigger_type='manual', trigger_detail=None,
+                           user_id=None, user_nickname=None):
+    """Take a full budget snapshot and store it."""
+    budget = get_budget(prod_id)
+    snapshot_data = json.dumps(budget, default=str)
+    with get_db() as conn:
+        cur = conn.execute(
+            """INSERT INTO budget_snapshots
+               (production_id, trigger_type, trigger_detail, user_id, user_nickname,
+                snapshot_data, grand_total_estimate, grand_total_actual)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (prod_id, trigger_type, trigger_detail, user_id, user_nickname,
+             snapshot_data,
+             budget.get('grand_total_estimate', 0),
+             budget.get('grand_total_actual', 0))
+        )
+        return cur.lastrowid
+
+
+def get_budget_snapshots(prod_id, limit=50):
+    """List budget snapshots for a production (without full data)."""
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT id, production_id, trigger_type, trigger_detail,
+                      user_id, user_nickname, grand_total_estimate, grand_total_actual, created_at
+               FROM budget_snapshots
+               WHERE production_id = ?
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (prod_id, limit)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_budget_snapshot(snapshot_id):
+    """Get a single budget snapshot with full data."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM budget_snapshots WHERE id = ?", (snapshot_id,)
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d['snapshot_data'] = json.loads(d['snapshot_data'])
+        return d
+
+
+def compare_budget_snapshots(snap_id_a, snap_id_b):
+    """Compare two budget snapshots and return differences."""
+    a = get_budget_snapshot(snap_id_a)
+    b = get_budget_snapshot(snap_id_b)
+    if not a or not b:
+        return None
+
+    a_data = a['snapshot_data']
+    b_data = b['snapshot_data']
+
+    # Build department-level comparison
+    a_depts = a_data.get('by_department', {})
+    b_depts = b_data.get('by_department', {})
+    all_depts = sorted(set(list(a_depts.keys()) + list(b_depts.keys())))
+
+    dept_comparison = []
+    for dept in all_depts:
+        a_est = a_depts.get(dept, {}).get('total_estimate', 0)
+        b_est = b_depts.get(dept, {}).get('total_estimate', 0)
+        diff = b_est - a_est
+        pct = round(diff / a_est * 100, 1) if a_est else (100.0 if b_est else 0.0)
+        dept_comparison.append({
+            'department': dept,
+            'snapshot_a': round(a_est, 2),
+            'snapshot_b': round(b_est, 2),
+            'difference': round(diff, 2),
+            'change_pct': pct,
+        })
+
+    # Build line-level comparison
+    a_rows = {(r.get('department', ''), r.get('name', '')): r for r in a_data.get('rows', [])}
+    b_rows = {(r.get('department', ''), r.get('name', '')): r for r in b_data.get('rows', [])}
+    all_keys = sorted(set(list(a_rows.keys()) + list(b_rows.keys())))
+
+    line_changes = []
+    for key in all_keys:
+        ar = a_rows.get(key)
+        br = b_rows.get(key)
+        a_amt = (ar or {}).get('amount_estimate', 0) or 0
+        b_amt = (br or {}).get('amount_estimate', 0) or 0
+        if abs(b_amt - a_amt) > 0.01:
+            line_changes.append({
+                'department': key[0],
+                'name': key[1],
+                'snapshot_a': round(a_amt, 2),
+                'snapshot_b': round(b_amt, 2),
+                'difference': round(b_amt - a_amt, 2),
+            })
+
+    return {
+        'snapshot_a': {
+            'id': a['id'], 'created_at': a['created_at'],
+            'trigger_type': a['trigger_type'], 'trigger_detail': a['trigger_detail'],
+            'grand_total_estimate': a['grand_total_estimate'],
+        },
+        'snapshot_b': {
+            'id': b['id'], 'created_at': b['created_at'],
+            'trigger_type': b['trigger_type'], 'trigger_detail': b['trigger_detail'],
+            'grand_total_estimate': b['grand_total_estimate'],
+        },
+        'total_diff': round(b['grand_total_estimate'] - a['grand_total_estimate'], 2),
+        'departments': dept_comparison,
+        'line_changes': line_changes,
+    }
+
+
+def delete_budget_snapshot(snapshot_id):
+    """Delete a budget snapshot."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM budget_snapshots WHERE id = ?", (snapshot_id,))
+
+
+# ─── Price Change Log (AXE 6.3) ──────────────────────────────────────────────
+
+def log_price_change(prod_id, entity_type, entity_id, entity_name,
+                     field_changed, old_value, new_value,
+                     user_id=None, user_nickname=None):
+    """Record a price/rate modification."""
+    if old_value == new_value:
+        return
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO price_change_log
+               (production_id, entity_type, entity_id, entity_name,
+                field_changed, old_value, new_value, user_id, user_nickname)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (prod_id, entity_type, entity_id, entity_name,
+             field_changed, old_value, new_value, user_id, user_nickname)
+        )
+
+
+def get_price_change_log(prod_id, limit=100, entity_type=None, entity_id=None):
+    """Get price change log entries."""
+    query = """SELECT * FROM price_change_log WHERE production_id = ?"""
+    params = [prod_id]
+    if entity_type:
+        query += " AND entity_type = ?"
+        params.append(entity_type)
+    if entity_id:
+        query += " AND entity_id = ?"
+        params.append(entity_id)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+    with get_db() as conn:
+        rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
 
 
 # ─── Settings ─────────────────────────────────────────────────────────────────
