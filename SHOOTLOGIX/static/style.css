@@ -1016,6 +1016,7 @@ select.form-control { cursor: pointer; }
 
 .schedule-wrap {
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
   border-radius: 8px 8px 0 0;
   border: 1px solid var(--border);
   border-bottom: none;
@@ -1687,7 +1688,10 @@ body.schedule-dragging * { cursor: col-resize !important; }
    LOCATION / GUARD SCHEDULE — P/F/W Cells
    ═══════════════════════════════════════════════ */
 
-.loc-schedule-wrap { margin-top: .5rem; }
+.loc-schedule-wrap {
+  margin-top: .5rem;
+  -webkit-overflow-scrolling: touch;
+}
 
 .loc-schedule-table {
   border-collapse: collapse;
@@ -2331,4 +2335,53 @@ body.schedule-dragging * { cursor: col-resize !important; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Responsive schedules — touch-friendly 44×44px cells (mobile) ────── */
+@media (max-width: 768px) {
+  /* Shrink entity name column to give more room to schedule grid */
+  .role-name-cell {
+    width: 110px;
+    min-width: 90px;
+    max-width: 110px;
+    padding: 2px 4px !important;
+  }
+  .rn-group { font-size: .52rem; }
+  .rn-boat  { font-size: .65rem; }
+
+  /* Touch-friendly schedule data cells: 44×44px minimum */
+  .schedule-cell {
+    height: 44px;
+    min-width: 44px;
+  }
+
+  /* Day header cells match data cell width */
+  .schedule-day-th {
+    min-width: 44px;
+    font-size: 0.68rem;
+    padding: 4px 2px;
+  }
+
+  /* Adjust table row intrinsic height for content-visibility */
+  .schedule-table tbody tr {
+    contain-intrinsic-height: 44px;
+  }
+
+  /* Lock row cells match column width */
+  .schedule-lock-row td {
+    min-width: 44px;
+  }
+
+  /* ── Locations schedule — touch-friendly ── */
+  .loc-schedule-table th,
+  .loc-schedule-table td {
+    min-width: 44px;
+    min-height: 44px;
+    padding: .25rem .3rem;
+    font-size: .68rem;
+  }
+
+  .loc-cell-P, .loc-cell-F, .loc-cell-W {
+    font-size: .68rem;
+  }
 }

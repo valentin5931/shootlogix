@@ -245,14 +245,16 @@ const App = (() => {
 
   // ── Virtual Schedule (column windowing) ─────────────────────
   // Only renders visible date columns + buffer to avoid rendering 80+ columns
-  const VCOL_WIDTH = 26; // px per column (matches .schedule-cell width)
+  const VCOL_WIDTH_DESKTOP = 26; // px per column (matches .schedule-cell min-width desktop)
+  const VCOL_WIDTH_MOBILE  = 44; // px per column on mobile (44px touch-friendly)
   const VCOL_BUFFER = 10; // extra columns rendered on each side
+  function _vcolWidth() { return window.innerWidth <= 768 ? VCOL_WIDTH_MOBILE : VCOL_WIDTH_DESKTOP; }
 
   function _virtualScheduleSetup(wrapEl, totalCols) {
     if (!wrapEl) return null;
     const viewWidth = wrapEl.clientWidth;
-    const funcColWidth = 130; // role-name-cell width
-    const visibleCols = Math.ceil((viewWidth - funcColWidth) / VCOL_WIDTH);
+    const funcColWidth = window.innerWidth <= 768 ? 90 : 130;
+    const visibleCols = Math.ceil((viewWidth - funcColWidth) / _vcolWidth());
     return {
       totalCols,
       visibleCols,
@@ -264,10 +266,11 @@ const App = (() => {
     if (!wrapEl) return { start: 0, end: totalCols };
     const scrollLeft = wrapEl.scrollLeft;
     const viewWidth = wrapEl.clientWidth;
-    const funcColWidth = 130;
+    const funcColWidth = window.innerWidth <= 768 ? 90 : 130;
     const effectiveScroll = Math.max(0, scrollLeft);
-    const startCol = Math.max(0, Math.floor(effectiveScroll / VCOL_WIDTH) - VCOL_BUFFER);
-    const endCol = Math.min(totalCols, Math.ceil((effectiveScroll + viewWidth) / VCOL_WIDTH) + VCOL_BUFFER);
+    const cw = _vcolWidth();
+    const startCol = Math.max(0, Math.floor(effectiveScroll / cw) - VCOL_BUFFER);
+    const endCol = Math.min(totalCols, Math.ceil((effectiveScroll + viewWidth) / cw) + VCOL_BUFFER);
     return { start: startCol, end: endCol };
   }
 
