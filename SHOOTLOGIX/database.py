@@ -668,6 +668,20 @@ CREATE TABLE IF NOT EXISTS price_change_log (
 );
 
 -- ═══════════════════════════════════════════════
+-- USER EXPORT PREFERENCES (AXE 2.2)
+-- ═══════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS user_export_preferences (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    production_id   INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+    module          TEXT NOT NULL,          -- 'boats', 'picture_boats', 'security_boats', 'transport', 'labour', 'guards', 'fuel', 'fnb', 'budget'
+    last_export_from TEXT,                  -- YYYY-MM-DD
+    last_export_to   TEXT,                  -- YYYY-MM-DD
+    updated_at      TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, production_id, module)
+);
+
+-- ═══════════════════════════════════════════════
 -- INDEXES FOR PERFORMANCE
 -- ═══════════════════════════════════════════════
 CREATE INDEX IF NOT EXISTS idx_boat_assignments_boat ON boat_assignments(boat_id);
@@ -3706,6 +3720,55 @@ def get_price_change_log(prod_id, limit=100, entity_type=None, entity_id=None):
     with get_db() as conn:
         rows = conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
+
+
+# ─── User Export Preferences (AXE 2.2) ────────────────────────────────────────
+
+def get_export_preference(user_id, production_id, module):
+    """Get last export date range for this user/production/module."""
+    with get_db() as conn:
+        r = conn.execute(
+            "SELECT last_export_from, last_export_to FROM user_export_preferences "
+            "WHERE user_id=? AND production_id=? AND module=?",
+            (user_id, production_id, module)
+        ).fetchone()
+        return dict(r) if r else None
+
+
+def save_export_preference(user_id, production_id, module, date_from, date_to):
+    """Save last export date range for this user/production/module."""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO user_export_preferences (user_id, production_id, module, last_export_from, last_export_to, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, datetime('now')) "
+            "ON CONFLICT(user_id, production_id, module) DO UPDATE SET "
+            "last_export_from=excluded.last_export_from, last_export_to=excluded.last_export_to, updated_at=datetime('now')",
+            (user_id, production_id, module, date_from, date_to)
+        )
+
+
+def get_module_date_range(production_id, module):
+    """Get the first and last date with data for a module.
+    Returns {'first_date': str, 'last_date': str} or None."""
+    date_queries = {
+        'boats': "SELECT MIN(start_date) as first_date, MAX(end_date) as last_date FROM boat_assignments ba JOIN boat_functions bf ON ba.boat_function_id=bf.id WHERE bf.production_id=?",
+        'picture_boats': "SELECT MIN(start_date) as first_date, MAX(end_date) as last_date FROM picture_boat_assignments pa JOIN boat_functions bf ON pa.boat_function_id=bf.id WHERE bf.production_id=?",
+        'security_boats': "SELECT MIN(start_date) as first_date, MAX(end_date) as last_date FROM security_boat_assignments sa JOIN boat_functions bf ON sa.boat_function_id=bf.id WHERE bf.production_id=?",
+        'transport': "SELECT MIN(start_date) as first_date, MAX(end_date) as last_date FROM transport_assignments ta JOIN boat_functions bf ON ta.boat_function_id=bf.id WHERE bf.production_id=?",
+        'labour': "SELECT MIN(start_date) as first_date, MAX(end_date) as last_date FROM helper_assignments ha JOIN boat_functions bf ON ha.boat_function_id=bf.id WHERE bf.production_id=?",
+        'guards': "SELECT MIN(start_date) as first_date, MAX(end_date) as last_date FROM guard_camp_assignments ga JOIN boat_functions bf ON ga.boat_function_id=bf.id WHERE bf.production_id=?",
+        'fuel': "SELECT MIN(date) as first_date, MAX(date) as last_date FROM fuel_entries WHERE production_id=?",
+        'fnb': "SELECT MIN(date) as first_date, MAX(date) as last_date FROM fnb_daily_tracking WHERE production_id=?",
+        'budget': "SELECT MIN(start_date) as first_date, MAX(end_date) as last_date FROM boat_assignments ba JOIN boat_functions bf ON ba.boat_function_id=bf.id WHERE bf.production_id=?",
+    }
+    query = date_queries.get(module)
+    if not query:
+        return None
+    with get_db() as conn:
+        r = conn.execute(query, (production_id,)).fetchone()
+        if r and r['first_date']:
+            return {'first_date': r['first_date'], 'last_date': r['last_date']}
+    return None
 
 
 # ─── Settings ─────────────────────────────────────────────────────────────────
