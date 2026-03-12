@@ -1549,9 +1549,10 @@ const App = (() => {
         : `<div class="boat-thumb-placeholder">#${esc(b.boat_nr || '?')}</div>`;
 
       const nr = b.boat_nr ? `<span style="font-size:.6rem;color:var(--text-4);font-family:monospace">#${esc(b.boat_nr)}</span> ` : '';
-      const rate = b.daily_rate_estimate > 0
-        ? `<div style="font-size:.65rem;color:var(--green);margin-top:.1rem">$${Math.round(b.daily_rate_estimate).toLocaleString('en-US')}/j</div>`
-        : '';
+      const rateVal = b.daily_rate_estimate || 0;
+      const rate = `<div style="font-size:.65rem;color:${rateVal > 0 ? 'var(--green)' : 'var(--text-4)'};margin-top:.1rem;cursor:pointer;display:inline-flex;align-items:center;gap:.2rem"
+        onclick="event.stopPropagation();App.openBoatDetail(${b.id})"
+        title="Click to edit rate">${rateVal > 0 ? '$' + Math.round(rateVal).toLocaleString('en-US') + '/d' : '+ set rate'}<span style="font-size:.55rem;opacity:.5">&#x270E;</span></div>`;
 
       return `<div class="boat-card ${isAssigned ? 'assigned' : ''} ${isSelected ? 'selected' : ''}"
         id="boat-card-${b.id}"
@@ -3156,9 +3157,10 @@ const App = (() => {
            <div class="boat-thumb-placeholder" style="display:none">#${esc(b.boat_nr || '?')}</div>`
         : `<div class="boat-thumb-placeholder">#${esc(b.boat_nr || '?')}</div>`;
       const nr   = b.boat_nr ? `<span style="font-size:.6rem;color:var(--text-4);font-family:monospace">#${esc(b.boat_nr)}</span> ` : '';
-      const rate = b.daily_rate_estimate > 0
-        ? `<div style="font-size:.65rem;color:var(--green);margin-top:.1rem">$${Math.round(b.daily_rate_estimate).toLocaleString('en-US')}/j</div>`
-        : '';
+      const pbRateVal = b.daily_rate_estimate || 0;
+      const rate = `<div style="font-size:.65rem;color:${pbRateVal > 0 ? 'var(--green)' : 'var(--text-4)'};margin-top:.1rem;cursor:pointer;display:inline-flex;align-items:center;gap:.2rem"
+        onclick="event.stopPropagation();App.openPictureBoatDetail(${b.id})"
+        title="Click to edit rate">${pbRateVal > 0 ? '$' + Math.round(pbRateVal).toLocaleString('en-US') + '/d' : '+ set rate'}<span style="font-size:.55rem;opacity:.5">&#x270E;</span></div>`;
       return `<div class="boat-card ${isAssigned ? 'assigned' : ''}"
         id="pb-boat-card-${b.id}"
         draggable="true"
@@ -3944,9 +3946,10 @@ const App = (() => {
            <div class="boat-thumb-placeholder" style="display:none">#${esc(v.vehicle_nr || '?')}</div>`
         : `<div class="boat-thumb-placeholder">#${esc(v.vehicle_nr || '?')}</div>`;
       const nr   = v.vehicle_nr ? `<span style="font-size:.6rem;color:var(--text-4);font-family:monospace">#${esc(v.vehicle_nr)}</span> ` : '';
-      const rate = v.daily_rate_estimate > 0
-        ? `<div style="font-size:.65rem;color:var(--green);margin-top:.1rem">$${Math.round(v.daily_rate_estimate).toLocaleString('en-US')}/j</div>`
-        : '';
+      const tbRateVal = v.daily_rate_estimate || 0;
+      const rate = `<div style="font-size:.65rem;color:${tbRateVal > 0 ? 'var(--green)' : 'var(--text-4)'};margin-top:.1rem;cursor:pointer;display:inline-flex;align-items:center;gap:.2rem"
+        onclick="event.stopPropagation();App.openTransportVehicleDetail(${v.id})"
+        title="Click to edit rate">${tbRateVal > 0 ? '$' + Math.round(tbRateVal).toLocaleString('en-US') + '/d' : '+ set rate'}<span style="font-size:.55rem;opacity:.5">&#x270E;</span></div>`;
       return `<div class="boat-card ${isAssigned ? 'assigned' : ''}"
         id="tb-vehicle-card-${v.id}"
         draggable="true"
@@ -6464,9 +6467,10 @@ const App = (() => {
            <div class="boat-thumb-placeholder" style="display:none">#${esc(b.boat_nr || '?')}</div>`
         : `<div class="boat-thumb-placeholder">#${esc(b.boat_nr || '?')}</div>`;
       const nr   = b.boat_nr ? `<span style="font-size:.6rem;color:var(--text-4);font-family:monospace">#${esc(b.boat_nr)}</span> ` : '';
-      const rate = b.daily_rate_estimate > 0
-        ? `<div style="font-size:.65rem;color:var(--green);margin-top:.1rem">$${Math.round(b.daily_rate_estimate).toLocaleString('en-US')}/j</div>`
-        : '';
+      const sbRateVal = b.daily_rate_estimate || 0;
+      const rate = `<div style="font-size:.65rem;color:${sbRateVal > 0 ? 'var(--green)' : 'var(--text-4)'};margin-top:.1rem;cursor:pointer;display:inline-flex;align-items:center;gap:.2rem"
+        onclick="event.stopPropagation();App.openSecurityBoatDetail(${b.id})"
+        title="Click to edit rate">${sbRateVal > 0 ? '$' + Math.round(sbRateVal).toLocaleString('en-US') + '/d' : '+ set rate'}<span style="font-size:.55rem;opacity:.5">&#x270E;</span></div>`;
       return `<div class="boat-card ${isAssigned ? 'assigned' : ''}"
         id="sb-boat-card-${b.id}"
         draggable="true"
@@ -8517,9 +8521,10 @@ const App = (() => {
       const isAssigned = assignedIds.has(w.id);
       const wAsgns = state.gcAssignments.filter(a => a.helper_id === w.id);
       const groupColor = _groupColor('guard_camp', w.group_name || 'GENERAL');
-      const rate = w.daily_rate_estimate > 0
-        ? `<div style="font-size:.65rem;color:var(--green);margin-top:.1rem">$${Math.round(w.daily_rate_estimate).toLocaleString('en-US')}/d</div>`
-        : '';
+      const gcRateVal = w.daily_rate_estimate || 0;
+      const rate = `<div style="font-size:.65rem;color:${gcRateVal > 0 ? 'var(--green)' : 'var(--text-4)'};margin-top:.1rem;cursor:pointer;display:inline-flex;align-items:center;gap:.2rem"
+        onclick="event.stopPropagation();App.gcOpenWorkerDetail(${w.id})"
+        title="Click to edit rate">${gcRateVal > 0 ? '$' + Math.round(gcRateVal).toLocaleString('en-US') + '/d' : '+ set rate'}<span style="font-size:.55rem;opacity:.5">&#x270E;</span></div>`;
       return `<div class="boat-card ${isAssigned ? 'assigned' : ''}"
         id="gc-worker-card-${w.id}"
         draggable="true"
