@@ -772,6 +772,17 @@ def _migrate_db():
             conn.execute("ALTER TABLE guard_posts ADD COLUMN guards_wrap INTEGER DEFAULT 2")
             print("Migration: added guard_posts.guards_prep/guards_film/guards_wrap")
 
+        # sort_order on entity tables for drag & drop reordering
+        for tbl in ['boats', 'picture_boats', 'transport_vehicles', 'helpers',
+                     'security_boats', 'guard_camp_workers']:
+            try:
+                cols = [r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
+                if 'sort_order' not in cols:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN sort_order INTEGER DEFAULT 0")
+                    print(f"Migration: added {tbl}.sort_order")
+            except Exception:
+                pass
+
 
 # ─── Working days ─────────────────────────────────────────────────────────────
 
@@ -1058,7 +1069,7 @@ def delete_events_for_day(day_id):
 def get_boats(prod_id):
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM boats WHERE production_id=? ORDER BY boat_nr, name",
+            "SELECT * FROM boats WHERE production_id=? ORDER BY sort_order, boat_nr, name",
             (prod_id,)
         ).fetchall()
         return [dict(r) for r in rows]
@@ -1082,7 +1093,7 @@ def create_boat(data):
 def update_boat(boat_id, data):
     allowed = ["boat_nr", "name", "category", "capacity", "night_ok",
                "wave_rating", "captain", "vendor", "group_name", "notes",
-               "daily_rate_estimate", "daily_rate_actual", "image_path"]
+               "daily_rate_estimate", "daily_rate_actual", "image_path", "sort_order"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1262,7 +1273,7 @@ def delete_boat_assignment(assignment_id):
 def get_picture_boats(prod_id):
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM picture_boats WHERE production_id=? ORDER BY boat_nr, name",
+            "SELECT * FROM picture_boats WHERE production_id=? ORDER BY sort_order, boat_nr, name",
             (prod_id,)
         ).fetchall()
         return [dict(r) for r in rows]
@@ -1286,7 +1297,7 @@ def create_picture_boat(data):
 def update_picture_boat(pb_id, data):
     allowed = ["boat_nr", "name", "capacity", "night_ok", "wave_rating",
                "captain", "vendor", "group_name", "notes",
-               "daily_rate_estimate", "daily_rate_actual", "image_path"]
+               "daily_rate_estimate", "daily_rate_actual", "image_path", "sort_order"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1422,7 +1433,7 @@ def delete_picture_boat_assignment_by_function(func_id):
 def get_transport_vehicles(prod_id):
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM transport_vehicles WHERE production_id=? ORDER BY vehicle_nr, name",
+            "SELECT * FROM transport_vehicles WHERE production_id=? ORDER BY sort_order, vehicle_nr, name",
             (prod_id,)
         ).fetchall()
         return [dict(r) for r in rows]
@@ -1444,7 +1455,7 @@ def create_transport_vehicle(data):
 
 def update_transport_vehicle(vehicle_id, data):
     allowed = ["vehicle_nr", "name", "type", "driver", "vendor", "group_name",
-               "notes", "daily_rate_estimate", "daily_rate_actual", "image_path"]
+               "notes", "daily_rate_estimate", "daily_rate_actual", "image_path", "sort_order"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1688,7 +1699,7 @@ def delete_fuel_locked_price(date):
 def get_helpers(prod_id):
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM helpers WHERE production_id=? ORDER BY name", (prod_id,)
+            "SELECT * FROM helpers WHERE production_id=? ORDER BY sort_order, name", (prod_id,)
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -1709,7 +1720,7 @@ def create_helper(data):
 
 def update_helper(helper_id, data):
     allowed = ["name", "role", "contact", "group_name",
-               "daily_rate_estimate", "daily_rate_actual", "notes", "image_path"]
+               "daily_rate_estimate", "daily_rate_actual", "notes", "image_path", "sort_order"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1838,7 +1849,7 @@ def get_helper_schedules(prod_id):
 def get_guard_camp_workers(prod_id):
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM guard_camp_workers WHERE production_id=? ORDER BY name", (prod_id,)
+            "SELECT * FROM guard_camp_workers WHERE production_id=? ORDER BY sort_order, name", (prod_id,)
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -1859,7 +1870,7 @@ def create_guard_camp_worker(data):
 
 def update_guard_camp_worker(worker_id, data):
     allowed = ["name", "role", "contact", "group_name",
-               "daily_rate_estimate", "daily_rate_actual", "notes", "image_path"]
+               "daily_rate_estimate", "daily_rate_actual", "notes", "image_path", "sort_order"]
     sets = []
     vals = []
     for k in allowed:
@@ -1977,7 +1988,7 @@ def delete_guard_camp_assignment_by_function(func_id):
 def get_security_boats(prod_id):
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM security_boats WHERE production_id=? ORDER BY boat_nr, name",
+            "SELECT * FROM security_boats WHERE production_id=? ORDER BY sort_order, boat_nr, name",
             (prod_id,)
         ).fetchall()
         return [dict(r) for r in rows]
@@ -2001,7 +2012,7 @@ def create_security_boat(data):
 def update_security_boat(sb_id, data):
     allowed = ["boat_nr", "name", "capacity", "night_ok", "wave_rating",
                "captain", "vendor", "group_name", "notes",
-               "daily_rate_estimate", "daily_rate_actual", "image_path"]
+               "daily_rate_estimate", "daily_rate_actual", "image_path", "sort_order"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
