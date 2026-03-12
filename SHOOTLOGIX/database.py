@@ -839,6 +839,22 @@ CREATE TABLE IF NOT EXISTS user_export_preferences (
 );
 
 -- ═══════════════════════════════════════════════
+-- NOTIFICATIONS (AXE 9.2)
+-- ═══════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS notifications (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    production_id   INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type            TEXT NOT NULL,          -- 'assignment_created', 'assignment_updated', 'budget_exceeded', 'pdt_modified', 'comment_added'
+    title           TEXT NOT NULL,
+    body            TEXT,
+    entity_type     TEXT,                   -- optional link to entity
+    entity_id       INTEGER,
+    is_read         INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+
+-- ═══════════════════════════════════════════════
 -- INDEXES FOR PERFORMANCE
 -- ═══════════════════════════════════════════════
 CREATE INDEX IF NOT EXISTS idx_boat_assignments_boat ON boat_assignments(boat_id);
@@ -876,6 +892,9 @@ CREATE INDEX IF NOT EXISTS idx_budget_snapshots_created ON budget_snapshots(crea
 CREATE INDEX IF NOT EXISTS idx_price_change_log_prod ON price_change_log(production_id);
 CREATE INDEX IF NOT EXISTS idx_price_change_log_entity ON price_change_log(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_price_change_log_created ON price_change_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_prod ON notifications(production_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(user_id, is_read);
         """)
 
     print("Database initialized — ShootLogix schema v1")
@@ -996,6 +1015,47 @@ def _migrate_db():
             # Create index for user_id filtering
             conn.execute("CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id)")
             print("Migration: added history indexes (production_id, user_id)")
+
+        # AXE 9.1: Migrate comments table — add new columns to existing schema
+        c_cols = get_table_columns(conn, 'comments')
+        if c_cols:  # table exists
+            if 'production_id' not in c_cols:
+                conn.execute("ALTER TABLE comments ADD COLUMN production_id INTEGER")
+                print("Migration: added comments.production_id")
+            if 'entity_type' not in c_cols:
+                conn.execute("ALTER TABLE comments ADD COLUMN entity_type TEXT")
+                # Migrate from old element_type to entity_type
+                if 'element_type' in c_cols:
+                    conn.execute("UPDATE comments SET entity_type = element_type WHERE entity_type IS NULL")
+                print("Migration: added comments.entity_type (migrated from element_type)")
+            if 'entity_id' not in c_cols:
+                conn.execute("ALTER TABLE comments ADD COLUMN entity_id INTEGER")
+                if 'element_id' in c_cols:
+                    conn.execute("UPDATE comments SET entity_id = element_id WHERE entity_id IS NULL")
+                print("Migration: added comments.entity_id (migrated from element_id)")
+            if 'user_id' not in c_cols:
+                conn.execute("ALTER TABLE comments ADD COLUMN user_id INTEGER")
+                if 'author_id' in c_cols:
+                    conn.execute("UPDATE comments SET user_id = author_id WHERE user_id IS NULL")
+                print("Migration: added comments.user_id (migrated from author_id)")
+            if 'user_nickname' not in c_cols:
+                conn.execute("ALTER TABLE comments ADD COLUMN user_nickname TEXT")
+                print("Migration: added comments.user_nickname")
+            if 'body' not in c_cols:
+                conn.execute("ALTER TABLE comments ADD COLUMN body TEXT")
+                if 'text' in c_cols:
+                    conn.execute("UPDATE comments SET body = text WHERE body IS NULL")
+                print("Migration: added comments.body (migrated from text)")
+            # Create indexes
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments(entity_type, entity_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_prod ON comments(production_id)")
+
+        # AXE 9.2: Notifications indexes
+        n_cols = get_table_columns(conn, 'notifications')
+        if n_cols:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_prod ON notifications(production_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(user_id, is_read)")
 
 
 # ─── Working days ─────────────────────────────────────────────────────────────
@@ -4164,3 +4224,175 @@ def cascade_apply(prod_id, day_id, old_date, new_date):
                       "location_schedules": applied["location_schedules"]})
 
     return applied
+
+
+# ─── Comments (AXE 9.1) ──────────────────────────────────────────────────────
+
+def get_comments(production_id, entity_type, entity_id, limit=50):
+    """Get comments for a specific entity."""
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT * FROM comments
+               WHERE production_id=? AND entity_type=? AND entity_id=?
+               ORDER BY created_at DESC LIMIT ?""",
+            (production_id, entity_type, entity_id, limit)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_comment_counts(production_id, entity_type, entity_ids):
+    """Get comment counts for multiple entities of the same type."""
+    if not entity_ids:
+        return {}
+    placeholders = ','.join('?' for _ in entity_ids)
+    with get_db() as conn:
+        rows = conn.execute(
+            f"""SELECT entity_id, COUNT(*) as cnt FROM comments
+                WHERE production_id=? AND entity_type=?
+                AND entity_id IN ({placeholders})
+                GROUP BY entity_id""",
+            [production_id, entity_type] + list(entity_ids)
+        ).fetchall()
+        return {r['entity_id']: r['cnt'] for r in rows}
+
+
+def create_comment(production_id, entity_type, entity_id, body,
+                   user_id=None, user_nickname=None):
+    """Create a comment on an entity."""
+    if user_id is None or user_nickname is None:
+        try:
+            from flask import g as _g, has_request_context
+            if has_request_context():
+                if user_id is None:
+                    user_id = getattr(_g, 'user_id', None)
+                if user_nickname is None:
+                    user_nickname = getattr(_g, 'nickname', None)
+        except ImportError:
+            pass
+
+    with get_db() as conn:
+        cur = conn.execute(
+            """INSERT INTO comments
+               (production_id, entity_type, entity_id, user_id, user_nickname, body)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (production_id, entity_type, entity_id, user_id, user_nickname, body)
+        )
+        new_id = cur.lastrowid
+        row = conn.execute("SELECT * FROM comments WHERE id=?", (new_id,)).fetchone()
+        _log_history(conn, 'comments', new_id, 'create', new_data=row,
+                     production_id=production_id)
+        return dict(row)
+
+
+def delete_comment(comment_id):
+    """Delete a comment by id. Returns the deleted comment or None."""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM comments WHERE id=?", (comment_id,)).fetchone()
+        if not row:
+            return None
+        conn.execute("DELETE FROM comments WHERE id=?", (comment_id,))
+        _log_history(conn, 'comments', comment_id, 'delete', old_data=row,
+                     production_id=row['production_id'])
+        return dict(row)
+
+
+# ─── Notifications (AXE 9.2) ─────────────────────────────────────────────────
+
+def get_notifications(user_id, production_id=None, unread_only=False, limit=50):
+    """Get notifications for a user, optionally filtered by production and read status."""
+    conditions = ["user_id=?"]
+    params = [user_id]
+    if production_id:
+        conditions.append("production_id=?")
+        params.append(production_id)
+    if unread_only:
+        conditions.append("is_read=0")
+    params.append(limit)
+    where = " AND ".join(conditions)
+    with get_db() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM notifications WHERE {where} ORDER BY created_at DESC LIMIT ?",
+            params
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_unread_notification_count(user_id, production_id=None):
+    """Get count of unread notifications."""
+    if production_id:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) as cnt FROM notifications WHERE user_id=? AND production_id=? AND is_read=0",
+                (user_id, production_id)
+            ).fetchone()
+            return row['cnt'] if row else 0
+    else:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) as cnt FROM notifications WHERE user_id=? AND is_read=0",
+                (user_id,)
+            ).fetchone()
+            return row['cnt'] if row else 0
+
+
+def create_notification(production_id, user_id, notif_type, title, body=None,
+                        entity_type=None, entity_id=None):
+    """Create a notification for a specific user."""
+    with get_db() as conn:
+        cur = conn.execute(
+            """INSERT INTO notifications
+               (production_id, user_id, type, title, body, entity_type, entity_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (production_id, user_id, notif_type, title, body, entity_type, entity_id)
+        )
+        return cur.lastrowid
+
+
+def create_notifications_for_production(production_id, notif_type, title, body=None,
+                                         entity_type=None, entity_id=None,
+                                         exclude_user_id=None):
+    """Create a notification for ALL members of a production (except exclude_user_id)."""
+    with get_db() as conn:
+        # Get all users who are members of this production
+        rows = conn.execute(
+            "SELECT user_id FROM project_memberships WHERE production_id=?",
+            (production_id,)
+        ).fetchall()
+        count = 0
+        for r in rows:
+            uid = r['user_id']
+            if exclude_user_id and uid == exclude_user_id:
+                continue
+            conn.execute(
+                """INSERT INTO notifications
+                   (production_id, user_id, type, title, body, entity_type, entity_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (production_id, uid, notif_type, title, body, entity_type, entity_id)
+            )
+            count += 1
+        return count
+
+
+def mark_notification_read(notification_id, user_id):
+    """Mark a single notification as read."""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?",
+            (notification_id, user_id)
+        )
+
+
+def mark_all_notifications_read(user_id, production_id=None):
+    """Mark all notifications as read for a user."""
+    if production_id:
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE notifications SET is_read=1 WHERE user_id=? AND production_id=? AND is_read=0",
+                (user_id, production_id)
+            )
+    else:
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE notifications SET is_read=1 WHERE user_id=? AND is_read=0",
+                (user_id,)
+            )

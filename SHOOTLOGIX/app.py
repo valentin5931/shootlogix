@@ -83,6 +83,10 @@ from database import (
     cascade_preview, cascade_apply,
     # Export preferences (AXE 2.2)
     get_export_preference, save_export_preference, get_module_date_range,
+    # Comments & Notifications (AXE 9)
+    get_comments, get_comment_counts, create_comment, delete_comment,
+    get_notifications, get_unread_notification_count, create_notification,
+    create_notifications_for_production, mark_notification_read, mark_all_notifications_read,
 )
 
 from validation import ValidationError, validate_assignment, validate_fuel_entry, validate_shooting_day, validate_date_range, validate_positive_number, validate_required, validate_guard_schedule, validate_assignment_overlap
@@ -457,6 +461,7 @@ def api_create_shooting_day(prod_id):
     day_id = create_shooting_day(data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM shooting_days WHERE id=?", (day_id,)).fetchone()
+    _notify_pdt_change(prod_id, 'create', data.get('date', ''))
     return jsonify(dict(row)), 201
 
 
@@ -478,13 +483,16 @@ def api_update_shooting_day(prod_id, day_id):
     day = get_shooting_day(day_id)
     if not day:
         abort(404)
+    _notify_pdt_change(prod_id, 'update', data.get('date', day.get('date', '')))
     return jsonify(day)
 
 
 @app.route("/api/productions/<int:prod_id>/shooting-days/<int:day_id>", methods=["DELETE"])
 def api_delete_shooting_day(prod_id, day_id):
     prod_or_404(prod_id)
+    day = get_shooting_day(day_id)
     delete_shooting_day(day_id)
+    _notify_pdt_change(prod_id, 'delete', day.get('date', '') if day else '')
     return jsonify({"deleted": day_id})
 
 
@@ -829,6 +837,10 @@ def api_create_assignment(prod_id):
     assignment_id = create_boat_assignment(data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM boat_assignments WHERE id=?", (assignment_id,)).fetchone()
+        bf = conn.execute("SELECT production_id FROM boat_functions WHERE id=?", (data['boat_function_id'],)).fetchone()
+    if bf:
+        _notify_assignment_change(bf['production_id'], 'create', 'boat assignment',
+                                  data.get('boat_name_override', f'#{assignment_id}'))
     return jsonify(dict(row)), 201
 
 
@@ -849,6 +861,8 @@ def api_update_assignment(assignment_id):
     if old_d.get('production_id'):
         _log_price_changes(old_d['production_id'], 'boat_assignment', assignment_id,
                           old_d.get('boat_name_override', f'Assignment #{assignment_id}'), old_d, data)
+        _notify_assignment_change(old_d['production_id'], 'update', 'boat assignment',
+                                  old_d.get('boat_name_override', f'#{assignment_id}'))
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -5376,6 +5390,149 @@ def api_price_change_log(prod_id):
     if entity_id:
         entity_id = int(entity_id)
     return jsonify(get_price_change_log(prod_id, limit, entity_type, entity_id))
+
+
+# ─── Comments (AXE 9.1) ──────────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/comments", methods=["GET"])
+def api_get_comments(prod_id):
+    prod_or_404(prod_id)
+    entity_type = request.args.get("entity_type")
+    entity_id = request.args.get("entity_id")
+    if not entity_type or not entity_id:
+        return jsonify({"error": "entity_type and entity_id required"}), 400
+    entity_id = int(entity_id)
+    limit = int(request.args.get("limit", 50))
+    return jsonify(get_comments(prod_id, entity_type, entity_id, limit))
+
+
+@app.route("/api/productions/<int:prod_id>/comments/counts", methods=["GET"])
+def api_comment_counts(prod_id):
+    prod_or_404(prod_id)
+    entity_type = request.args.get("entity_type")
+    ids_raw = request.args.get("entity_ids", "")
+    if not entity_type or not ids_raw:
+        return jsonify({})
+    try:
+        entity_ids = [int(x) for x in ids_raw.split(",") if x.strip()]
+    except ValueError:
+        return jsonify({"error": "invalid entity_ids"}), 400
+    counts = get_comment_counts(prod_id, entity_type, entity_ids)
+    return jsonify(counts)
+
+
+@app.route("/api/productions/<int:prod_id>/comments", methods=["POST"])
+def api_create_comment(prod_id):
+    prod_or_404(prod_id)
+    data = request.json or {}
+    entity_type = data.get("entity_type")
+    entity_id = data.get("entity_id")
+    body = (data.get("body") or "").strip()
+    if not entity_type or not entity_id or not body:
+        return jsonify({"error": "entity_type, entity_id, and body required"}), 400
+    comment = create_comment(prod_id, entity_type, int(entity_id), body)
+    # Notify other project members about the new comment
+    try:
+        nickname = getattr(g, 'nickname', 'Someone')
+        create_notifications_for_production(
+            prod_id, 'comment_added',
+            f'{nickname} commented on {entity_type}',
+            body[:100],
+            entity_type=entity_type, entity_id=int(entity_id),
+            exclude_user_id=getattr(g, 'user_id', None)
+        )
+    except Exception:
+        pass  # notification failure should not block comment creation
+    return jsonify(comment), 201
+
+
+@app.route("/api/comments/<int:comment_id>", methods=["DELETE"])
+def api_delete_comment(comment_id):
+    result = delete_comment(comment_id)
+    if not result:
+        abort(404)
+    return jsonify({"deleted": comment_id})
+
+
+# ─── Notifications (AXE 9.2) ────────────────────────────────────────────────
+
+@app.route("/api/notifications", methods=["GET"])
+def api_get_notifications():
+    user_id = getattr(g, 'user_id', None)
+    if not user_id:
+        return jsonify({"error": "auth required"}), 401
+    prod_id = request.args.get("production_id")
+    if prod_id:
+        prod_id = int(prod_id)
+    unread_only = request.args.get("unread_only") == "1"
+    limit = int(request.args.get("limit", 50))
+    return jsonify(get_notifications(user_id, prod_id, unread_only, limit))
+
+
+@app.route("/api/notifications/count", methods=["GET"])
+def api_notification_count():
+    user_id = getattr(g, 'user_id', None)
+    if not user_id:
+        return jsonify({"error": "auth required"}), 401
+    prod_id = request.args.get("production_id")
+    if prod_id:
+        prod_id = int(prod_id)
+    count = get_unread_notification_count(user_id, prod_id)
+    return jsonify({"count": count})
+
+
+@app.route("/api/notifications/<int:notif_id>/read", methods=["POST"])
+def api_mark_notification_read(notif_id):
+    user_id = getattr(g, 'user_id', None)
+    if not user_id:
+        return jsonify({"error": "auth required"}), 401
+    mark_notification_read(notif_id, user_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/notifications/read-all", methods=["POST"])
+def api_mark_all_read():
+    user_id = getattr(g, 'user_id', None)
+    if not user_id:
+        return jsonify({"error": "auth required"}), 401
+    prod_id = request.args.get("production_id")
+    if prod_id:
+        prod_id = int(prod_id)
+    mark_all_notifications_read(user_id, prod_id)
+    return jsonify({"ok": True})
+
+
+# ─── Notification triggers (AXE 9.2) ────────────────────────────────────────
+# Helper to send notifications on key mutations. Called from within endpoints.
+
+def _notify_assignment_change(prod_id, action, entity_type, entity_name):
+    """Send notification when an assignment is created/updated/deleted."""
+    try:
+        nickname = getattr(g, 'nickname', 'Someone')
+        verb = {'create': 'created', 'update': 'updated', 'delete': 'deleted'}.get(action, action)
+        create_notifications_for_production(
+            prod_id, f'assignment_{verb}',
+            f'{nickname} {verb} {entity_type}',
+            entity_name,
+            exclude_user_id=getattr(g, 'user_id', None)
+        )
+    except Exception:
+        pass
+
+
+def _notify_pdt_change(prod_id, action, day_info):
+    """Send notification when PDT is modified."""
+    try:
+        nickname = getattr(g, 'nickname', 'Someone')
+        verb = {'create': 'added', 'update': 'modified', 'delete': 'removed'}.get(action, action)
+        create_notifications_for_production(
+            prod_id, 'pdt_modified',
+            f'{nickname} {verb} a shooting day',
+            day_info,
+            exclude_user_id=getattr(g, 'user_id', None)
+        )
+    except Exception:
+        pass
 
 
 # ─── Bootstrap ────────────────────────────────────────────────────────────────

@@ -765,6 +765,8 @@ const App = (() => {
       App.renderPDT?.();
       // Load scheduling alerts in background (AXE 7.3)
       App.loadAlerts?.();
+      // Start notification polling (AXE 9.2)
+      App.startNotifPolling?.();
     } catch (e) {
       console.error('Load error after project select:', e);
       toast('Failed to load project data: ' + e.message, 'error');
@@ -1264,6 +1266,8 @@ const App = (() => {
     'alerts':         '/static/modules/alerts.js',
     'admin':          '/static/modules/admin.js',
     'activity':       '/static/modules/activity.js',
+    'comments':       '/static/modules/comments.js',
+    'notifications':  '/static/modules/notifications.js',
   };
 
   // Dependencies: some modules need other modules loaded first
@@ -1299,6 +1303,8 @@ const App = (() => {
       _loadModule('boats'),
       _loadModule('alerts'),
       _loadModule('activity'),
+      _loadModule('comments'),
+      _loadModule('notifications'),
     ]);
   }
 
