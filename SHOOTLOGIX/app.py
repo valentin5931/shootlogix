@@ -5644,6 +5644,198 @@ def _notify_pdt_change(prod_id, action, day_info):
         pass
 
 
+# ─── CSV Import & Templates (AXE 10.4) ────────────────────────────────────────
+
+_CSV_TEMPLATES = {
+    "boats": {
+        "header": "name,boat_nr,capacity,wave_rating,captain,vendor,group_name,daily_rate_estimate,night_ok,notes",
+        "example": "Panga 1,1,12,Waves,Carlos,QS Marine,Shared,80,0,Fast boat",
+        "create_fn": "create_boat",
+        "fields": {
+            "name": {"type": "str", "required": True},
+            "boat_nr": {"type": "int"},
+            "capacity": {"type": "str"},
+            "wave_rating": {"type": "str", "default": "Waves"},
+            "captain": {"type": "str"},
+            "vendor": {"type": "str"},
+            "group_name": {"type": "str", "default": "Shared"},
+            "daily_rate_estimate": {"type": "float", "default": 0},
+            "night_ok": {"type": "int", "default": 0},
+            "notes": {"type": "str"},
+        }
+    },
+    "picture_boats": {
+        "header": "name,boat_nr,capacity,wave_rating,captain,vendor,group_name,daily_rate_estimate,night_ok,notes",
+        "example": "Camera Boat A,1,8,Waves,Pedro,QS Marine,Custom,120,0,Stabilized",
+        "create_fn": "create_picture_boat",
+        "fields": {
+            "name": {"type": "str", "required": True},
+            "boat_nr": {"type": "int"},
+            "capacity": {"type": "str"},
+            "wave_rating": {"type": "str", "default": "Waves"},
+            "captain": {"type": "str"},
+            "vendor": {"type": "str"},
+            "group_name": {"type": "str", "default": "Custom"},
+            "daily_rate_estimate": {"type": "float", "default": 0},
+            "night_ok": {"type": "int", "default": 0},
+            "notes": {"type": "str"},
+        }
+    },
+    "security_boats": {
+        "header": "name,boat_nr,capacity,wave_rating,captain,vendor,group_name,daily_rate_estimate,night_ok,notes",
+        "example": "Safety 1,1,6,Big Waves,Jose,Local,SAFETY,60,1,Night capable",
+        "create_fn": "create_security_boat",
+        "fields": {
+            "name": {"type": "str", "required": True},
+            "boat_nr": {"type": "int"},
+            "capacity": {"type": "str"},
+            "wave_rating": {"type": "str", "default": "Waves"},
+            "captain": {"type": "str"},
+            "vendor": {"type": "str"},
+            "group_name": {"type": "str", "default": "SAFETY"},
+            "daily_rate_estimate": {"type": "float", "default": 0},
+            "night_ok": {"type": "int", "default": 0},
+            "notes": {"type": "str"},
+        }
+    },
+    "transport": {
+        "header": "name,vehicle_nr,type,driver,vendor,group_name,daily_rate_estimate,notes",
+        "example": "SUV-01,1,SUV,Miguel,Rent-a-Car,UNIT,120,Air conditioned",
+        "create_fn": "create_transport_vehicle",
+        "fields": {
+            "name": {"type": "str", "required": True},
+            "vehicle_nr": {"type": "int"},
+            "type": {"type": "str", "default": "SUV"},
+            "driver": {"type": "str"},
+            "vendor": {"type": "str"},
+            "group_name": {"type": "str", "default": "UNIT"},
+            "daily_rate_estimate": {"type": "float", "default": 0},
+            "notes": {"type": "str"},
+        }
+    },
+    "locations": {
+        "header": "name,type,location_type,lat,lng,access_note,price_p,price_f,price_w,global_deal",
+        "example": "Mogo Mogo,ile,game,8.35,-78.92,By boat only,100,200,100,",
+        "create_fn": "create_location_site",
+        "fields": {
+            "name": {"type": "str", "required": True},
+            "type": {"type": "str", "default": "ile"},
+            "location_type": {"type": "str", "default": "game"},
+            "lat": {"type": "float"},
+            "lng": {"type": "float"},
+            "access_note": {"type": "str"},
+            "price_p": {"type": "float"},
+            "price_f": {"type": "float"},
+            "price_w": {"type": "float"},
+            "global_deal": {"type": "float"},
+        }
+    },
+}
+
+# Map create function names to actual functions
+_CSV_CREATE_FNS = {
+    "create_boat": create_boat,
+    "create_picture_boat": create_picture_boat,
+    "create_security_boat": create_security_boat,
+    "create_transport_vehicle": create_transport_vehicle,
+    "create_location_site": create_location_site,
+}
+
+
+@app.route("/api/productions/<int:prod_id>/import-csv/<string:module>", methods=["POST"])
+def api_import_csv(prod_id, module):
+    """Generic CSV import. Module: boats, picture_boats, security_boats, transport, locations."""
+    prod_or_404(prod_id)
+    tpl = _CSV_TEMPLATES.get(module)
+    if not tpl:
+        return jsonify({"error": f"Unknown module: {module}. Available: {', '.join(_CSV_TEMPLATES.keys())}"}), 400
+
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file provided"}), 400
+
+    content = f.read().decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(content))
+
+    create_fn = _CSV_CREATE_FNS[tpl["create_fn"]]
+    fields = tpl["fields"]
+    created = []
+    errors = []
+    line_num = 1
+
+    for line_num, row in enumerate(reader, start=2):  # CSV header is line 1
+        # Validate required fields
+        rec = {"production_id": prod_id}
+        row_errors = []
+
+        for field_name, field_spec in fields.items():
+            raw = (row.get(field_name) or "").strip()
+            if field_spec.get("required") and not raw:
+                row_errors.append(f"Missing required field '{field_name}'")
+                continue
+
+            if not raw:
+                if "default" in field_spec:
+                    rec[field_name] = field_spec["default"]
+                else:
+                    rec[field_name] = None
+                continue
+
+            ftype = field_spec["type"]
+            try:
+                if ftype == "int":
+                    rec[field_name] = int(raw)
+                elif ftype == "float":
+                    rec[field_name] = float(raw)
+                else:
+                    rec[field_name] = raw
+            except (ValueError, TypeError):
+                row_errors.append(f"Invalid {ftype} for '{field_name}': '{raw}'")
+                rec[field_name] = field_spec.get("default")
+
+        if row_errors:
+            errors.append({"line": line_num, "errors": row_errors})
+            # Still try to create if name is present
+            if not rec.get("name"):
+                continue
+
+        try:
+            result = create_fn(rec)
+            eid = result["id"] if isinstance(result, dict) else result
+            created.append(eid)
+        except Exception as e:
+            errors.append({"line": line_num, "errors": [str(e)]})
+
+    return jsonify({
+        "created": len(created),
+        "ids": created,
+        "errors": errors,
+        "total_rows": line_num - 1,
+    }), 201
+
+
+@app.route("/api/csv-template/<string:module>", methods=["GET"])
+def api_csv_template(module):
+    """Download a CSV template for a module."""
+    tpl = _CSV_TEMPLATES.get(module)
+    if not tpl:
+        # Check helpers/guards which have different templates
+        if module == "helpers":
+            content = "name,role,group,rate,notes\nJohn Doe,Setup,GENERAL,45,\nJane Smith,Runner,GENERAL,50,Experienced"
+        elif module == "guard_camp":
+            content = "name,role,group,rate,notes\nGuard 1,Security,GENERAL,45,\nGuard 2,Patrol,GENERAL,50,"
+        else:
+            return jsonify({"error": f"Unknown module: {module}"}), 404
+    else:
+        content = tpl["header"] + "\n" + tpl["example"]
+
+    return Response(
+        content,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={module}_template.csv"}
+    )
+
+
 # ─── Bootstrap ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

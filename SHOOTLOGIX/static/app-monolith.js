@@ -8618,6 +8618,7 @@ const App = (() => {
           <button class="btn btn-sm btn-primary" onclick="App.showAddLocationModal()">+ Add Location</button>
           <button class="btn btn-sm btn-secondary" onclick="App.locAutoFill()">Auto-fill from PDT</button>
           <button class="btn btn-sm btn-secondary" onclick="App.locResyncPdt()" title="Resync all PDT locations (normalized matching)">Resync PDT</button>
+          <button class="btn btn-sm btn-secondary" onclick="App.openCsvImportModal('locations')">Import CSV</button>
           <button class="btn btn-sm btn-secondary" onclick="App.locExportCSV()">Export CSV</button>
         </div>
       </div>
@@ -8805,6 +8806,7 @@ const App = (() => {
         </div>
         <div style="margin-left:auto;display:flex;gap:.3rem">
           <button class="btn btn-sm btn-primary" onclick="App.showAddLocationModal()">+ Add Location</button>
+          <button class="btn btn-sm btn-secondary" onclick="App.openCsvImportModal('locations')">Import CSV</button>
           <button class="btn btn-sm btn-secondary" onclick="App.locExportCSV()">Export CSV</button>
         </div>
       </div>
@@ -10196,6 +10198,90 @@ const App = (() => {
     a.href = URL.createObjectURL(blob);
     a.download = 'helpers_template.csv';
     a.click();
+  }
+
+  // ── CSV Import modal (AXE 10.4) ─────────────────────────────
+  let _csvImportModule = null;
+
+  const _CSV_MODULE_LABELS = {
+    boats: 'Boats',
+    picture_boats: 'Picture Boats',
+    security_boats: 'Security Boats',
+    transport: 'Transport Vehicles',
+    locations: 'Locations',
+    helpers: 'Helpers/Labour',
+    guard_camp: 'Guards',
+  };
+
+  function openCsvImportModal(module) {
+    _csvImportModule = module;
+    $('csv-import-title').textContent = `Import ${_CSV_MODULE_LABELS[module] || module} from CSV`;
+    $('csv-import-desc').textContent = `Upload a CSV file. Download the template first to see the expected format.`;
+    $('csv-import-file').value = '';
+    $('csv-import-errors').style.display = 'none';
+    $('csv-import-errors').innerHTML = '';
+    $('csv-import-overlay').classList.remove('hidden');
+  }
+
+  function closeCsvImportModal() {
+    $('csv-import-overlay').classList.add('hidden');
+    _csvImportModule = null;
+  }
+
+  function downloadCsvTemplate() {
+    if (!_csvImportModule) return;
+    // Use the API template endpoint
+    const a = document.createElement('a');
+    a.href = `/api/csv-template/${_csvImportModule}`;
+    a.download = `${_csvImportModule}_template.csv`;
+    // Add auth header via fetch and download
+    fetch(`/api/csv-template/${_csvImportModule}`, {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    }).then(r => r.blob()).then(blob => {
+      a.href = URL.createObjectURL(blob);
+      a.click();
+    }).catch(e => toast('Download failed: ' + e.message, 'error'));
+  }
+
+  async function submitCsvImport() {
+    if (!_csvImportModule) return;
+    const fileInput = $('csv-import-file');
+    if (!fileInput?.files?.length) { toast('Select a CSV file', 'error'); return; }
+
+    const fd = new FormData();
+    fd.append('file', fileInput.files[0]);
+
+    // For helpers and guards, use existing endpoints
+    let endpoint;
+    if (_csvImportModule === 'helpers') {
+      endpoint = `/api/productions/${state.prodId}/helpers/import-csv`;
+    } else if (_csvImportModule === 'guard_camp') {
+      endpoint = `/api/productions/${state.prodId}/guard-camp-workers/import-csv`;
+    } else {
+      endpoint = `/api/productions/${state.prodId}/import-csv/${_csvImportModule}`;
+    }
+
+    try {
+      const resp = await fetch(endpoint, {
+        method: 'POST', body: fd,
+        headers: { 'Authorization': `Bearer ${state.token}` }
+      });
+      const res = await resp.json();
+      if (!resp.ok) throw new Error(res.error || 'Import failed');
+
+      // Show errors if any
+      if (res.errors && res.errors.length > 0) {
+        const errEl = $('csv-import-errors');
+        errEl.innerHTML = `<strong>${res.created} created, ${res.errors.length} error(s):</strong><br>` +
+          res.errors.map(e => `Line ${e.line}: ${e.errors.join(', ')}`).join('<br>');
+        errEl.style.display = 'block';
+      }
+
+      toast(`${res.created} ${_CSV_MODULE_LABELS[_csvImportModule] || _csvImportModule} imported`);
+      if (!res.errors || res.errors.length === 0) closeCsvImportModal();
+      // Reload current tab
+      if (typeof App.renderTab === 'function') App.renderTab(state.activeTab);
+    } catch (e) { toast('Import error: ' + e.message, 'error'); }
   }
 
   // ── Add function modal (Guard Camp) ──────────────────────────
@@ -12572,6 +12658,8 @@ const App = (() => {
     // Bulk create helpers
     showBulkHelperModal, closeBulkHelperModal, bulkCreateHelpers,
     importHelpersCsv, downloadHelperCsvTemplate,
+    // CSV Import (AXE 10.4)
+    openCsvImportModal, closeCsvImportModal, downloadCsvTemplate, submitCsvImport,
     // Guards — Base Camp
     gcSetView, gcFilterWorkers, gcOpenWorkerView,
     gcOnWorkerDragStart, gcOnWorkerDragEnd, gcOnDragOver, gcOnDragLeave, gcOnDrop,
