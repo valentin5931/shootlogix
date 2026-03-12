@@ -377,7 +377,10 @@
           <div id="gc-sidebar">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
               <span class="section-title" style="margin:0">Guards</span>
-              <button class="btn btn-sm btn-secondary" onclick="App.gcShowAddWorkerModal()">+ Add</button>
+              <div style="display:flex;gap:.3rem">
+                <button class="btn btn-sm btn-secondary" onclick="App.gcShowAddWorkerModal()">+ Add</button>
+                <button class="btn btn-sm btn-secondary" onclick="App.showBulkHelperModal('guard_camp')">Bulk</button>
+              </div>
             </div>
             <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.4rem">
               <button class="filter-pill active" id="gc-filter-all"       onclick="App.gcFilterWorkers('all')">All</button>
@@ -426,7 +429,10 @@
         <div id="lb-sidebar">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
             <span class="section-title" style="margin:0">Workers</span>
-            <button class="btn btn-sm btn-secondary" onclick="App.showAddWorkerModal()">+ Add</button>
+            <div style="display:flex;gap:.3rem">
+              <button class="btn btn-sm btn-secondary" onclick="App.showAddWorkerModal()">+ Add</button>
+              <button class="btn btn-sm btn-secondary" onclick="App.showBulkHelperModal('labour')">Bulk</button>
+            </div>
           </div>
           <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.4rem">
             <button class="filter-pill active" id="lb-filter-all"       onclick="App.lbFilterWorkers('all')">All</button>
@@ -1014,6 +1020,49 @@
       <button class="btn btn-secondary" onclick="App.closeAddGuardModal()">Cancel</button>
       <button class="btn btn-danger hidden" id="ngp-delete-btn" onclick="App.deleteGuardPost()" style="margin-right:auto">Delete</button>
       <button class="btn btn-primary" id="ngp-confirm-btn" onclick="App.saveGuardPost()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Bulk create helpers modal ─────────────────────────────────────────── -->
+<div id="bulk-helper-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeBulkHelperModal()">
+  <div class="modal-box" style="max-width:460px">
+    <div class="modal-title" id="bh-modal-title">Bulk Create</div>
+    <input type="hidden" id="bh-context" value="labour">
+    <div class="form-row">
+      <div class="form-group" style="flex:1">
+        <label class="form-label">Name prefix *</label>
+        <input type="text" id="bh-prefix" class="form-control" placeholder="Setup Helper" value="Helper">
+      </div>
+      <div class="form-group" style="flex:0 0 80px">
+        <label class="form-label">Count *</label>
+        <input type="number" id="bh-count" class="form-control" value="10" min="1" max="200">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1">
+        <label class="form-label">Group</label>
+        <input type="text" id="bh-group" class="form-control" placeholder="GENERAL" value="GENERAL">
+      </div>
+      <div class="form-group" style="flex:1">
+        <label class="form-label">Role</label>
+        <input type="text" id="bh-role" class="form-control" placeholder="Role">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Rate/day ($)</label>
+      <input type="number" id="bh-rate" class="form-control" value="45" min="0" step="1">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeBulkHelperModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.bulkCreateHelpers()">Create</button>
+    </div>
+    <hr style="margin:.75rem 0;border-color:var(--border)">
+    <div style="font-size:.72rem;color:var(--text-4);margin-bottom:.5rem">Or import from CSV (columns: name, role, group, rate, notes)</div>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <input type="file" id="bh-csv-file" accept=".csv" style="font-size:.72rem;flex:1">
+      <button class="btn btn-sm btn-secondary" onclick="App.importHelpersCsv()">Import</button>
+      <button class="btn btn-sm btn-secondary" onclick="App.downloadHelperCsvTemplate()">Template</button>
     </div>
   </div>
 </div>

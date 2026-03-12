@@ -9018,6 +9018,81 @@ const App = (() => {
     }
   }
 
+  // ── Bulk create helpers / guard camp workers ─────────────────
+  function showBulkHelperModal(context) {
+    const ctx = context || 'labour';
+    $('bh-context').value = ctx;
+    $('bh-modal-title').textContent = ctx === 'guard_camp' ? 'Bulk Create Guards' : 'Bulk Create Helpers';
+    $('bh-prefix').value = ctx === 'guard_camp' ? 'Guard' : 'Helper';
+    $('bh-count').value = '10';
+    $('bh-group').value = 'GENERAL';
+    $('bh-role').value = '';
+    $('bh-rate').value = '45';
+    const csvEl = $('bh-csv-file'); if (csvEl) csvEl.value = '';
+    $('bulk-helper-overlay').classList.remove('hidden');
+  }
+  function closeBulkHelperModal() { $('bulk-helper-overlay').classList.add('hidden'); }
+
+  async function bulkCreateHelpers() {
+    const ctx = $('bh-context').value;
+    const count = parseInt($('bh-count').value) || 0;
+    const prefix = $('bh-prefix').value.trim();
+    if (!prefix || count < 1) { toast('Prefix and count required', 'error'); return; }
+    const data = {
+      count, prefix,
+      group_name: $('bh-group').value.trim() || 'GENERAL',
+      role: $('bh-role').value.trim() || null,
+      daily_rate_estimate: parseFloat($('bh-rate').value) || 45,
+    };
+    const endpoint = ctx === 'guard_camp'
+      ? `/api/productions/${state.prodId}/guard-camp-workers/bulk`
+      : `/api/productions/${state.prodId}/helpers/bulk`;
+    try {
+      const res = await api('POST', endpoint, data);
+      toast(`${res.created} ${ctx === 'guard_camp' ? 'guards' : 'helpers'} created`);
+      closeBulkHelperModal();
+      if (ctx === 'guard_camp') {
+        state.gcWorkers = await api('GET', `/api/productions/${state.prodId}/guard-camp-workers`);
+        renderGcWorkerList();
+      } else {
+        renderTab('labour');
+      }
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function importHelpersCsv() {
+    const ctx = $('bh-context').value;
+    const fileInput = $('bh-csv-file');
+    if (!fileInput || !fileInput.files.length) { toast('Select a CSV file', 'error'); return; }
+    const fd = new FormData();
+    fd.append('file', fileInput.files[0]);
+    const endpoint = ctx === 'guard_camp'
+      ? `/api/productions/${state.prodId}/guard-camp-workers/import-csv`
+      : `/api/productions/${state.prodId}/helpers/import-csv`;
+    try {
+      const resp = await fetch(endpoint, { method: 'POST', body: fd, headers: { 'Authorization': `Bearer ${state.token}` } });
+      if (!resp.ok) throw new Error(await resp.text());
+      const res = await resp.json();
+      toast(`${res.created} imported from CSV`);
+      closeBulkHelperModal();
+      if (ctx === 'guard_camp') {
+        state.gcWorkers = await api('GET', `/api/productions/${state.prodId}/guard-camp-workers`);
+        renderGcWorkerList();
+      } else {
+        renderTab('labour');
+      }
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  function downloadHelperCsvTemplate() {
+    const csv = 'name,role,group,rate,notes\nJohn Doe,Setup,GENERAL,45,\nJane Smith,Runner,GENERAL,50,Experienced';
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'helpers_template.csv';
+    a.click();
+  }
+
   // ── Add function modal (Guard Camp) ──────────────────────────
   function gcShowAddFunctionModal() {
     ['nf-name','nf-specs','nf-start','nf-end'].forEach(id => { const el = $(id); if(el) el.value = ''; });
@@ -10913,6 +10988,9 @@ const App = (() => {
     // Guards — legacy guard post CRUD
     showAddGuardModal, closeAddGuardModal, editGuardPost,
     saveGuardPost, deleteGuardPost,
+    // Bulk create helpers
+    showBulkHelperModal, closeBulkHelperModal, bulkCreateHelpers,
+    importHelpersCsv, downloadHelperCsvTemplate,
     // Guards — Base Camp
     gcSetView, gcFilterWorkers, gcOpenWorkerView,
     gcOnWorkerDragStart, gcOnWorkerDragEnd, gcOnDragOver, gcOnDragLeave, gcOnDrop,

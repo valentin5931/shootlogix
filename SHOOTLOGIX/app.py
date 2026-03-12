@@ -817,6 +817,64 @@ def api_delete_helper(helper_id):
     return jsonify({"deleted": helper_id})
 
 
+@app.route("/api/productions/<int:prod_id>/helpers/bulk", methods=["POST"])
+def api_bulk_create_helpers(prod_id):
+    prod_or_404(prod_id)
+    data = request.json or {}
+    count = int(data.get("count", 0))
+    prefix = data.get("prefix", "Helper")
+    if count < 1 or count > 200:
+        return jsonify({"error": "count must be 1-200"}), 400
+    shared = {
+        "production_id": prod_id,
+        "role": data.get("role"),
+        "group_name": data.get("group_name", "GENERAL"),
+        "daily_rate_estimate": data.get("daily_rate_estimate", 45),
+        "notes": data.get("notes"),
+    }
+    func_id = data.get("boat_function_id")
+    start_date = data.get("start_date")
+    end_date = data.get("end_date")
+    created = []
+    for i in range(1, count + 1):
+        rec = dict(shared)
+        rec["name"] = f"{prefix} {i}"
+        hid = create_helper(rec)
+        if func_id and hid:
+            assign_data = {"boat_function_id": func_id, "helper_id": hid,
+                           "start_date": start_date, "end_date": end_date}
+            create_helper_assignment(assign_data)
+        created.append(hid)
+    return jsonify({"created": len(created), "ids": created}), 201
+
+
+@app.route("/api/productions/<int:prod_id>/helpers/import-csv", methods=["POST"])
+def api_import_helpers_csv(prod_id):
+    import csv, io
+    prod_or_404(prod_id)
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file provided"}), 400
+    content = f.read().decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(content))
+    created = []
+    for row in reader:
+        name = (row.get("name") or "").strip()
+        if not name:
+            continue
+        rec = {
+            "production_id": prod_id,
+            "name": name,
+            "role": (row.get("role") or "").strip() or None,
+            "group_name": (row.get("group") or row.get("group_name") or "GENERAL").strip(),
+            "daily_rate_estimate": float(row.get("rate") or row.get("daily_rate_estimate") or 45),
+            "notes": (row.get("notes") or "").strip() or None,
+        }
+        hid = create_helper(rec)
+        created.append(hid)
+    return jsonify({"created": len(created), "ids": created}), 201
+
+
 @app.route("/api/helpers/<int:helper_id>/upload-image", methods=["POST"])
 def api_upload_helper_image(helper_id):
     import os
@@ -2268,6 +2326,64 @@ def api_create_guard_camp_worker(prod_id):
     with get_db() as conn:
         row = conn.execute("SELECT * FROM guard_camp_workers WHERE id=?", (worker_id,)).fetchone()
     return jsonify(dict(row)), 201
+
+
+@app.route("/api/productions/<int:prod_id>/guard-camp-workers/bulk", methods=["POST"])
+def api_bulk_create_guard_camp_workers(prod_id):
+    prod_or_404(prod_id)
+    data = request.json or {}
+    count = int(data.get("count", 0))
+    prefix = data.get("prefix", "Guard")
+    if count < 1 or count > 200:
+        return jsonify({"error": "count must be 1-200"}), 400
+    shared = {
+        "production_id": prod_id,
+        "role": data.get("role"),
+        "group_name": data.get("group_name", "GENERAL"),
+        "daily_rate_estimate": data.get("daily_rate_estimate", 45),
+        "notes": data.get("notes"),
+    }
+    func_id = data.get("boat_function_id")
+    start_date = data.get("start_date")
+    end_date = data.get("end_date")
+    created = []
+    for i in range(1, count + 1):
+        rec = dict(shared)
+        rec["name"] = f"{prefix} {i}"
+        wid = create_guard_camp_worker(rec)
+        if func_id and wid:
+            assign_data = {"boat_function_id": func_id, "helper_id": wid,
+                           "start_date": start_date, "end_date": end_date}
+            create_guard_camp_assignment(assign_data)
+        created.append(wid)
+    return jsonify({"created": len(created), "ids": created}), 201
+
+
+@app.route("/api/productions/<int:prod_id>/guard-camp-workers/import-csv", methods=["POST"])
+def api_import_guard_camp_workers_csv(prod_id):
+    import csv, io
+    prod_or_404(prod_id)
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file provided"}), 400
+    content = f.read().decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(content))
+    created = []
+    for row in reader:
+        name = (row.get("name") or "").strip()
+        if not name:
+            continue
+        rec = {
+            "production_id": prod_id,
+            "name": name,
+            "role": (row.get("role") or "").strip() or None,
+            "group_name": (row.get("group") or row.get("group_name") or "GENERAL").strip(),
+            "daily_rate_estimate": float(row.get("rate") or row.get("daily_rate_estimate") or 45),
+            "notes": (row.get("notes") or "").strip() or None,
+        }
+        wid = create_guard_camp_worker(rec)
+        created.append(wid)
+    return jsonify({"created": len(created), "ids": created}), 201
 
 
 @app.route("/api/guard-camp-workers/<int:worker_id>", methods=["PUT"])
