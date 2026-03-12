@@ -167,6 +167,126 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     } catch (e) { toast('Duplicate error: ' + e.message, 'error'); }
   }
 
+  // ── Bulk card operations (AXE 10.3) ─────────────────────────
+  let _bulkSelected = new Set();
+  let _bulkEntityType = null;
+
+  function toggleBulkSelect(entityType) {
+    if (_bulkEntityType === entityType && _bulkSelected.size >= 0) {
+      // Toggle off
+      _bulkSelected.clear();
+      _bulkEntityType = null;
+      _hideBulkBar();
+      // Re-render to remove checkboxes
+      const tab = state.activeTab || 'boats';
+      if (typeof App.renderTab === 'function') App.renderTab(tab);
+      return;
+    }
+    _bulkEntityType = entityType;
+    _bulkSelected.clear();
+    _showBulkBar();
+  }
+
+  function bulkToggleCard(entityId) {
+    if (_bulkSelected.has(entityId)) {
+      _bulkSelected.delete(entityId);
+    } else {
+      _bulkSelected.add(entityId);
+    }
+    // Update checkbox UI
+    const cb = document.getElementById(`bulk-cb-${entityId}`);
+    if (cb) cb.checked = _bulkSelected.has(entityId);
+    _updateBulkBar();
+  }
+
+  function _showBulkBar() {
+    let bar = $('bulk-card-bar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'bulk-card-bar';
+      bar.className = 'multi-select-bar';
+      bar.innerHTML = `
+        <span id="bcb-count" style="font-size:.75rem;color:var(--text-1);font-weight:600">0 selected</span>
+        <select id="bcb-group" class="form-control" style="width:auto;display:inline-block;font-size:.7rem;padding:.15rem .3rem;height:auto">
+          <option value="">Change group...</option>
+        </select>
+        <button class="btn btn-sm btn-secondary" onclick="App.bulkChangeGroup()">Apply Group</button>
+        <input id="bcb-rate" type="number" class="form-control" style="width:80px;display:inline-block;font-size:.7rem;padding:.15rem .3rem;height:auto" placeholder="Rate">
+        <button class="btn btn-sm btn-secondary" onclick="App.bulkChangeRate()">Apply Rate</button>
+        <button class="btn btn-sm btn-danger" onclick="App.bulkDeleteSelected()">Delete Selected</button>
+        <button class="btn btn-sm" onclick="App.toggleBulkSelect(null)">Cancel</button>
+      `;
+      document.body.appendChild(bar);
+    }
+    // Populate group options
+    const groups = _groupOrder(_bulkEntityType || 'boats');
+    const sel = $('bcb-group');
+    if (sel) {
+      sel.innerHTML = '<option value="">Change group...</option>' +
+        groups.map(g => `<option value="${g}">${g}</option>`).join('');
+    }
+    bar.classList.remove('hidden');
+    _updateBulkBar();
+  }
+
+  function _hideBulkBar() {
+    const bar = $('bulk-card-bar');
+    if (bar) bar.classList.add('hidden');
+  }
+
+  function _updateBulkBar() {
+    const el = $('bcb-count');
+    if (el) el.textContent = `${_bulkSelected.size} selected`;
+  }
+
+  async function bulkChangeGroup() {
+    const group = $('bcb-group')?.value;
+    if (!group || !_bulkSelected.size) { toast('Select items and group', 'error'); return; }
+    try {
+      await api('POST', `/api/productions/${state.prodId}/bulk-update`, {
+        entity_type: _bulkEntityType,
+        ids: [..._bulkSelected],
+        updates: { group_name: group }
+      });
+      toast(`${_bulkSelected.size} items moved to ${group}`);
+      _bulkSelected.clear();
+      toggleBulkSelect(null);
+      if (typeof App.renderTab === 'function') App.renderTab(state.activeTab);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function bulkChangeRate() {
+    const rate = parseFloat($('bcb-rate')?.value);
+    if (isNaN(rate) || !_bulkSelected.size) { toast('Select items and enter rate', 'error'); return; }
+    try {
+      await api('POST', `/api/productions/${state.prodId}/bulk-update`, {
+        entity_type: _bulkEntityType,
+        ids: [..._bulkSelected],
+        updates: { daily_rate_estimate: rate }
+      });
+      toast(`${_bulkSelected.size} rates updated to $${rate}`);
+      _bulkSelected.clear();
+      toggleBulkSelect(null);
+      if (typeof App.renderTab === 'function') App.renderTab(state.activeTab);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function bulkDeleteSelected() {
+    if (!_bulkSelected.size) return;
+    showConfirm(`Delete ${_bulkSelected.size} selected items?`, async () => {
+      try {
+        await api('POST', `/api/productions/${state.prodId}/bulk-delete`, {
+          entity_type: _bulkEntityType,
+          ids: [..._bulkSelected]
+        });
+        toast(`${_bulkSelected.size} items deleted`);
+        _bulkSelected.clear();
+        toggleBulkSelect(null);
+        if (typeof App.renderTab === 'function') App.renderTab(state.activeTab);
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  }
+
   // ── Duplicate assignment (AXE 10.2) ────────────────────────
   async function duplicateAssignment(atype, assignmentId, offsetDays) {
     const offset = offsetDays !== undefined ? offsetDays : 7;
@@ -2069,6 +2189,11 @@ Object.assign(window.App, {
   duplicateEntity,
   duplicateAssignment,
   duplicateFnbCategory,
+  toggleBulkSelect,
+  bulkToggleCard,
+  bulkChangeGroup,
+  bulkChangeRate,
+  bulkDeleteSelected,
   onFuncDragStart,
   onFuncDragEnd,
   onFuncDragOver,

@@ -2825,6 +2825,77 @@ def api_duplicate_assignment(atype, assignment_id):
     return jsonify(result), 201
 
 
+# ─── Bulk Operations (AXE 10.3) ───────────────────────────────────────────────
+
+_ENTITY_TABLES = {
+    "boats": ("boats", "name", update_boat, delete_boat),
+    "picture_boats": ("picture_boats", "name", update_picture_boat, delete_picture_boat),
+    "security_boats": ("security_boats", "name", update_security_boat, delete_security_boat),
+    "transport": ("transport_vehicles", "name", update_transport_vehicle, delete_transport_vehicle),
+    "helpers": ("helpers", "name", update_helper, delete_helper),
+    "guard_camp": ("guard_camp_workers", "name", update_guard_camp_worker, delete_guard_camp_worker),
+}
+
+
+@app.route("/api/productions/<int:prod_id>/bulk-update", methods=["POST"])
+def api_bulk_update(prod_id):
+    """Bulk update entities. Body: { entity_type, ids: [...], updates: {field: value} }"""
+    prod_or_404(prod_id)
+    data = request.json or {}
+    etype = data.get("entity_type")
+    ids = data.get("ids", [])
+    updates = data.get("updates", {})
+    if not etype or not ids or not updates:
+        return jsonify({"error": "entity_type, ids, and updates required"}), 400
+
+    entry = _ENTITY_TABLES.get(etype)
+    if not entry:
+        return jsonify({"error": f"Unknown entity type: {etype}"}), 400
+    table_name, name_field, update_fn, _ = entry
+
+    # Whitelist safe fields
+    safe_fields = {"group_name", "daily_rate_estimate", "daily_rate_actual", "rate_estimated",
+                   "rate_actual", "vendor", "notes", "role", "sort_order", "pricing_type",
+                   "include_sunday", "function_group"}
+    filtered = {k: v for k, v in updates.items() if k in safe_fields}
+    if not filtered:
+        return jsonify({"error": "No valid fields to update"}), 400
+
+    updated = 0
+    for eid in ids:
+        try:
+            update_fn(eid, filtered)
+            updated += 1
+        except Exception:
+            pass
+    return jsonify({"updated": updated})
+
+
+@app.route("/api/productions/<int:prod_id>/bulk-delete", methods=["POST"])
+def api_bulk_delete(prod_id):
+    """Bulk delete entities. Body: { entity_type, ids: [...] }"""
+    prod_or_404(prod_id)
+    data = request.json or {}
+    etype = data.get("entity_type")
+    ids = data.get("ids", [])
+    if not etype or not ids:
+        return jsonify({"error": "entity_type and ids required"}), 400
+
+    entry = _ENTITY_TABLES.get(etype)
+    if not entry:
+        return jsonify({"error": f"Unknown entity type: {etype}"}), 400
+    _, _, _, delete_fn = entry
+
+    deleted = 0
+    for eid in ids:
+        try:
+            delete_fn(eid)
+            deleted += 1
+        except Exception:
+            pass
+    return jsonify({"deleted": deleted})
+
+
 @app.route("/api/guard-camp-workers/<int:worker_id>/upload-image", methods=["POST"])
 def api_upload_guard_camp_worker_image(worker_id):
     if 'image' not in request.files:

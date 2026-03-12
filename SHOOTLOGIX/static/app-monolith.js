@@ -2995,6 +2995,15 @@ const App = (() => {
       bar.innerHTML = `
         <span id="msb-count" style="font-size:.75rem;color:var(--text-1);font-weight:600"></span>
         <button class="btn btn-sm btn-primary" onclick="App.multiSelectFill()">Fill selected</button>
+        <select id="msb-status" class="form-control" style="width:auto;display:inline-block;font-size:.7rem;padding:.15rem .3rem;height:auto">
+          <option value="">Set status...</option>
+          <option value="confirmed">Confirmed</option>
+          <option value="tentative">Tentative</option>
+          <option value="empty">Empty</option>
+        </select>
+        <button class="btn btn-sm btn-secondary" onclick="App.multiSelectSetStatus()">Apply Status</button>
+        <input id="msb-value" type="text" class="form-control" style="width:60px;display:inline-block;font-size:.7rem;padding:.15rem .3rem;height:auto" placeholder="Value">
+        <button class="btn btn-sm btn-secondary" onclick="App.multiSelectSetValue()">Apply Value</button>
         <button class="btn btn-sm btn-secondary" onclick="App.multiSelectClear()">Clear selected</button>
         <button class="btn btn-sm btn-danger" onclick="App.multiSelectCancel()">Cancel</button>
       `;
@@ -3019,6 +3028,65 @@ const App = (() => {
     cells.forEach(c => {
       if (c.assignmentId) _clearDayOverride(c.assignmentId, c.date);
     });
+  }
+
+  function multiSelectSetStatus() {
+    const status = $('msb-status')?.value;
+    if (!status) { toast('Select a status first', 'error'); return; }
+    const cells = [..._multiSel.cells];
+    _clearMultiSelect();
+    cells.forEach(c => {
+      if (c.assignmentId) {
+        // Set specific status via day override
+        _setDayOverrideStatus(c.assignmentId, c.date, status);
+      }
+    });
+  }
+
+  function multiSelectSetValue() {
+    const val = $('msb-value')?.value;
+    if (val === '' || val === undefined) { toast('Enter a value', 'error'); return; }
+    const cells = [..._multiSel.cells];
+    _clearMultiSelect();
+    cells.forEach(c => {
+      if (c.assignmentId) {
+        _setDayOverrideValue(c.assignmentId, c.date, val);
+      }
+    });
+  }
+
+  function _setDayOverrideStatus(assignmentId, date, status) {
+    // Find assignment and update its day_overrides
+    const asgn = _findAssignment(assignmentId);
+    if (!asgn) return;
+    const overrides = JSON.parse(asgn.day_overrides || '{}');
+    if (status === 'empty') {
+      overrides[date] = 'empty';
+    } else {
+      overrides[date] = status;
+    }
+    asgn.day_overrides = JSON.stringify(overrides);
+    _saveOverrides(assignmentId, overrides);
+  }
+
+  function _setDayOverrideValue(assignmentId, date, val) {
+    const asgn = _findAssignment(assignmentId);
+    if (!asgn) return;
+    const overrides = JSON.parse(asgn.day_overrides || '{}');
+    overrides[date] = val;
+    asgn.day_overrides = JSON.stringify(overrides);
+    _saveOverrides(assignmentId, overrides);
+  }
+
+  function _findAssignment(assignmentId) {
+    // Search all state assignment arrays
+    for (const arr of [state.assignments, state.pbAssignments, state.sbAssignments,
+                        state.transportAssignments, state.helperAssignments, state.gcAssignments]) {
+      if (!arr) continue;
+      const found = arr.find(a => a.id === assignmentId);
+      if (found) return found;
+    }
+    return null;
   }
 
   function multiSelectCancel() {
@@ -12444,6 +12512,7 @@ const App = (() => {
     // Cascade (AXE 7.2)
     cancelCascade, applyCascade, skipCascade,
     _onScheduleMouseDown, _onScheduleMouseOver, multiSelectFill, multiSelectClear, multiSelectCancel,
+    multiSelectSetStatus, multiSelectSetValue,
     // Picture Boats
     pbSetBoatView, pbFilterBoats, pbOpenBoatView,
     pbOnBoatDragStart, pbOnBoatDragEnd, pbOnDragOver, pbOnDragLeave, pbOnDrop,
