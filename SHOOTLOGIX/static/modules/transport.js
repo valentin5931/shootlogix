@@ -133,6 +133,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         <div style="display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;align-self:flex-start">
           <button class="boat-edit-btn" title="Edit vehicle"
             onclick="event.stopPropagation();App.openTransportVehicleDetail(${v.id})">&#x270E;</button>
+          <button class="boat-edit-btn" title="Duplicate" style="font-size:.65rem"
+            onclick="event.stopPropagation();App.duplicateEntity('transport',${v.id})">&#x2398;</button>
           <button class="card-delete-btn" title="Delete vehicle"
             onclick="event.stopPropagation();App.confirmDeleteVehicle(${v.id},'${esc(v.name).replace(/'/g,"\\'")}',${vAsgns.length})">&#x1F5D1;</button>
         </div>

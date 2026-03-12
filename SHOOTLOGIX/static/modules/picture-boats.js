@@ -108,6 +108,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         <div style="display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;align-self:flex-start">
           <button class="boat-edit-btn" title="Edit boat"
             onclick="event.stopPropagation();App.openPictureBoatDetail(${b.id})">&#x270E;</button>
+          <button class="boat-edit-btn" title="Duplicate" style="font-size:.65rem"
+            onclick="event.stopPropagation();App.duplicateEntity('picture_boats',${b.id})">&#x2398;</button>
           <button class="card-delete-btn" title="Delete picture boat"
             onclick="event.stopPropagation();App.confirmDeletePictureBoat(${b.id},'${esc(b.name).replace(/'/g,"\\'")}',${boatAsgns.length})">&#x1F5D1;</button>
         </div>

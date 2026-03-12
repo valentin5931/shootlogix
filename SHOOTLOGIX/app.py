@@ -81,6 +81,8 @@ from database import (
     delete_guard_camp_assignment_by_function,
     # PDT cascade (AXE 7.2)
     cascade_preview, cascade_apply,
+    # Export preferences (AXE 2.2)
+    get_export_preference, save_export_preference, get_module_date_range,
 )
 
 from validation import ValidationError, validate_assignment, validate_fuel_entry, validate_shooting_day, validate_date_range, validate_positive_number, validate_required, validate_guard_schedule, validate_assignment_overlap
@@ -135,6 +137,62 @@ def _cleanup_old_exports():
                     pass
     for jid in to_remove:
         del _export_jobs[jid]
+
+
+# ─── Export Date Filtering Helpers (AXE 2.1 / 2.3) ────────────────────────────
+
+def _export_date_params():
+    """Extract from/to date range from query params."""
+    return request.args.get("from"), request.args.get("to")
+
+
+def _filter_assignments_by_date(rows, date_from, date_to):
+    """Filter assignment rows whose date range overlaps [date_from, date_to].
+    Assignments with no dates are always included."""
+    if not date_from and not date_to:
+        return rows
+    filtered = []
+    for r in rows:
+        start = (r.get("start_date") or "")[:10]
+        end = (r.get("end_date") or "")[:10]
+        if not start and not end:
+            filtered.append(r)
+            continue
+        if date_from and end and end < date_from:
+            continue
+        if date_to and start and start > date_to:
+            continue
+        filtered.append(r)
+    return filtered
+
+
+def _filter_entries_by_date(entries, date_from, date_to):
+    """Filter entries (fuel, FNB) by their date field."""
+    if not date_from and not date_to:
+        return entries
+    filtered = []
+    for e in entries:
+        d = (e.get("date") or "")[:10]
+        if not d:
+            filtered.append(e)
+            continue
+        if date_from and d < date_from:
+            continue
+        if date_to and d > date_to:
+            continue
+        filtered.append(e)
+    return filtered
+
+
+def _export_fname(prod_name, module, date_from, date_to, ext):
+    """Build export filename with optional date range suffix."""
+    from datetime import datetime as dt
+    date_str = dt.now().strftime('%y%m%d')
+    if date_from and date_to:
+        range_suffix = f"_{date_from}_{date_to}".replace("-", "")
+    else:
+        range_suffix = ""
+    return f"{prod_name}_{module}_{date_str}{range_suffix}.{ext}"
 
 
 @app.route("/api/exports/<job_id>", methods=["GET"])
@@ -661,6 +719,23 @@ def api_delete_boat(boat_id):
     return jsonify({"deleted": boat_id})
 
 
+@app.route("/api/boats/<int:boat_id>/duplicate", methods=["POST"])
+def api_duplicate_boat(boat_id):
+    """Duplicate a boat (all properties, name + ' (copy)', no assignments)."""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM boats WHERE id=?", (boat_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    data = dict(row)
+    del data["id"]
+    data["name"] = data["name"] + " (copy)"
+    data.pop("image_path", None)
+    new_id = create_boat(data)
+    with get_db() as conn:
+        new_row = conn.execute("SELECT * FROM boats WHERE id=?", (new_id,)).fetchone()
+    return jsonify(dict(new_row)), 201
+
+
 @app.route("/api/boats/<int:boat_id>/upload-image", methods=["POST"])
 def api_upload_boat_image(boat_id):
     import os
@@ -816,6 +891,22 @@ def api_delete_picture_boat(pb_id):
     return jsonify({"deleted": pb_id})
 
 
+@app.route("/api/picture-boats/<int:pb_id>/duplicate", methods=["POST"])
+def api_duplicate_picture_boat(pb_id):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM picture_boats WHERE id=?", (pb_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    data = dict(row)
+    del data["id"]
+    data["name"] = data["name"] + " (copy)"
+    data.pop("image_path", None)
+    new_id = create_picture_boat(data)
+    with get_db() as conn:
+        new_row = conn.execute("SELECT * FROM picture_boats WHERE id=?", (new_id,)).fetchone()
+    return jsonify(dict(new_row)), 201
+
+
 @app.route("/api/picture-boats/<int:pb_id>/upload-image", methods=["POST"])
 def api_upload_picture_boat_image(pb_id):
     import os
@@ -936,6 +1027,22 @@ def api_update_helper(helper_id):
 def api_delete_helper(helper_id):
     delete_helper(helper_id)
     return jsonify({"deleted": helper_id})
+
+
+@app.route("/api/helpers/<int:helper_id>/duplicate", methods=["POST"])
+def api_duplicate_helper(helper_id):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM helpers WHERE id=?", (helper_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    data = dict(row)
+    del data["id"]
+    data["name"] = data["name"] + " (copy)"
+    data.pop("image_path", None)
+    new_id = create_helper(data)
+    with get_db() as conn:
+        new_row = conn.execute("SELECT * FROM helpers WHERE id=?", (new_id,)).fetchone()
+    return jsonify(dict(new_row)), 201
 
 
 @app.route("/api/productions/<int:prod_id>/helpers/bulk", methods=["POST"])
@@ -1072,9 +1179,10 @@ def api_helper_schedules(prod_id):
 
 @app.route("/api/productions/<int:prod_id>/export/labour/csv")
 def api_export_labour_csv(prod_id):
-    prod_or_404(prod_id)
+    prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
     rows = [r for r in get_helper_assignments(prod_id) if r.get("working_days")]
-    # Group by function_group
+    rows = _filter_assignments_by_date(rows, date_from, date_to)
     from collections import OrderedDict
     by_group = OrderedDict()
     for r in rows:
@@ -1115,8 +1223,8 @@ def api_export_labour_csv(prod_id):
         grand_act += group_act
     writer.writerow(["", "", "", "", "", "", "GRAND TOTAL", "", "", grand_est, grand_act if grand_act else ""])
     output.seek(0)
-    from datetime import datetime as dt
-    fname = f"KLAS7_LABOUR_{dt.now().strftime('%y%m%d')}.csv"
+    prod_name = prod.get("name", "PRODUCTION")
+    fname = _export_fname(prod_name, "LABOUR", date_from, date_to, "csv")
     return Response(
         output.getvalue(),
         mimetype="text/csv",
@@ -1170,6 +1278,22 @@ def api_update_security_boat(sb_id):
 def api_delete_security_boat(sb_id):
     delete_security_boat(sb_id)
     return jsonify({"deleted": sb_id})
+
+
+@app.route("/api/security-boats/<int:sb_id>/duplicate", methods=["POST"])
+def api_duplicate_security_boat(sb_id):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM security_boats WHERE id=?", (sb_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    data = dict(row)
+    del data["id"]
+    data["name"] = data["name"] + " (copy)"
+    data.pop("image_path", None)
+    new_id = create_security_boat(data)
+    with get_db() as conn:
+        new_row = conn.execute("SELECT * FROM security_boats WHERE id=?", (new_id,)).fetchone()
+    return jsonify(dict(new_row)), 201
 
 
 @app.route("/api/security-boats/<int:sb_id>/upload-image", methods=["POST"])
@@ -1242,8 +1366,10 @@ def api_delete_security_boat_assignment_by_function(prod_id, func_id):
 
 @app.route("/api/productions/<int:prod_id>/export/security-boats/csv")
 def api_export_security_boats_csv(prod_id):
-    prod_or_404(prod_id)
+    prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
     rows = [r for r in get_security_boat_assignments(prod_id) if r.get("working_days")]
+    rows = _filter_assignments_by_date(rows, date_from, date_to)
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Function", "Group", "Boat", "Captain", "Vendor",
@@ -1267,8 +1393,8 @@ def api_export_security_boats_csv(prod_id):
     writer.writerow([])
     writer.writerow(["", "", "", "", "", "", "GRAND TOTAL", "", "", grand_est, grand_act])
     output.seek(0)
-    from datetime import datetime as dt
-    fname = f"KLAS7_SECURITY-BOATS_{dt.now().strftime('%y%m%d')}.csv"
+    prod_name = prod.get("name", "PRODUCTION")
+    fname = _export_fname(prod_name, "SECURITY-BOATS", date_from, date_to, "csv")
     return Response(
         output.getvalue(),
         mimetype="text/csv",
@@ -1278,14 +1404,18 @@ def api_export_security_boats_csv(prod_id):
 
 @app.route("/api/productions/<int:prod_id>/export/security-boats/json")
 def api_export_security_boats_json(prod_id):
-    prod_or_404(prod_id)
+    prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
+    assignments = [a for a in get_security_boat_assignments(prod_id) if a.get("working_days")]
+    assignments = _filter_assignments_by_date(assignments, date_from, date_to)
     data = {
         "production": get_production(prod_id),
         "security_boats": get_security_boats(prod_id),
-        "assignments": [a for a in get_security_boat_assignments(prod_id) if a.get("working_days")],
+        "assignments": assignments,
+        "date_range": {"from": date_from, "to": date_to},
     }
-    from datetime import datetime as dt
-    fname = f"KLAS7_SECURITY-BOATS_{dt.now().strftime('%y%m%d')}.json"
+    prod_name = prod.get("name", "PRODUCTION")
+    fname = _export_fname(prod_name, "SECURITY-BOATS", date_from, date_to, "json")
     return Response(
         json.dumps(data, indent=2, ensure_ascii=False),
         mimetype="application/json",
@@ -1370,13 +1500,15 @@ def api_working_days():
 
 @app.route("/api/productions/<int:prod_id>/export/csv")
 def api_export_csv(prod_id):
-    prod_or_404(prod_id)
+    prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
     budget = get_budget(prod_id)
+    rows = _filter_assignments_by_date(budget["rows"], date_from, date_to)
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Department", "Function", "Boat", "Vendor", "Start", "End",
                      "Working Days", "Rate/day", "Total Estimate", "Total Actual"])
-    for r in budget["rows"]:
+    for r in rows:
         writer.writerow([
             r.get("department") or "BOATS",
             r.get("name") or "",
@@ -1387,12 +1519,13 @@ def api_export_csv(prod_id):
             r.get("unit_price_estimate") or "",
             r.get("amount_estimate") or "", r.get("amount_actual") or "",
         ])
+    grand_est = sum(r.get("amount_estimate") or 0 for r in rows)
+    grand_act = sum(r.get("amount_actual") or 0 for r in rows)
     writer.writerow([])
-    writer.writerow(["", "", "", "", "", "", "GRAND TOTAL",
-                     budget["grand_total_estimate"], budget["grand_total_actual"]])
+    writer.writerow(["", "", "", "", "", "", "GRAND TOTAL", "", grand_est, grand_act])
     output.seek(0)
-    from datetime import datetime as dt
-    fname = f"KLAS7_BOATS_{dt.now().strftime('%y%m%d')}.csv"
+    prod_name = prod.get("name", "PRODUCTION")
+    fname = _export_fname(prod_name, "BOATS", date_from, date_to, "csv")
     return Response(
         output.getvalue(),
         mimetype="text/csv",
@@ -1402,17 +1535,21 @@ def api_export_csv(prod_id):
 
 @app.route("/api/productions/<int:prod_id>/export/json")
 def api_export_json(prod_id):
-    prod_or_404(prod_id)
+    prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
+    assignments = [a for a in get_boat_assignments(prod_id, context='boats') if a.get("working_days")]
+    assignments = _filter_assignments_by_date(assignments, date_from, date_to)
     data = {
         "production": get_production(prod_id),
         "shooting_days": get_shooting_days(prod_id),
         "boats": get_boats(prod_id),
         "boat_functions": get_boat_functions(prod_id),
-        "assignments": [a for a in get_boat_assignments(prod_id, context='boats') if a.get("working_days")],
+        "assignments": assignments,
         "budget": get_budget(prod_id),
+        "date_range": {"from": date_from, "to": date_to},
     }
-    from datetime import datetime as dt
-    fname = f"KLAS7_BOATS_{dt.now().strftime('%y%m%d')}.json"
+    prod_name = prod.get("name", "PRODUCTION")
+    fname = _export_fname(prod_name, "BOATS", date_from, date_to, "json")
     return Response(
         json.dumps(data, indent=2, ensure_ascii=False),
         mimetype="application/json",
@@ -1424,8 +1561,10 @@ def api_export_json(prod_id):
 
 @app.route("/api/productions/<int:prod_id>/export/picture-boats/csv")
 def api_export_pb_csv(prod_id):
-    prod_or_404(prod_id)
+    prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
     rows = [r for r in get_picture_boat_assignments(prod_id) if r.get("working_days")]
+    rows = _filter_assignments_by_date(rows, date_from, date_to)
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Function", "Group", "Boat", "Captain", "Vendor",
@@ -1449,8 +1588,8 @@ def api_export_pb_csv(prod_id):
     writer.writerow([])
     writer.writerow(["", "", "", "", "", "", "GRAND TOTAL", "", "", grand_est, grand_act])
     output.seek(0)
-    from datetime import datetime as dt
-    fname = f"KLAS7_PICTURE-BOATS_{dt.now().strftime('%y%m%d')}.csv"
+    prod_name = prod.get("name", "PRODUCTION")
+    fname = _export_fname(prod_name, "PICTURE-BOATS", date_from, date_to, "csv")
     return Response(
         output.getvalue(),
         mimetype="text/csv",
@@ -1460,14 +1599,18 @@ def api_export_pb_csv(prod_id):
 
 @app.route("/api/productions/<int:prod_id>/export/picture-boats/json")
 def api_export_pb_json(prod_id):
-    prod_or_404(prod_id)
+    prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
+    assignments = [a for a in get_picture_boat_assignments(prod_id) if a.get("working_days")]
+    assignments = _filter_assignments_by_date(assignments, date_from, date_to)
     data = {
         "production": get_production(prod_id),
         "picture_boats": get_picture_boats(prod_id),
-        "assignments": [a for a in get_picture_boat_assignments(prod_id) if a.get("working_days")],
+        "assignments": assignments,
+        "date_range": {"from": date_from, "to": date_to},
     }
-    from datetime import datetime as dt
-    fname = f"KLAS7_PICTURE-BOATS_{dt.now().strftime('%y%m%d')}.json"
+    prod_name = prod.get("name", "PRODUCTION")
+    fname = _export_fname(prod_name, "PICTURE-BOATS", date_from, date_to, "json")
     return Response(
         json.dumps(data, indent=2, ensure_ascii=False),
         mimetype="application/json",
@@ -1521,6 +1664,22 @@ def api_update_transport_vehicle(vehicle_id):
 def api_delete_transport_vehicle(vehicle_id):
     delete_transport_vehicle(vehicle_id)
     return jsonify({"deleted": vehicle_id})
+
+
+@app.route("/api/transport-vehicles/<int:vehicle_id>/duplicate", methods=["POST"])
+def api_duplicate_transport_vehicle(vehicle_id):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM transport_vehicles WHERE id=?", (vehicle_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    data = dict(row)
+    del data["id"]
+    data["name"] = data["name"] + " (copy)"
+    data.pop("image_path", None)
+    new_id = create_transport_vehicle(data)
+    with get_db() as conn:
+        new_row = conn.execute("SELECT * FROM transport_vehicles WHERE id=?", (new_id,)).fetchone()
+    return jsonify(dict(new_row)), 201
 
 
 @app.route("/api/transport-vehicles/<int:vehicle_id>/upload-image", methods=["POST"])
@@ -1593,8 +1752,10 @@ def api_delete_transport_assignment_by_function(prod_id, func_id):
 
 @app.route("/api/productions/<int:prod_id>/export/transport/csv")
 def api_export_transport_csv(prod_id):
-    prod_or_404(prod_id)
+    prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
     rows = [r for r in get_transport_assignments(prod_id) if r.get("working_days")]
+    rows = _filter_assignments_by_date(rows, date_from, date_to)
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Function", "Group", "Vehicle", "Type", "Driver", "Vendor",
@@ -1619,8 +1780,8 @@ def api_export_transport_csv(prod_id):
     writer.writerow([])
     writer.writerow(["", "", "", "", "", "", "GRAND TOTAL", "", "", "", grand_est, grand_act])
     output.seek(0)
-    from datetime import datetime as dt
-    fname = f"KLAS7_TRANSPORT_{dt.now().strftime('%y%m%d')}.csv"
+    prod_name = prod.get("name", "PRODUCTION")
+    fname = _export_fname(prod_name, "TRANSPORT", date_from, date_to, "csv")
     return Response(
         output.getvalue(),
         mimetype="text/csv",
@@ -1630,14 +1791,18 @@ def api_export_transport_csv(prod_id):
 
 @app.route("/api/productions/<int:prod_id>/export/transport/json")
 def api_export_transport_json(prod_id):
-    prod_or_404(prod_id)
+    prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
+    assignments = [a for a in get_transport_assignments(prod_id) if a.get("working_days")]
+    assignments = _filter_assignments_by_date(assignments, date_from, date_to)
     data = {
         "production": get_production(prod_id),
         "transport_vehicles": get_transport_vehicles(prod_id),
-        "assignments": [a for a in get_transport_assignments(prod_id) if a.get("working_days")],
+        "assignments": assignments,
+        "date_range": {"from": date_from, "to": date_to},
     }
-    from datetime import datetime as dt
-    fname = f"KLAS7_TRANSPORT_{dt.now().strftime('%y%m%d')}.json"
+    prod_name = prod.get("name", "PRODUCTION")
+    fname = _export_fname(prod_name, "TRANSPORT", date_from, date_to, "json")
     return Response(
         json.dumps(data, indent=2, ensure_ascii=False),
         mimetype="application/json",
@@ -1782,8 +1947,10 @@ def api_export_fuel_budget_csv(prod_id):
     Filename: KLAS7_FUEL_YYMMDD
     """
     from datetime import datetime as dt
-    prod_or_404(prod_id)
+    prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
     entries = get_fuel_entries(prod_id)
+    entries = _filter_entries_by_date(entries, date_from, date_to)
     machinery = get_fuel_machinery(prod_id)
     locked_prices = get_fuel_locked_prices()
 
@@ -1905,7 +2072,8 @@ def api_export_fuel_budget_csv(prod_id):
     w.writerow([f"Current Diesel price: ${cur_diesel}/L"])
     w.writerow([f"Current Petrol price: ${cur_petrol}/L"])
     out.seek(0)
-    fname = f"KLAS7_FUEL_{dt.now().strftime('%y%m%d')}.csv"
+    prod_name = prod.get("name", "PRODUCTION")
+    fname = _export_fname(prod_name, "FUEL-BUDGET", date_from, date_to, "csv")
     return Response(out.read(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename={fname}"})
 
@@ -1914,20 +2082,20 @@ def api_export_fuel_budget_csv(prod_id):
 
 @app.route("/api/productions/<int:prod_id>/export/fuel/csv")
 def api_export_fuel_csv(prod_id):
-    prod_or_404(prod_id)
+    prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
     entries = get_fuel_entries(prod_id)
+    entries = _filter_entries_by_date(entries, date_from, date_to)
     machinery = get_fuel_machinery(prod_id)
     import csv, io
     out = io.StringIO()
     w = csv.writer(out)
     w.writerow(["Category", "Name / Function", "Date", "Liters", "Fuel Type"])
     totals = {"DIESEL": 0, "PETROL": 0}
-    # Build machinery name lookup for readable export
     machinery_names = {m['id']: m['name'] for m in machinery}
     for e in entries:
         src = e.get("source_type", "")
         name = e.get("assignment_id", "")
-        # For machinery entries, resolve to readable name
         if src == "machinery":
             name = machinery_names.get(e.get("assignment_id"), name)
         w.writerow([src, name,
@@ -1938,22 +2106,26 @@ def api_export_fuel_csv(prod_id):
     w.writerow(["GRAND TOTAL DIESEL", "", "", totals.get("DIESEL", 0), "DIESEL"])
     w.writerow(["GRAND TOTAL PETROL", "", "", totals.get("PETROL", 0), "PETROL"])
     out.seek(0)
-    from datetime import datetime as dt
-    fname = f"KLAS7_FUEL_{dt.now().strftime('%y%m%d')}.csv"
+    prod_name = prod.get("name", "PRODUCTION")
+    fname = _export_fname(prod_name, "FUEL", date_from, date_to, "csv")
     return Response(out.read(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename={fname}"})
 
 
 @app.route("/api/productions/<int:prod_id>/export/fuel/json")
 def api_export_fuel_json(prod_id):
-    prod_or_404(prod_id)
+    prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
+    entries = get_fuel_entries(prod_id)
+    entries = _filter_entries_by_date(entries, date_from, date_to)
     data = {
         "production": get_production(prod_id),
-        "fuel_entries": get_fuel_entries(prod_id),
+        "fuel_entries": entries,
         "fuel_machinery": get_fuel_machinery(prod_id),
+        "date_range": {"from": date_from, "to": date_to},
     }
-    from datetime import datetime as dt
-    fname = f"KLAS7_FUEL_{dt.now().strftime('%y%m%d')}.json"
+    prod_name = prod.get("name", "PRODUCTION")
+    fname = _export_fname(prod_name, "FUEL", date_from, date_to, "json")
     return Response(
         json.dumps(data, indent=2, ensure_ascii=False),
         mimetype="application/json",
@@ -2567,6 +2739,22 @@ def api_delete_guard_camp_worker(worker_id):
     return jsonify({"deleted": worker_id})
 
 
+@app.route("/api/guard-camp-workers/<int:worker_id>/duplicate", methods=["POST"])
+def api_duplicate_guard_camp_worker(worker_id):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM guard_camp_workers WHERE id=?", (worker_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    data = dict(row)
+    del data["id"]
+    data["name"] = data["name"] + " (copy)"
+    data.pop("image_path", None)
+    new_id = create_guard_camp_worker(data)
+    with get_db() as conn:
+        new_row = conn.execute("SELECT * FROM guard_camp_workers WHERE id=?", (new_id,)).fetchone()
+    return jsonify(dict(new_row)), 201
+
+
 @app.route("/api/guard-camp-workers/<int:worker_id>/upload-image", methods=["POST"])
 def api_upload_guard_camp_worker_image(worker_id):
     if 'image' not in request.files:
@@ -2637,8 +2825,10 @@ def api_delete_guard_camp_assignment_by_function(prod_id, func_id):
 
 @app.route("/api/productions/<int:prod_id>/export/guard-camp/csv")
 def api_export_guard_camp_csv(prod_id):
-    prod_or_404(prod_id)
+    prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
     rows = [r for r in get_guard_camp_assignments(prod_id) if r.get("working_days")]
+    rows = _filter_assignments_by_date(rows, date_from, date_to)
     from collections import OrderedDict
     by_group = OrderedDict()
     for r in rows:
@@ -2679,8 +2869,8 @@ def api_export_guard_camp_csv(prod_id):
         grand_act += group_act
     writer.writerow(["", "", "", "", "", "", "GRAND TOTAL", "", "", grand_est, grand_act if grand_act else ""])
     output.seek(0)
-    from datetime import datetime as dt
-    fname = f"KLAS7_GUARDS-BASECAMP_{dt.now().strftime('%y%m%d')}.csv"
+    prod_name = prod.get("name", "PRODUCTION")
+    fname = _export_fname(prod_name, "GUARDS-BASECAMP", date_from, date_to, "csv")
     return Response(
         output.getvalue(),
         mimetype="text/csv",
@@ -2710,16 +2900,20 @@ def api_security_auto_fill(prod_id):
 def api_export_fnb_budget_csv(prod_id):
     """Export simplified FNB budget: totals by category only.
     Two columns: Up to Date (consumption) and Estimate (purchases).
-    Filename: KLAS7_FNB_YYMMDD
     """
     from datetime import datetime as dt
-    prod_or_404(prod_id)
+    prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
     budget = get_fnb_budget_data(prod_id)
 
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow(["KLAS 7 - FNB BUDGET EXPORT"])
-    w.writerow([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    prod_name = prod.get("name", "PRODUCTION")
+    w.writerow([f"{prod_name} - FNB BUDGET EXPORT"])
+    gen_line = f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"
+    if date_from and date_to:
+        gen_line += f"  |  Period: {date_from} to {date_to}"
+    w.writerow([gen_line])
     w.writerow([])
     w.writerow(["Category", "Up to Date ($)", "Estimate ($)", "Total ($)"])
 
@@ -2741,7 +2935,7 @@ def api_export_fnb_budget_csv(prod_id):
     w.writerow([f"Balance (Estimate - Up to Date): ${balance}"])
 
     out.seek(0)
-    fname = f"KLAS7_FNB_{dt.now().strftime('%y%m%d')}.csv"
+    fname = _export_fname(prod_name, "FNB", date_from, date_to, "csv")
     return Response(out.read(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename={fname}"})
 
@@ -4062,6 +4256,55 @@ def api_export_logistics_async(prod_id):
     return jsonify({"job_id": job_id, "status": "processing"}), 202
 
 
+# ─── Export Preferences API (AXE 2.2) ─────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/export-defaults/<module>", methods=["GET"])
+def api_get_export_defaults(prod_id, module):
+    """Get smart export date defaults for a module.
+    Priority: 1) last user export, 2) module data range, 3) production dates."""
+    prod = prod_or_404(prod_id)
+    user_id = getattr(g, 'user_id', None)
+
+    # 1. Check user's last export preference
+    if user_id:
+        pref = get_export_preference(user_id, prod_id, module)
+        if pref and pref.get('last_export_from'):
+            return jsonify({
+                "from": pref['last_export_from'],
+                "to": pref['last_export_to'],
+                "source": "last_export",
+            })
+
+    # 2. Get date range from module data
+    module_range = get_module_date_range(prod_id, module)
+    if module_range and module_range.get('first_date'):
+        return jsonify({
+            "from": module_range['first_date'],
+            "to": module_range['last_date'],
+            "source": "module_data",
+        })
+
+    # 3. Fallback to production dates
+    return jsonify({
+        "from": prod.get('start_date', ''),
+        "to": prod.get('end_date', ''),
+        "source": "production",
+    })
+
+
+@app.route("/api/productions/<int:prod_id>/export-defaults/<module>", methods=["POST"])
+def api_save_export_defaults(prod_id, module):
+    """Save the user's last export date range for a module."""
+    prod_or_404(prod_id)
+    user_id = getattr(g, 'user_id', None)
+    if not user_id:
+        return jsonify({"error": "Authentication required"}), 401
+    data = request.json or {}
+    save_export_preference(user_id, prod_id, module,
+                           data.get('from', ''), data.get('to', ''))
+    return jsonify({"ok": True})
+
+
 # ─── PDF & Advanced Exports (AXE 2.3) ────────────────────────────────────────
 
 def _pdf_header(page, prod_name, title, date_range=None):
@@ -4138,17 +4381,34 @@ def api_export_budget_pdf(prod_id):
     from datetime import datetime as dt
 
     prod = prod_or_404(prod_id)
+    date_from, date_to = _export_date_params()
     budget = get_budget(prod_id)
     prod_name = prod.get("name", "PRODUCTION")
     date_str = dt.now().strftime("%y%m%d")
+
+    # Filter budget rows by date range if provided
+    if date_from or date_to:
+        budget["rows"] = _filter_assignments_by_date(budget["rows"], date_from, date_to)
+        # Rebuild by_department from filtered rows
+        by_dept = {}
+        for r in budget["rows"]:
+            dept = r.get("department") or r.get("dept_name") or "OTHER"
+            if dept not in by_dept:
+                by_dept[dept] = {"lines": [], "total_estimate": 0, "total_actual": 0}
+            by_dept[dept]["lines"].append(r)
+            by_dept[dept]["total_estimate"] += r.get("amount_estimate") or 0
+            by_dept[dept]["total_actual"] += (r.get("amount_actual") or 0)
+        budget["by_department"] = by_dept
+        budget["grand_total_estimate"] = sum(d["total_estimate"] for d in by_dept.values())
+        budget["grand_total_actual"] = sum(d["total_actual"] for d in by_dept.values())
 
     doc = fitz.open()
     page = doc.new_page(width=595, height=842)  # A4
     w = page.rect.width
 
     # Header
-    y = _pdf_header(page, prod_name, "CONSOLIDATED BUDGET",
-                    f"{prod.get('start_date', 'N/A')} to {prod.get('end_date', 'N/A')}")
+    range_str = f"{date_from} to {date_to}" if date_from and date_to else f"{prod.get('start_date', 'N/A')} to {prod.get('end_date', 'N/A')}"
+    y = _pdf_header(page, prod_name, "CONSOLIDATED BUDGET", range_str)
 
     # Grand totals section
     grand_est = budget["grand_total_estimate"]
@@ -4228,7 +4488,7 @@ def api_export_budget_pdf(prod_id):
     doc.close()
     buf.seek(0)
 
-    fname = f"{prod_name}_BUDGET_{date_str}.pdf"
+    fname = _export_fname(prod_name, "BUDGET", date_from, date_to, "pdf")
     return Response(
         buf.getvalue(),
         mimetype="application/pdf",

@@ -699,6 +699,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         <div style="display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;align-self:flex-start">
           <button class="boat-edit-btn" title="Edit guard"
             onclick="event.stopPropagation();App.gcOpenWorkerDetail(${w.id})">&#x270E;</button>
+          <button class="boat-edit-btn" title="Duplicate" style="font-size:.65rem"
+            onclick="event.stopPropagation();App.duplicateEntity('guard_camp',${w.id})">&#x2398;</button>
           <button class="card-delete-btn" title="Delete guard"
             onclick="event.stopPropagation();App.confirmDeleteGuardCampWorker(${w.id},'${esc(w.name).replace(/'/g,"\\'")}',${wAsgns.length})">&#x1F5D1;</button>
         </div>

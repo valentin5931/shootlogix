@@ -146,6 +146,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         <div style="display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;align-self:flex-start">
           <button class="boat-edit-btn" title="Edit worker"
             onclick="event.stopPropagation();App.openWorkerDetail(${w.id})">&#x270E;</button>
+          <button class="boat-edit-btn" title="Duplicate" style="font-size:.65rem"
+            onclick="event.stopPropagation();App.duplicateEntity('helpers',${w.id})">&#x2398;</button>
           <button class="card-delete-btn" title="Delete worker"
             onclick="event.stopPropagation();App.confirmDeleteWorker(${w.id},'${esc(w.name).replace(/'/g,"\\'")}',${wAsgns.length})">&#x1F5D1;</button>
         </div>

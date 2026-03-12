@@ -118,6 +118,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         <div style="display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;align-self:flex-start">
           <button class="boat-edit-btn" title="Edit boat"
             onclick="event.stopPropagation();App.openBoatDetail(${b.id})">&#x270E;</button>
+          <button class="boat-edit-btn" title="Duplicate boat" style="font-size:.65rem"
+            onclick="event.stopPropagation();App.duplicateEntity('boats',${b.id})">&#x2398;</button>
           <button class="card-delete-btn" title="Delete boat"
             onclick="event.stopPropagation();App.confirmDeleteBoat(${b.id},'${esc(b.name).replace(/'/g,"\\'")}',${boatAsgns.length})">&#x1F5D1;</button>
         </div>
@@ -138,6 +140,31 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         toast('Boat deleted');
       } catch (e) { toast('Error: ' + e.message, 'error'); }
     });
+  }
+
+  // ── Duplicate entity (generic) ────────────────────────────
+  async function duplicateEntity(type, entityId) {
+    const endpoints = {
+      boats:          `/api/boats/${entityId}/duplicate`,
+      picture_boats:  `/api/picture-boats/${entityId}/duplicate`,
+      security_boats: `/api/security-boats/${entityId}/duplicate`,
+      transport:      `/api/transport-vehicles/${entityId}/duplicate`,
+      helpers:        `/api/helpers/${entityId}/duplicate`,
+      guard_camp:     `/api/guard-camp-workers/${entityId}/duplicate`,
+    };
+    const ep = endpoints[type];
+    if (!ep) { toast('Unknown entity type', 'error'); return; }
+    try {
+      const copy = await api('POST', ep);
+      // Add to relevant state array and re-render
+      if (type === 'boats') { state.boats.push(copy); renderBoats(); }
+      else if (type === 'picture_boats') { state.pictureBoats.push(copy); App.renderPictureBoats?.(); }
+      else if (type === 'security_boats') { state.securityBoats.push(copy); App.renderSecurityBoats?.(); }
+      else if (type === 'transport') { state.transportVehicles.push(copy); App.renderTransport?.(); }
+      else if (type === 'helpers') { state.helpers.push(copy); App.renderLabour?.(); }
+      else if (type === 'guard_camp') { state.gcWorkers.push(copy); App.renderGuardCamp?.(); }
+      toast(`"${copy.name}" created`);
+    } catch (e) { toast('Duplicate error: ' + e.message, 'error'); }
   }
 
   // ── Role / function cards ──────────────────────────────────
@@ -1942,6 +1969,7 @@ Object.assign(window.App, {
   _showMultiSelectBar,
   _updateBillingLabel,
   assignFromDate,
+  duplicateEntity,
   closeAddBoatModal,
   closeAddFunctionModal,
   closeAddPictureBoatModal,
