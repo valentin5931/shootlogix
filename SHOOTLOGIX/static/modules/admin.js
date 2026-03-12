@@ -53,9 +53,10 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     if (!_adminUsers.length) { el.innerHTML = '<p style="color:var(--text-3)">No users found.</p>'; return; }
     let html = '<table class="admin-table"><thead><tr><th>Nickname</th><th>Admin</th><th>Projects</th><th>Actions</th></tr></thead><tbody>';
     for (const u of _adminUsers) {
-      const projects = (u.memberships || []).map(m =>
-        `<span class="badge badge-${m.role.toLowerCase()}">${esc(m.production_name)} (${m.role})</span>`
-      ).join(' ');
+      const projects = (u.memberships || []).map(m => {
+        const type = (u.is_admin || m.role === 'ADMIN') ? 'ADMIN' : 'USER';
+        return `<span class="badge badge-${type.toLowerCase()}">${esc(m.production_name)} (${type})</span>`;
+      }).join(' ');
       html += `<tr>
         <td><strong>${esc(u.nickname)}</strong></td>
         <td>${u.is_admin ? 'Yes' : 'No'}</td>
@@ -122,13 +123,16 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     if (!el) return;
     if (!_adminMembers.length) { el.innerHTML = '<p style="color:var(--text-3)">No members.</p>'; return; }
     const projId = $('admin-inv-project')?.value;
-    let html = '<table class="admin-table"><thead><tr><th>User</th><th>Role</th><th>Actions</th></tr></thead><tbody>';
+    let html = '<table class="admin-table"><thead><tr><th>User</th><th>Type</th><th>Actions</th></tr></thead><tbody>';
     for (const m of _adminMembers) {
+      const isAdmin = m.is_admin || m.role === 'ADMIN';
+      const typeLabel = isAdmin ? 'ADMIN' : 'USER';
+      const typeBadge = isAdmin ? 'badge-admin' : 'badge-user';
       html += `<tr>
         <td><strong>${esc(m.nickname)}</strong></td>
-        <td><span class="badge badge-${(m.role || '').toLowerCase()}">${esc(m.role)}</span></td>
+        <td><span class="badge ${typeBadge}">${typeLabel}</span></td>
         <td class="admin-actions">
-          <button onclick="App.adminChangeRole(${projId}, ${m.user_id}, '${esc(m.nickname)}', '${esc(m.role)}')">Change role</button>
+          ${!isAdmin ? `<button onclick="App.adminEditPermissions(${projId}, ${m.user_id}, '${esc(m.nickname)}')">Permissions</button>` : '<span style="color:var(--text-3);font-size:0.75rem">Full access</span>'}
           ${m.user_id !== authState.user?.id ? `<button class="btn-danger-sm" onclick="App.adminRemoveMember(${projId}, ${m.user_id}, '${esc(m.nickname)}')">Remove</button>` : ''}
         </td>
       </tr>`;
@@ -145,6 +149,12 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         <input type="text" id="adm-nickname" class="form-control" placeholder="e.g. JOHN"></div>
       <div class="form-group"><label class="form-label">Password</label>
         <input type="password" id="adm-password" class="form-control" placeholder="Min 6 characters"></div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+          <input type="checkbox" id="adm-is-admin"> <span class="form-label" style="margin:0">Admin account</span>
+        </label>
+        <small style="color:var(--text-3);display:block;margin-top:0.25rem">Admin accounts have full access to all projects and modules. User accounts have configurable permissions.</small>
+      </div>
     `;
     $('admin-modal-ok').textContent = 'Create';
     $('admin-modal-overlay').classList.remove('hidden');
@@ -169,13 +179,17 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('admin-modal-body').innerHTML = `
       <div class="form-group"><label class="form-label">Nickname</label>
         <input type="text" id="adm-inv-nickname" class="form-control" placeholder="Existing user nickname"></div>
-      <div class="form-group"><label class="form-label">Role</label>
-        <select id="adm-inv-role" class="form-control">
-          <option value="ADMIN">ADMIN</option>
-          <option value="UNIT">UNIT</option>
-          <option value="TRANSPO">TRANSPO</option>
-          <option value="READER" selected>READER</option>
-        </select></div>
+      <div class="form-group"><label class="form-label">Account Type</label>
+        <div style="display:flex;gap:1rem;margin-top:0.25rem">
+          <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+            <input type="radio" name="adm-inv-type" value="USER" checked> USER
+          </label>
+          <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+            <input type="radio" name="adm-inv-type" value="ADMIN"> ADMIN
+          </label>
+        </div>
+        <small style="color:var(--text-3);margin-top:0.25rem;display:block">USER: configurable permissions per module. ADMIN: full access to everything.</small>
+      </div>
     `;
     $('admin-modal-ok').textContent = 'Invite';
     $('admin-modal-overlay').classList.remove('hidden');
@@ -191,9 +205,10 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       if (_adminModalAction === 'create-user') {
         const nickname = $('adm-nickname')?.value?.trim();
         const password = $('adm-password')?.value;
+        const isAdmin = !!$('adm-is-admin')?.checked;
         if (!nickname || !password) { toast('Fill all fields', 'error'); return; }
-        await api('POST', '/api/admin/users', { nickname, password });
-        toast(`User '${nickname}' created`);
+        await api('POST', '/api/admin/users', { nickname, password, is_admin: isAdmin });
+        toast(`${isAdmin ? 'Admin' : 'User'} '${nickname}' created`);
         adminCloseModal();
         _adminLoadUsers();
       } else if (_adminModalAction === 'create-project') {
@@ -207,12 +222,18 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       } else if (_adminModalAction === 'invite') {
         const projId = $('admin-inv-project')?.value;
         const nickname = $('adm-inv-nickname')?.value?.trim();
-        const role = $('adm-inv-role')?.value;
+        const accountType = document.querySelector('input[name="adm-inv-type"]:checked')?.value || 'USER';
         if (!nickname) { toast('Enter nickname', 'error'); return; }
+        // Map account type to V1 role for backward compat (ADMIN stays ADMIN, USER maps to READER for auto-migration)
+        const role = accountType === 'ADMIN' ? 'ADMIN' : 'READER';
         await api('POST', `/api/admin/projects/${projId}/members`, { nickname, role });
-        toast(`'${nickname}' invited as ${role}`);
+        toast(`'${nickname}' invited as ${accountType}`);
         adminCloseModal();
         adminLoadMembers();
+        // For USER accounts, prompt to configure permissions
+        if (accountType === 'USER') {
+          toast(`Configure permissions for '${nickname}' in the Permissions tab`, 'info');
+        }
       } else if (_adminModalAction === 'change-role') {
         const { projId, userId } = _adminModalData;
         const role = $('adm-role-select')?.value;
@@ -287,19 +308,27 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
 
   function adminChangeRole(projId, userId, nickname, currentRole) {
-    _adminModalAction = 'change-role';
-    _adminModalData = { projId, userId };
-    $('admin-modal-title').textContent = `Change Role: ${nickname}`;
-    $('admin-modal-body').innerHTML = `
-      <div class="form-group"><label class="form-label">Role</label>
-        <select id="adm-role-select" class="form-control">
-          ${['ADMIN','UNIT','TRANSPO','READER'].map(r =>
-            `<option value="${r}" ${r === currentRole ? 'selected' : ''}>${r}</option>`
-          ).join('')}
-        </select></div>
-    `;
-    $('admin-modal-ok').textContent = 'Update';
-    $('admin-modal-overlay').classList.remove('hidden');
+    // Legacy: redirect to permissions tab
+    adminEditPermissions(projId, userId, nickname);
+  }
+
+  function adminEditPermissions(projId, userId, nickname) {
+    // Switch to permissions tab and pre-select the user
+    adminSetTab('permissions');
+    // Wait for DOM update, then set the project and user selectors
+    setTimeout(() => {
+      const projSel = $('admin-perm-project');
+      if (projSel) {
+        projSel.value = projId;
+        adminPermLoadMembers().then(() => {
+          const userSel = $('admin-perm-user');
+          if (userSel) {
+            userSel.value = userId;
+            adminPermLoadPerms();
+          }
+        });
+      }
+    }, 100);
   }
 
   async function adminRemoveMember(projId, userId, nickname) {
@@ -550,6 +579,7 @@ Object.assign(window.App, {
   _renderAdminUsers,
   adminArchiveProject,
   adminChangeRole,
+  adminEditPermissions,
   adminCloseModal,
   adminDeleteUser,
   adminLoadMembers,

@@ -2056,6 +2056,11 @@ body.schedule-dragging * { cursor: col-resize !important; }
   color: #94A3B8;
 }
 
+.admin-table .badge-user {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3B82F6;
+}
+
 .admin-actions {
   display: flex;
   gap: 0.25rem;

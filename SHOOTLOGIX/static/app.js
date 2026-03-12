@@ -647,18 +647,28 @@ const App = (() => {
       }
     });
 
-    // 2. Add CSS class to body for role-based styling
-    document.body.classList.remove('role-admin', 'role-unit', 'role-transpo', 'role-reader');
-    document.body.classList.add('role-' + role.toLowerCase());
+    // 2. Add CSS class to body for role-based styling (V2: admin or user)
+    document.body.classList.remove('role-admin', 'role-unit', 'role-transpo', 'role-reader', 'role-user');
+    document.body.classList.add(_isAdmin() ? 'role-admin' : 'role-user');
 
     // 3. If current tab is not allowed, switch to first allowed tab
     if (!_canViewTab(state.tab)) {
-      const allowed = ROLE_ALLOWED_TABS[role] || ['boats'];
-      setTab(allowed[0]);
+      // V2: find first accessible tab from permissions
+      let firstAllowed = 'dashboard';
+      if (authState.permissions) {
+        for (const mod of ['pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget']) {
+          const p = authState.permissions[mod];
+          if (p && p.access !== 'none') { firstAllowed = mod; break; }
+        }
+      } else {
+        const allowed = ROLE_ALLOWED_TABS[role] || ['boats'];
+        firstAllowed = allowed[0];
+      }
+      setTab(firstAllowed);
     }
 
-    // 4. Disable draggable for READER
-    if (role === 'READER') {
+    // 4. Disable draggable for read-only users
+    if (!_canEdit()) {
       document.querySelectorAll('[draggable="true"]').forEach(el => {
         el.setAttribute('draggable', 'false');
       });
@@ -708,8 +718,9 @@ const App = (() => {
     for (const m of authState.memberships) {
       const item = document.createElement('div');
       item.className = 'project-selector-item';
+      const displayType = (authState.user && authState.user.is_admin) || m.role === 'ADMIN' ? 'ADMIN' : 'USER';
       item.innerHTML = `<span class="ps-name">${esc(m.production_name)}</span>
-        <span class="ps-role">${esc(m.role)}</span>`;
+        <span class="ps-role">${esc(displayType)}</span>`;
       item.onclick = () => _selectProject(m.production_id, m.role);
       list.appendChild(item);
     }
@@ -779,8 +790,9 @@ const App = (() => {
     }
     const nick = authState.user ? authState.user.nickname : '';
     const role = authState.currentRole || '';
+    const displayType = (authState.user && authState.user.is_admin) || role === 'ADMIN' ? 'ADMIN' : 'USER';
     badge.innerHTML = `<span class="tu-nickname">${esc(nick)}</span>
-      <span class="tu-role">${esc(role)}</span>`;
+      <span class="tu-role">${esc(displayType)}</span>`;
     badge.onclick = () => {
       if (authState.memberships.length > 1) {
         _showProjectSelector();
