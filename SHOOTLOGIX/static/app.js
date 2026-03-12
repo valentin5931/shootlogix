@@ -680,6 +680,8 @@ const App = (() => {
     try {
       await Promise.all([loadShootingDays(), loadBoatsData(), loadPictureBoatsData(), _loadFuelGlobals()]);
       renderPDT();
+      // Load scheduling alerts in background (AXE 7.3)
+      loadAlerts();
     } catch (e) {
       console.error('Load error after project select:', e);
       toast('Failed to load project data: ' + e.message, 'error');
@@ -11214,12 +11216,12 @@ const App = (() => {
           </div>
         </div>`;
 
-      // --- Alerts (75% caution, 90% warning, 100%+ over) ---
+      // --- Budget Alerts (75% caution, 90% warning, 100%+ over) ---
       let alertsHTML = '';
       if (alerts.length > 0) {
         const sortedAlerts = [...alerts].sort((a, b) => b.pct - a.pct);
         alertsHTML = `<div class="dash-alerts">
-          <h3 style="color:var(--text-1);font-size:.85rem;margin-bottom:.5rem">Alerts</h3>
+          <h3 style="color:var(--text-1);font-size:.85rem;margin-bottom:.5rem">Budget Alerts</h3>
           ${sortedAlerts.map(a => {
             let cls = 'dash-alert-caution';
             let icon = '!';
@@ -11231,6 +11233,29 @@ const App = (() => {
               <span>${esc(a.msg)}</span>
             </div>`;
           }).join('')}
+        </div>`;
+      }
+
+      // --- Scheduling Conflict Alerts (AXE 7.3) ---
+      let conflictAlertsHTML = '';
+      if (_alertsData.length > 0) {
+        conflictAlertsHTML = `<div class="dash-alerts dash-conflict-alerts">
+          <h3 style="color:var(--text-1);font-size:.85rem;margin-bottom:.5rem;display:flex;align-items:center;gap:.4rem">
+            Scheduling Conflicts
+            <span class="dash-conflict-count">${_alertsData.length}</span>
+          </h3>
+          ${_alertsData.slice(0, 5).map(a => {
+            let cls = 'dash-alert-caution';
+            let icon = 'i';
+            if (a.severity === 'danger') { cls = 'dash-alert-red'; icon = '!!'; }
+            else if (a.severity === 'warning') { cls = 'dash-alert-amber'; icon = '!'; }
+            return `
+            <div class="dash-alert ${cls}">
+              <span class="dash-alert-icon">${icon}</span>
+              <span>${esc(a.msg)}</span>
+            </div>`;
+          }).join('')}
+          ${_alertsData.length > 5 ? `<div style="text-align:center;padding:.3rem;font-size:.75rem;color:var(--text-3);cursor:pointer" onclick="App.toggleAlertsPanel()">+ ${_alertsData.length - 5} more - View all</div>` : ''}
         </div>`;
       }
 
@@ -11416,6 +11441,7 @@ const App = (() => {
         ${kpiHTML}
         ${arenaHTML}
         ${alertsHTML}
+        ${conflictAlertsHTML}
         ${stackedHTML}
         ${burnHTML}
         <div class="dash-depts">
@@ -11425,6 +11451,106 @@ const App = (() => {
     } catch (e) {
       container.innerHTML = `<div style="color:var(--red);padding:2rem">${esc(e.message)}</div>`;
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  SCHEDULING ALERTS PANEL (AXE 7.3)
+  // ═══════════════════════════════════════════════════════════
+
+  let _alertsPanelOpen = false;
+  let _alertsData = [];
+  let _alertsFilter = 'all';
+  let _alertsLoaded = false;
+
+  async function loadAlerts() {
+    if (!state.prodId) return;
+    try {
+      const data = await api('GET', `/api/productions/${state.prodId}/alerts`);
+      _alertsData = data.alerts || [];
+      _updateAlertsBadge();
+      _alertsLoaded = true;
+      if (_alertsPanelOpen) _renderAlertsList();
+    } catch (e) {
+      console.warn('Failed to load alerts:', e);
+    }
+  }
+
+  function _updateAlertsBadge() {
+    const badge = $('alerts-badge');
+    if (!badge) return;
+    const count = _alertsData.length;
+    if (count > 0) {
+      badge.textContent = count > 99 ? '99+' : count;
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  function toggleAlertsPanel() {
+    const panel = $('alerts-panel');
+    if (!panel) return;
+    _alertsPanelOpen = !_alertsPanelOpen;
+    panel.classList.toggle('hidden', !_alertsPanelOpen);
+    if (_alertsPanelOpen) {
+      if (!_alertsLoaded) loadAlerts();
+      else _renderAlertsList();
+    }
+  }
+
+  function filterAlerts(severity) {
+    _alertsFilter = severity;
+    // Update filter buttons
+    document.querySelectorAll('.alerts-filter-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.filter === severity);
+    });
+    _renderAlertsList();
+  }
+
+  function _renderAlertsList() {
+    const list = $('alerts-panel-list');
+    if (!list) return;
+
+    const filtered = _alertsFilter === 'all'
+      ? _alertsData
+      : _alertsData.filter(a => a.severity === _alertsFilter);
+
+    if (filtered.length === 0) {
+      list.innerHTML = `<div class="alerts-empty">
+        ${_alertsData.length === 0 ? 'No scheduling conflicts detected' : 'No alerts matching this filter'}
+      </div>`;
+      return;
+    }
+
+    const moduleIcons = {
+      boats: '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 20c2-1 4-2 6-2s4 1 6 2 4 1 6 0"/><path d="M4 18l1-9h14l1 9"/></svg>',
+      picture_boats: '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 20c2-1 4-2 6-2s4 1 6 2 4 1 6 0"/><path d="M4 18l1-9h14l1 9"/></svg>',
+      security_boats: '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 20c2-1 4-2 6-2s4 1 6 2 4 1 6 0"/><path d="M4 18l1-9h14l1 9"/></svg>',
+      guards: '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+    };
+
+    const severityConfig = {
+      danger:  { cls: 'alert-item-danger',  icon: '!!', label: 'Critical' },
+      warning: { cls: 'alert-item-warning', icon: '!',  label: 'Warning' },
+      info:    { cls: 'alert-item-info',    icon: 'i',  label: 'Info' },
+    };
+
+    list.innerHTML = filtered.map(a => {
+      const sev = severityConfig[a.severity] || severityConfig.info;
+      const modIcon = moduleIcons[a.module] || '';
+      const modLabel = (a.module || '').replace(/_/g, ' ');
+      return `
+        <div class="alert-item ${sev.cls}">
+          <span class="alert-item-severity">${sev.icon}</span>
+          <div class="alert-item-content">
+            <div class="alert-item-msg">${esc(a.msg)}</div>
+            <div class="alert-item-meta">
+              ${modIcon}<span>${modLabel}</span>
+              ${a.date ? `<span class="alert-item-date">${a.date}</span>` : ''}
+            </div>
+          </div>
+        </div>`;
+    }).join('');
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -11644,6 +11770,8 @@ const App = (() => {
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
+        // Close alerts panel (AXE 7.3)
+        if (_alertsPanelOpen) { toggleAlertsPanel(); }
         closeShortcutsPanel();
         const moreSheet = $('bnav-more-sheet');
         if (moreSheet && !moreSheet.classList.contains('hidden')) { moreSheet.classList.add('hidden'); }
@@ -12371,6 +12499,8 @@ const App = (() => {
     toggleTheme,
     // Dashboard
     renderDashboard,
+    // Alerts (AXE 7.3)
+    toggleAlertsPanel, filterAlerts, loadAlerts,
     // Search
     _openSearch, _closeSearch,
     // History undo

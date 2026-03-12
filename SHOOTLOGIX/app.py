@@ -4798,6 +4798,173 @@ def api_dashboard(prod_id):
     })
 
 
+# ─── Conflict Alerts (AXE 7.3) ────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/alerts", methods=["GET"])
+def api_alerts(prod_id):
+    """Detect scheduling conflicts and return alerts:
+    - Boats assigned on Off days
+    - Locations in Film without guards
+    - Cumulative boat capacity issues
+    """
+    prod_or_404(prod_id)
+
+    alerts = []
+
+    # ── 1. Boats assigned on Off days ──
+    shooting_days = get_shooting_days(prod_id)
+    # Build a set of dates that are "off" days (have at least one 'off' event)
+    off_dates = set()
+    day_date_map = {}  # date -> day info
+    for day in shooting_days:
+        d = day.get("date", "")
+        if not d:
+            continue
+        day_date_map[d] = day
+        for ev in day.get("events", []):
+            if (ev.get("event_type") or "").lower() == "off":
+                off_dates.add(d)
+
+    if off_dates:
+        # Check boat assignments (all contexts: boats, picture_boats, security_boats)
+        for context_label, getter in [
+            ("Boats", lambda: get_boat_assignments(prod_id, context='boats')),
+            ("Picture Boats", lambda: get_picture_boat_assignments(prod_id)),
+            ("Security Boats", lambda: get_security_boat_assignments(prod_id)),
+        ]:
+            assignments = getter()
+            for asgn in assignments:
+                start = (asgn.get("start_date") or "")[:10]
+                end = (asgn.get("end_date") or "")[:10]
+                if not start or not end:
+                    continue
+                overrides = json.loads(asgn.get("day_overrides") or "{}")
+                boat_name = asgn.get("boat_name") or asgn.get("boat_name_override") or "Unknown"
+                func_name = asgn.get("function_name") or ""
+                for off_d in off_dates:
+                    if off_d < start or off_d > end:
+                        # Check if override explicitly activates this date
+                        ov = overrides.get(off_d, "")
+                        if ov and ov != "empty":
+                            alerts.append({
+                                "type": "boat_on_off",
+                                "severity": "warning",
+                                "module": context_label.lower().replace(" ", "_"),
+                                "date": off_d,
+                                "msg": f"{context_label}: '{boat_name}' ({func_name}) assigned on Off day {off_d}",
+                                "entity": boat_name,
+                                "function": func_name,
+                            })
+                        continue
+                    # Date is in range - check if override disables it
+                    ov = overrides.get(off_d, "")
+                    if ov == "empty":
+                        continue  # Explicitly disabled, no conflict
+                    alerts.append({
+                        "type": "boat_on_off",
+                        "severity": "warning",
+                        "module": context_label.lower().replace(" ", "_"),
+                        "date": off_d,
+                        "msg": f"{context_label}: '{boat_name}' ({func_name}) assigned on Off day {off_d}",
+                        "entity": boat_name,
+                        "function": func_name,
+                    })
+
+    # ── 2. Locations in Film without guards ──
+    loc_schedules = get_location_schedules(prod_id)
+    guard_loc_schedules = get_guard_location_schedules(prod_id)
+
+    # Build guard lookup: {(location_name, date): nb_guards}
+    guard_lookup = {}
+    for gs in guard_loc_schedules:
+        key = (gs["location_name"], gs["date"])
+        guard_lookup[key] = gs.get("nb_guards") or 0
+
+    for ls in loc_schedules:
+        if ls.get("status") == "F":  # Film day
+            loc_name = ls["location_name"]
+            date = ls["date"]
+            nb_guards = guard_lookup.get((loc_name, date), 0)
+            if nb_guards == 0:
+                alerts.append({
+                    "type": "film_no_guards",
+                    "severity": "danger",
+                    "module": "guards",
+                    "date": date,
+                    "msg": f"Location '{loc_name}' in Film on {date} with no guards assigned",
+                    "entity": loc_name,
+                })
+
+    # ── 3. Cumulative boat capacity vs function needs ──
+    # For each date, sum up the capacity of all assigned boats per function group
+    # Flag if any function has boats with capacity "?" or total seems low
+    boat_assignments = get_boat_assignments(prod_id, context='boats')
+    boats_data = get_boats(prod_id)
+    boat_cap_map = {}  # boat_id -> numeric capacity (None if "EQ" or "?")
+    for b in boats_data:
+        cap = b.get("capacity", "")
+        try:
+            boat_cap_map[b["id"]] = int(cap)
+        except (ValueError, TypeError):
+            boat_cap_map[b["id"]] = None
+
+    # Group assignments by function_group + date
+    from collections import defaultdict
+    func_group_daily_cap = defaultdict(lambda: {"total_cap": 0, "unknown": 0, "boats": []})
+
+    for asgn in boat_assignments:
+        start = (asgn.get("start_date") or "")[:10]
+        end = (asgn.get("end_date") or "")[:10]
+        if not start or not end:
+            continue
+        overrides = json.loads(asgn.get("day_overrides") or "{}")
+        fg = asgn.get("function_group") or "Other"
+        boat_id = asgn.get("boat_id")
+        cap = boat_cap_map.get(boat_id)
+        boat_name = asgn.get("boat_name") or asgn.get("boat_name_override") or "Unknown"
+
+        # Iterate through all PDT dates
+        for day in shooting_days:
+            d = day.get("date", "")
+            if not d or d in off_dates:
+                continue
+            # Check if assignment is active on this date
+            if d in overrides:
+                if overrides[d] == "empty":
+                    continue
+            elif d < start or d > end:
+                continue
+
+            key = (fg, d)
+            if cap is not None:
+                func_group_daily_cap[key]["total_cap"] += cap
+            else:
+                func_group_daily_cap[key]["unknown"] += 1
+            func_group_daily_cap[key]["boats"].append(boat_name)
+
+    # Check for function groups with only unknown-capacity boats
+    seen_cap_alerts = set()
+    for (fg, d), info in func_group_daily_cap.items():
+        if info["unknown"] > 0 and info["total_cap"] == 0 and len(info["boats"]) > 0:
+            alert_key = f"{fg}"
+            if alert_key not in seen_cap_alerts:
+                seen_cap_alerts.add(alert_key)
+                alerts.append({
+                    "type": "capacity_unknown",
+                    "severity": "info",
+                    "module": "boats",
+                    "date": d,
+                    "msg": f"Boats ({fg}): all boats have unknown capacity - verify manually",
+                    "entity": fg,
+                })
+
+    # Sort alerts: danger first, then warning, then info
+    severity_order = {"danger": 0, "warning": 1, "info": 2}
+    alerts.sort(key=lambda a: (severity_order.get(a.get("severity"), 3), a.get("date", "")))
+
+    return jsonify({"alerts": alerts, "count": len(alerts)})
+
+
 # ─── Budget Daily (AXE 6.2) ──────────────────────────────────────────────────
 
 @app.route("/api/productions/<int:prod_id>/budget/daily", methods=["GET"])
