@@ -253,6 +253,9 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
           <div style="font-weight:700;color:var(--text-0);font-size:.85rem">${esc(func.name)}</div>
           ${func.specs ? `<div style="font-size:.7rem;color:var(--text-4);margin-top:.1rem">${esc(func.specs)}</div>` : ''}
         </div>
+        <button onclick="App.openEditFunctionModal(${func.id})"
+          style="color:var(--text-4);background:none;border:none;cursor:pointer;font-size:.8rem;padding:.2rem"
+          title="Edit function">✎</button>
         <button onclick="App.sbConfirmDeleteFunc(${func.id})"
           style="color:var(--text-4);background:none;border:none;cursor:pointer;font-size:.9rem;padding:.2rem"
           title="Delete">&#10005;</button>
@@ -803,8 +806,18 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
   // ── Security Boats Export ───────────────────────────────────
   function sbToggleExport() { $('sb-export-menu')?.classList.toggle('hidden'); }
-  function sbExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/security-boats/csv`);  $('sb-export-menu')?.classList.add('hidden'); }
-  function sbExportJSON() { authDownload(`/api/productions/${state.prodId}/export/security-boats/json`); $('sb-export-menu')?.classList.add('hidden'); }
+  function sbExportCSV()  {
+    $('sb-export-menu')?.classList.add('hidden');
+    SL.openExportDateModal('security_boats', 'Security Boats', [
+      { key: 'csv', label: 'CSV' }, { key: 'json', label: 'JSON' },
+    ], (from, to, fmt) => {
+      const base = fmt === 'json'
+        ? `/api/productions/${state.prodId}/export/security-boats/json`
+        : `/api/productions/${state.prodId}/export/security-boats/csv`;
+      SL._exportWithDates(base, from, to);
+    });
+  }
+  function sbExportJSON() { sbExportCSV(); }
 
   // ── Security Boat CRUD modals ──────────────────────────────
   function showAddSecurityBoatModal(editId) {
@@ -902,6 +915,9 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
   function sbShowAddFunctionModal() {
     ['nf-name','nf-specs','nf-start','nf-end'].forEach(id => $(id).value = '');
+    $('nf-edit-id').value = '';
+    $('nf-modal-title').textContent = 'New function';
+    $('nf-confirm-btn').textContent = 'Create function';
     $('nf-group').innerHTML = (state.sbGroups || DEFAULT_SB_GROUPS).map(g => `<option value="${g.name}">${g.name}</option>`).join('');
     $('nf-group').value = (state.sbGroups || DEFAULT_SB_GROUPS)[0]?.name || '';
     $('nf-color').value = (state.sbGroups || DEFAULT_SB_GROUPS)[0]?.color || '#EF4444';

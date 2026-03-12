@@ -201,6 +201,9 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
           <div style="font-weight:700;color:var(--text-0);font-size:.85rem">${esc(func.name)}</div>
           ${func.specs ? `<div style="font-size:.7rem;color:var(--text-4);margin-top:.1rem">${esc(func.specs)}</div>` : ''}
         </div>
+        <button onclick="App.openEditFunctionModal(${func.id})"
+          style="color:var(--text-4);background:none;border:none;cursor:pointer;font-size:.8rem;padding:.2rem"
+          title="Edit function">✎</button>
         <button onclick="App.pbConfirmDeleteFunc(${func.id})"
           style="color:var(--text-4);background:none;border:none;cursor:pointer;font-size:.9rem;padding:.2rem"
           title="Delete">✕</button>
@@ -646,8 +649,18 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
 
   function pbToggleExport() { $('pb-export-menu').classList.toggle('hidden'); }
-  function pbExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/picture-boats/csv`);  $('pb-export-menu').classList.add('hidden'); }
-  function pbExportJSON() { authDownload(`/api/productions/${state.prodId}/export/picture-boats/json`); $('pb-export-menu').classList.add('hidden'); }
+  function pbExportCSV()  {
+    $('pb-export-menu').classList.add('hidden');
+    SL.openExportDateModal('picture_boats', 'Picture Boats', [
+      { key: 'csv', label: 'CSV' }, { key: 'json', label: 'JSON' },
+    ], (from, to, fmt) => {
+      const base = fmt === 'json'
+        ? `/api/productions/${state.prodId}/export/picture-boats/json`
+        : `/api/productions/${state.prodId}/export/picture-boats/csv`;
+      SL._exportWithDates(base, from, to);
+    });
+  }
+  function pbExportJSON() { pbExportCSV(); }
 
 
 

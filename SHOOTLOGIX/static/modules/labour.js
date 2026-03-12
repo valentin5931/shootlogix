@@ -277,6 +277,9 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
           <div style="font-weight:700;color:var(--text-0);font-size:.85rem">${esc(func.name)}</div>
           ${func.specs ? `<div style="font-size:.7rem;color:var(--text-4);margin-top:.1rem">${esc(func.specs)}</div>` : ''}
         </div>
+        <button onclick="App.openEditFunctionModal(${func.id})"
+          style="color:var(--text-4);background:none;border:none;cursor:pointer;font-size:.8rem;padding:.2rem"
+          title="Edit function">✎</button>
         <button onclick="App.lbConfirmDeleteFunc(${func.id})"
           style="color:var(--text-4);background:none;border:none;cursor:pointer;font-size:.9rem;padding:.2rem"
           title="Delete">&times;</button>
@@ -470,6 +473,9 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   // ── Add function modal (Labour) ──────────────────────────────
   function lbShowAddFunctionModal() {
     ['nf-name','nf-specs','nf-start','nf-end'].forEach(id => { const el = $(id); if(el) el.value = ''; });
+    $('nf-edit-id').value = '';
+    $('nf-modal-title').textContent = 'New function';
+    $('nf-confirm-btn').textContent = 'Create function';
     $('nf-group').innerHTML = state.lbGroups.map(g => `<option value="${g.name}">${g.name}</option>`).join('');
     $('nf-group').value = state.lbGroups[0]?.name || '';
     $('nf-color').value = state.lbGroups[0]?.color || '#F97316';

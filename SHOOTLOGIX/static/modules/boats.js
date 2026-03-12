@@ -228,6 +228,9 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
           <div style="font-weight:700;color:var(--text-0);font-size:.85rem">${esc(func.name)}</div>
           ${func.specs ? `<div style="font-size:.7rem;color:var(--text-4);margin-top:.1rem">${esc(func.specs)}</div>` : ''}
         </div>
+        <button onclick="App.openEditFunctionModal(${func.id})"
+          style="color:var(--text-4);background:none;border:none;cursor:pointer;font-size:.8rem;padding:.2rem"
+          title="Edit function">✎</button>
         <button onclick="App.confirmDeleteFunc(${func.id})"
           style="color:var(--text-4);background:none;border:none;cursor:pointer;font-size:.9rem;padding:.2rem"
           title="Delete">✕</button>
@@ -674,6 +677,9 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   // ── Add function ───────────────────────────────────────────
   function showAddFunctionModal() {
     ['nf-name','nf-specs','nf-start','nf-end'].forEach(id => $(id).value = '');
+    $('nf-edit-id').value = '';
+    $('nf-modal-title').textContent = 'New function';
+    $('nf-confirm-btn').textContent = 'Create function';
     $('nf-group').innerHTML = state.boatGroups.map(g => `<option value="${g.name}">${g.name}</option>`).join('');
     $('nf-group').value = state.boatGroups[0]?.name || '';
     $('nf-color').value = state.boatGroups[0]?.color || '#3B82F6';
@@ -688,6 +694,9 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
   function pbShowAddFunctionModal() {
     ['nf-name','nf-specs','nf-start','nf-end'].forEach(id => $(id).value = '');
+    $('nf-edit-id').value = '';
+    $('nf-modal-title').textContent = 'New function';
+    $('nf-confirm-btn').textContent = 'Create function';
     $('nf-group').innerHTML = state.pbGroups.map(g => `<option value="${g.name}">${g.name}</option>`).join('');
     $('nf-group').value = state.pbGroups[0]?.name || '';
     $('nf-color').value = state.pbGroups[0]?.color || '#6b7280';
@@ -705,50 +714,104 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('nf-group').onchange = null;
   }
 
-  async function createFunction() {
+  // ── Edit function: open modal in edit mode ──────────────────
+  function openEditFunctionModal(funcId) {
+    // Find function across all contexts
+    const allFuncs = [
+      ...state.functions,
+      ...(state.pictureFunctions || []),
+      ...(state.transportFunctions || []),
+      ...(state.securityFunctions || []),
+      ...(state.labourFunctions || []),
+      ...(state.gcFunctions || []),
+    ];
+    const func = allFuncs.find(f => f.id === funcId);
+    if (!func) { toast('Function not found', 'error'); return; }
+
+    // Determine context from function
+    const ctx = func.context || 'boats';
+    const groups = ctx === 'picture' ? state.pbGroups
+      : ctx === 'transport' ? state.tbGroups
+      : ctx === 'security' ? (state.sbGroups || [])
+      : ctx === 'labour' ? state.lbGroups
+      : ctx === 'guard_camp' ? state.gcGroups
+      : state.boatGroups;
+
+    $('nf-edit-id').value = funcId;
+    $('nf-modal-title').textContent = 'Edit function';
+    $('nf-confirm-btn').textContent = 'Save changes';
+    $('nf-name').value = func.name || '';
+    $('nf-specs').value = func.specs || '';
+    $('nf-start').value = func.default_start || '';
+    $('nf-end').value = func.default_end || '';
+    $('nf-group').innerHTML = groups.map(g => `<option value="${g.name}">${g.name}</option>`).join('');
+    $('nf-group').value = func.function_group || groups[0]?.name || '';
+    $('nf-color').value = func.color || '#3B82F6';
+    $('nf-group').onchange = (e) => {
+      const g = groups.find(g => g.name === e.target.value);
+      $('nf-color').value = g?.color || '#6b7280';
+    };
+    $('add-func-overlay').dataset.ctx = ctx;
+    $('add-func-overlay').classList.remove('hidden');
+    setTimeout(() => $('nf-name').focus(), 80);
+  }
+
+  async function saveFunction() {
     const name = $('nf-name').value.trim();
     if (!name) { toast('Name is required', 'error'); return; }
     const ctx = $('add-func-overlay').dataset.ctx || 'boats';
+    const editId = $('nf-edit-id').value;
+
+    const data = {
+      name,
+      function_group: $('nf-group').value,
+      color:          $('nf-color').value,
+      default_start:  $('nf-start').value || null,
+      default_end:    $('nf-end').value   || null,
+      specs:          $('nf-specs').value.trim() || null,
+    };
+
     try {
-      const func = await api('POST', `/api/productions/${state.prodId}/boat-functions`, {
-        name,
-        function_group: $('nf-group').value,
-        color:          $('nf-color').value,
-        default_start:  $('nf-start').value || null,
-        default_end:    $('nf-end').value   || null,
-        specs:          $('nf-specs').value.trim() || null,
-        sort_order:     ctx === 'picture' ? state.pictureFunctions.length : ctx === 'labour' ? state.labourFunctions.length : ctx === 'guard_camp' ? state.gcFunctions.length : state.functions.length,
-        context:        ctx,
-      });
-      if (ctx === 'picture') {
-        state.pictureFunctions.push(func);
+      if (editId) {
+        // UPDATE existing function
+        const updated = await api('PUT', `/api/boat-functions/${editId}`, data);
+        const funcArrays = {
+          boats: 'functions', picture: 'pictureFunctions', transport: 'transportFunctions',
+          security: 'securityFunctions', labour: 'labourFunctions', guard_camp: 'gcFunctions',
+        };
+        const arr = state[funcArrays[ctx] || 'functions'];
+        const idx = arr.findIndex(f => f.id === parseInt(editId));
+        if (idx !== -1) Object.assign(arr[idx], updated);
         closeAddFunctionModal();
-        renderPbRoleCards();
-      } else if (ctx === 'transport') {
-        state.transportFunctions.push(func);
-        closeAddFunctionModal();
-        renderTbRoleCards();
-      } else if (ctx === 'security') {
-        state.securityFunctions.push(func);
-        closeAddFunctionModal();
-        renderSecurityBoats();
-      } else if (ctx === 'labour') {
-        state.labourFunctions.push(func);
-        closeAddFunctionModal();
-        renderLbRoleCards();
-      } else if (ctx === 'guard_camp') {
-        state.gcFunctions.push(func);
-        closeAddFunctionModal();
-        renderGcRoleCards();
+        _rerenderCtx(ctx);
+        toast(`Function "${updated.name}" updated`);
       } else {
-        state.functions.push(func);
+        // CREATE new function
+        data.sort_order = ctx === 'picture' ? state.pictureFunctions.length : ctx === 'labour' ? state.labourFunctions.length : ctx === 'guard_camp' ? state.gcFunctions.length : state.functions.length;
+        data.context = ctx;
+        const func = await api('POST', `/api/productions/${state.prodId}/boat-functions`, data);
+        if (ctx === 'picture') state.pictureFunctions.push(func);
+        else if (ctx === 'transport') state.transportFunctions.push(func);
+        else if (ctx === 'security') state.securityFunctions.push(func);
+        else if (ctx === 'labour') state.labourFunctions.push(func);
+        else if (ctx === 'guard_camp') state.gcFunctions.push(func);
+        else state.functions.push(func);
         closeAddFunctionModal();
-        renderRoleCards();
+        _rerenderCtx(ctx);
+        toast(`Function "${func.name}" created`);
       }
-      toast(`Function "${func.name}" created`);
     } catch (e) {
       toast('Error: ' + e.message, 'error');
     }
+  }
+
+  function _rerenderCtx(ctx) {
+    if (ctx === 'picture') renderPbRoleCards();
+    else if (ctx === 'transport') renderTbRoleCards();
+    else if (ctx === 'security') renderSecurityBoats();
+    else if (ctx === 'labour') renderLbRoleCards();
+    else if (ctx === 'guard_camp') renderGcRoleCards();
+    else renderRoleCards();
   }
 
   async function confirmDeleteFunc(funcId) {
@@ -1829,8 +1892,30 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
 
   function toggleExport() { $('export-menu').classList.toggle('hidden'); }
-  function exportCSV()  { authDownload(`/api/productions/${state.prodId}/export/csv`);  $('export-menu').classList.add('hidden'); }
-  function exportJSON() { authDownload(`/api/productions/${state.prodId}/export/json`); $('export-menu').classList.add('hidden'); }
+  function exportCSV()  {
+    $('export-menu').classList.add('hidden');
+    SL.openExportDateModal('boats', 'Boats', [
+      { key: 'csv', label: 'CSV' },
+      { key: 'json', label: 'JSON' },
+    ], (from, to, fmt) => {
+      const base = fmt === 'json'
+        ? `/api/productions/${state.prodId}/export/json`
+        : `/api/productions/${state.prodId}/export/csv`;
+      SL._exportWithDates(base, from, to);
+    });
+  }
+  function exportJSON() {
+    $('export-menu').classList.add('hidden');
+    SL.openExportDateModal('boats', 'Boats', [
+      { key: 'csv', label: 'CSV' },
+      { key: 'json', label: 'JSON' },
+    ], (from, to, fmt) => {
+      const base = fmt === 'json'
+        ? `/api/productions/${state.prodId}/export/json`
+        : `/api/productions/${state.prodId}/export/csv`;
+      SL._exportWithDates(base, from, to);
+    });
+  }
 
 
 
@@ -1868,7 +1953,8 @@ Object.assign(window.App, {
   confirmDeleteBoat,
   confirmDeleteFunc,
   createBoat,
-  createFunction,
+  saveFunction,
+  openEditFunctionModal,
   createPictureBoat,
   deletePictureBoat,
   editAssignment,

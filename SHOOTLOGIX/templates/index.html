@@ -1355,7 +1355,8 @@
 <!-- ── Add function modal ──────────────────────────────────────────────────── -->
 <div id="add-func-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeAddFunctionModal()">
   <div class="modal-box" style="max-width:440px">
-    <div class="modal-title">New function</div>
+    <div class="modal-title" id="nf-modal-title">New function</div>
+    <input type="hidden" id="nf-edit-id" value="">
     <div class="form-group">
       <label class="form-label">Name *</label>
       <input type="text" id="nf-name" class="form-control" placeholder="e.g. PROD BOAT 3">
@@ -1393,7 +1394,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeAddFunctionModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="App.createFunction()">Create function</button>
+      <button class="btn btn-primary" id="nf-confirm-btn" onclick="App.saveFunction()">Create function</button>
     </div>
   </div>
 </div>
