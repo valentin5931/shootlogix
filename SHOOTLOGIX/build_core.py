@@ -52,6 +52,7 @@ output.append("""
     'dashboard':      '/static/modules/dashboard.js',
     'alerts':         '/static/modules/alerts.js',
     'admin':          '/static/modules/admin.js',
+    'touch-drag':     '/static/modules/touch-drag.js',
   };
 
   // Dependencies: some modules need other modules loaded first
@@ -82,6 +83,7 @@ output.append("""
   // Preload critical modules on startup
   async function _preloadModules() {
     // PDT and boats are loaded at startup, preload their modules
+    await _loadModule('touch-drag');
     await Promise.all([
       _loadModule('pdt'),
       _loadModule('boats'),

@@ -23,20 +23,30 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   //  PDT VIEW
   // ═══════════════════════════════════════════════════════════
 
+  // Tide status → SVG icon (16×16, blue)
+  const TIDE_ICONS = {
+    E: '<svg class="tide-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2 8h12M11 5l3 3-3 3M5 11l-3-3 3-3" stroke="#3B82F6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    D: '<svg class="tide-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 2v12M5 11l3 3 3-3" stroke="#3B82F6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    M: '<svg class="tide-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 14V2M11 5L8 2 5 5" stroke="#3B82F6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  };
+  function tideIcon(statut) {
+    return TIDE_ICONS[statut] || esc(statut || '');
+  }
+
   // Event type → badge label + CSS class
-  const EV_LABEL = { game: 'GAME', arena: 'ARENA', council: 'COUNCIL', off: 'OFF' };
+  const EV_LABEL = { game: t('pdt.event_game'), arena: t('pdt.event_arena'), council: t('pdt.event_council'), off: t('pdt.event_off') };
   const EV_CLASS = { game: 'ev-game', arena: 'ev-arena', council: 'ev-council', off: 'ev-off' };
 
   function renderPDT() {
     const days = state.shootingDays;
     $('pdt-count').textContent = days.length
       ? `${days.length} shooting days · Mar 25 → Apr 25, 2026`
-      : 'No shooting days imported yet.';
+      : t('pdt.no_days');
 
     const tbody = $('pdt-tbody');
     if (!days.length) {
       tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:3rem;color:var(--text-4)">
-        No shooting days. Click <strong>↓ Import PDF V1</strong> to auto-load all 32 days.
+        ${t('pdt.no_days')}
       </td></tr>`;
       return;
     }
@@ -67,7 +77,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         const timeVal = ev.heure_event;
         const depArr  = ev.heure_depart || ev.heure_arrivee;
         const tide    = ev.maree_hauteur != null
-          ? `<span class="day-tide tide-${ev.maree_statut || ''}">${ev.maree_hauteur}m ${ev.maree_statut || ''}</span>`
+          ? `<span class="day-tide tide-${ev.maree_statut || ''}" title="${ev.maree_statut || ''}">${ev.maree_hauteur}m ${tideIcon(ev.maree_statut)}</span>`
           : '<span style="color:var(--text-4)">—</span>';
         const rehearsal = ev.heure_rehearsal || (isFirst ? d.heure_rehearsal : null);
         const host      = ev.heure_host || (isFirst ? d.heure_animateur : null);
@@ -302,7 +312,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       if (ev.heure_fin) times.push(`<span class="pdt-cal-detail-ev-time"><strong>End</strong> ${esc(ev.heure_fin)}</span>`);
 
       const tideHtml = ev.maree_hauteur != null
-        ? `<span class="pdt-cal-detail-ev-time"><strong>Tide</strong> ${ev.maree_hauteur}m ${ev.maree_statut || ''}</span>`
+        ? `<span class="pdt-cal-detail-ev-time" title="${ev.maree_statut || ''}"><strong>Tide</strong> ${ev.maree_hauteur}m ${tideIcon(ev.maree_statut)}</span>`
         : '';
       if (tideHtml) times.push(tideHtml);
 
@@ -600,10 +610,10 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     if (!sec) return;
     if (sec.style.display === 'none') {
       sec.style.display = '';
-      if (label) label.textContent = 'Hide advanced events';
+      if (label) label.textContent = t('pdt.hide_advanced');
     } else {
       sec.style.display = 'none';
-      if (label) label.textContent = 'Show advanced events';
+      if (label) label.textContent = t('pdt.show_advanced');
     }
   }
 
@@ -611,7 +621,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     const sec = $('dm-events-section');
     const label = $('dm-events-toggle-label');
     if (sec) sec.style.display = 'none';
-    if (label) label.textContent = 'Show advanced events';
+    if (label) label.textContent = t('pdt.show_advanced');
   }
 
   // Update a field in the in-modal event list (local state only — saved on saveDay)
@@ -1019,6 +1029,66 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
 
 
+// ─── Auto-fill tides (P6.3) ──────────────────────────────────────────────
+  async function autoFillTides() {
+    const days = state.shootingDays;
+    if (!days.length) { toast('No shooting days to fill', 'error'); return; }
+
+    // Determine date range from existing days
+    const dates = days.map(d => d.date).filter(Boolean).sort();
+    if (!dates.length) { toast('No dates found', 'error'); return; }
+    const start = dates[0];
+    const end = dates[dates.length - 1];
+
+    toast('Fetching tide data...');
+    try {
+      const tideData = await api(`/api/tides?lat=8.35&lng=-79.05&start=${start}&end=${end}`);
+      const tideMap = {};
+      tideData.forEach(t => { tideMap[t.date] = t; });
+
+      let updated = 0;
+      for (const day of days) {
+        const td = tideMap[day.date];
+        if (!td || td.height == null) continue;
+
+        // Skip days where user already set tide manually
+        const existingH = day.events && day.events.length
+          ? day.events[0].maree_hauteur
+          : day.maree_hauteur;
+        if (existingH != null) continue;
+
+        // Build update payload with tide data
+        const body = {
+          maree_hauteur: td.height,
+          maree_statut: td.status
+        };
+        await authFetch(`/api/productions/${state.currentProd}/shooting-days/${day.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+
+        // Also update first event if exists
+        if (day.events && day.events.length) {
+          const ev = day.events[0];
+          await authFetch(`/api/productions/${state.currentProd}/shooting-days/${day.id}/events/${ev.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ maree_hauteur: td.height, maree_statut: td.status })
+          });
+        }
+        updated++;
+      }
+
+      // Reload data
+      await loadShootingDays(state.currentProd);
+      renderPDT();
+      toast(`Tides filled for ${updated} day${updated !== 1 ? 's' : ''} (${dates.length - updated} skipped — already set)`);
+    } catch (e) {
+      toast('Error fetching tides: ' + e.message, 'error');
+    }
+  }
+
 // Register module functions on App
 Object.assign(window.App, {
   _buildCalDetail,
@@ -1033,6 +1103,7 @@ Object.assign(window.App, {
   _updateDayEventField,
   addDay,
   addEventToDay,
+  autoFillTides,
   applyCascade,
   cancelCascade,
   closeDayModal,

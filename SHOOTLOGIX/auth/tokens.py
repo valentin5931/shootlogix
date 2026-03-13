@@ -2,7 +2,7 @@
 auth/tokens.py — JWT token creation and validation.
 
 Access tokens: short-lived (30 minutes), used for API authentication.
-Refresh tokens: longer-lived (30 days), used to get new access tokens.
+Refresh tokens: longer-lived (7 days), used to get new access tokens.
 
 Security decisions:
 - Access tokens are stateless JWTs verified by signature only.
@@ -22,7 +22,7 @@ JWT_SECRET = os.environ.get("JWT_SECRET", secrets.token_hex(32))
 JWT_ALGORITHM = "HS256"
 
 ACCESS_TOKEN_EXPIRY = timedelta(minutes=30)
-REFRESH_TOKEN_EXPIRY = timedelta(days=30)
+REFRESH_TOKEN_EXPIRY = timedelta(days=7)  # P2.10: reduced from 30 to 7 days
 
 if not os.environ.get("JWT_SECRET"):
     print("WARNING: JWT_SECRET not set — using random secret (tokens will not survive restarts)")

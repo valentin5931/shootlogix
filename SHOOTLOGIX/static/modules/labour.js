@@ -106,13 +106,18 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     return state.labourAssignments.filter(a => a.boat_function_id === funcId);
   }
 
-  function renderLbWorkerList() {
+  async function renderLbWorkerList() {
     const workers = _lbFilteredWorkers();
     const assignedIds = new Set(state.labourAssignments.filter(a => a.helper_id).map(a => a.helper_id));
     const container = $('lb-worker-list');
     if (!container) return;
+    const workerIds = workers.map(w => w.id);
+    if (workerIds.length) await App.loadCommentCounts('helpers', workerIds);
     if (!workers.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No workers</div>';
+      container.innerHTML = SL.emptyState('worker',
+        'No workers registered yet',
+        'Add workers to start assigning them to functions and schedules.',
+        'Add a worker', "App.showAddWorkerModal()");
       return;
     }
     container.innerHTML = workers.map(w => {
@@ -148,26 +153,32 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
             onclick="event.stopPropagation();App.openWorkerDetail(${w.id})">&#x270E;</button>
           <button class="boat-edit-btn" title="Duplicate" style="font-size:.65rem"
             onclick="event.stopPropagation();App.duplicateEntity('helpers',${w.id})">&#x2398;</button>
+          ${App.commentBadgeHTML('helpers', w.id)}
           <button class="card-delete-btn" title="Delete worker"
-            onclick="event.stopPropagation();App.confirmDeleteWorker(${w.id},'${esc(w.name).replace(/'/g,"\\'")}',${wAsgns.length})">&#x1F5D1;</button>
+            onclick="event.stopPropagation();App.confirmDeleteWorker(${w.id},'${esc(w.name).replace(/'/g,"\\'")}')">&#x1F5D1;</button>
         </div>
       </div>`;
     }).join('');
   }
 
   // ── Delete worker from card ──────────────────────────────
-  function confirmDeleteWorker(workerId, workerName, assignmentCount) {
-    const impact = assignmentCount > 0 ? `\n${assignmentCount} assignment(s) will also be deleted.` : '';
-    showConfirm(`Delete worker "${workerName}"?${impact}`, async () => {
-      try {
-        await api('DELETE', `/api/helpers/${workerId}`);
-        state.labourWorkers = state.labourWorkers.filter(w => w.id !== workerId);
-        state.labourAssignments = state.labourAssignments.filter(a => a.helper_id !== workerId);
-        closeBoatDetail();
-        renderLabour();
-        toast('Worker deleted');
-      } catch (e) { toast('Error: ' + e.message, 'error'); }
-    });
+  async function confirmDeleteWorker(workerId, workerName) {
+    try {
+      const impact = await api('GET', `/api/helpers/${workerId}/impact`);
+      const parts = [];
+      if (impact.assignments > 0) parts.push(`${impact.assignments} assignment(s)`);
+      const cascade = parts.length > 0 ? `\nThis will also remove ${parts.join(' and ')}.` : '';
+      showConfirm(`Delete worker "${workerName}"?${cascade}`, async () => {
+        try {
+          await api('DELETE', `/api/helpers/${workerId}`);
+          state.labourWorkers = state.labourWorkers.filter(w => w.id !== workerId);
+          state.labourAssignments = state.labourAssignments.filter(a => a.helper_id !== workerId);
+          closeBoatDetail();
+          renderLabour();
+          toast('Worker deleted');
+        } catch (e) { toast('Error: ' + e.message, 'error'); }
+      });
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
   // ── Inline rate editing (Labour) ──────────────────────────────
@@ -233,7 +244,10 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
           ${funcs.map(f => renderLbRoleCard(f, color)).join('')}
         </div>`;
     });
-    container.innerHTML = html || '<div style="color:var(--text-4);text-align:center;padding:3rem">No functions. Click + Function to add one.</div>';
+    container.innerHTML = html || SL.emptyState('worker',
+      'No labour functions yet',
+      'Create a function to start assigning workers to roles.',
+      '+ Function', "App.showAddFunctionModal()");
   }
 
   function renderLbRoleCard(func, color) {
@@ -305,7 +319,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
   function lbOnWorkerDragEnd() {
     state.lbDragWorker = null;
-    document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+    document.querySelectorAll('.dragging').forEach(el => {
+      el.classList.remove('dragging');
+      el.classList.add('drag-landing');
+      el.addEventListener('animationend', () => el.classList.remove('drag-landing'), { once: true });
+    });
   }
   function lbOnDragOver(event, funcId) {
     event.preventDefault();
@@ -414,6 +432,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('bd-vendor').value   = w.contact             || '';
     $('bd-rate-est').value = w.daily_rate_estimate  || '';
     $('bd-rate-act').value = w.daily_rate_actual    || '';
+    if ($('bd-currency')) $('bd-currency').value = w.currency || 'USD';
     $('bd-notes').value    = w.notes               || '';
     _setDetailLabels('labour');
     const hideIds = ['bd-group', 'bd-category', 'bd-waves', 'bd-night', 'bd-capacity'];
@@ -449,9 +468,12 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       sel.value = state.lbGroups[0]?.name || 'GENERAL';
     }
     $('add-worker-overlay').classList.remove('hidden');
+    _SL._snapshotModal('add-worker-overlay');
     setTimeout(() => { const el = $('nw-name'); if(el) el.focus(); }, 80);
   }
-  function closeAddWorkerModal() { $('add-worker-overlay').classList.add('hidden'); }
+  function closeAddWorkerModal(force) {
+    _SL._guardedClose('add-worker-overlay', () => $('add-worker-overlay').classList.add('hidden'), force);
+  }
 
   async function createWorker() {
     const name = $('nw-name').value.trim();
@@ -460,13 +482,14 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       const w = await api('POST', `/api/productions/${state.prodId}/helpers`, {
         name,
         daily_rate_estimate: parseFloat($('nw-price').value) || 0,
+        currency:     $('nw-currency')?.value || 'USD',
         group_name:   $('nw-group').value || 'GENERAL',
         role:         $('nw-role').value.trim()    || null,
         contact:      $('nw-contact').value.trim() || null,
         notes:        $('nw-notes').value.trim()   || null,
       });
       state.labourWorkers.push(w);
-      closeAddWorkerModal();
+      closeAddWorkerModal(true);
       renderLbWorkerList();
       toast(`Worker "${w.name}" created`);
     } catch (e) {
@@ -489,6 +512,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     };
     $('add-func-overlay').dataset.ctx = 'labour';
     $('add-func-overlay').classList.remove('hidden');
+    _SL._snapshotModal('add-func-overlay');
     setTimeout(() => { const el = $('nf-name'); if(el) el.focus(); }, 80);
   }
 
@@ -816,7 +840,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   function lbToggleExport() { $('lb-export-menu').classList.toggle('hidden'); }
   function lbExportCSV()  {
     $('lb-export-menu').classList.add('hidden');
-    SL.openExportDateModal('labour', 'Labour', [
+    SL.openExportDateModal('labour', 'Labor', [
       { key: 'csv', label: 'CSV' },
     ], (from, to, fmt) => {
       SL._exportWithDates(`/api/productions/${state.prodId}/export/labour/csv`, from, to);
@@ -916,7 +940,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     html += `<div class="budget-dept-card" style="margin-top:.5rem">
       <table class="budget-table">
         <tbody><tr class="budget-total-row">
-          <td colspan="6" style="text-align:right;color:var(--text-1)">TOTAL LABOUR</td>
+          <td colspan="6" style="text-align:right;color:var(--text-1)">TOTAL LABOR</td>
           <td style="text-align:right;color:var(--green);font-size:1.05rem">${fmtMoney(totalGlobal)}</td>
         </tr></tbody>
       </table>

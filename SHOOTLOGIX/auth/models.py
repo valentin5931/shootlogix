@@ -200,6 +200,44 @@ def migrate_auth_tables():
             """)
             print("Auth migration: created user_global_permissions table (RBAC V2)")
 
+        # --- P6.15: Create user_entity_permissions table ---
+        if "user_entity_permissions" not in tables:
+            if is_postgres():
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_entity_permissions (
+                        id              SERIAL PRIMARY KEY,
+                        user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        entity_type     TEXT NOT NULL,
+                        entity_id       INTEGER NOT NULL,
+                        permission      TEXT NOT NULL DEFAULT 'read'
+                            CHECK(permission IN ('read','write','admin')),
+                        created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(user_id, entity_type, entity_id)
+                    )
+                """)
+            else:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS user_entity_permissions (
+                        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        entity_type     TEXT NOT NULL,
+                        entity_id       INTEGER NOT NULL,
+                        permission      TEXT NOT NULL DEFAULT 'read'
+                            CHECK(permission IN ('read','write','admin')),
+                        created_at      TEXT DEFAULT (datetime('now')),
+                        UNIQUE(user_id, entity_type, entity_id)
+                    )
+                """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_user_entity_perms_user
+                ON user_entity_permissions(user_id)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_user_entity_perms_type
+                ON user_entity_permissions(user_id, entity_type)
+            """)
+            print("Auth migration: created user_entity_permissions table (P6.15)")
+
     print("Auth migration: complete")
 
 
@@ -262,6 +300,7 @@ def update_user_password(user_id, password_hash):
 def delete_user(user_id):
     """Delete a user and all their memberships and permissions."""
     with get_auth_db() as conn:
+        conn.execute("DELETE FROM user_entity_permissions WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM user_permissions WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM user_global_permissions WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM project_memberships WHERE user_id = ?", (user_id,))
@@ -400,9 +439,14 @@ _ROLE_DEFAULTS = {
         "global": {"can_lock_unlock": 0, "can_view_history": 1},
     },
     "TRANSPO": {
-        "modules": {m: {"access": "write", "can_export": 1, "can_import": 0,
-                        "money_read": 1, "money_write": 0}
-                    for m in ["boats", "picture-boats", "security-boats", "transport", "fuel"]},
+        "modules": {
+            **{m: {"access": "write", "can_export": 1, "can_import": 0,
+                   "money_read": 1, "money_write": 0}
+               for m in ["boats", "picture-boats", "security-boats", "transport", "fuel"]},
+            **{m: {"access": "read", "can_export": 0, "can_import": 0,
+                   "money_read": 0, "money_write": 0}
+               for m in ["pdt", "locations"]},
+        },
         "global": {"can_lock_unlock": 0, "can_view_history": 0},
     },
     "READER": {
@@ -526,6 +570,98 @@ def ensure_user_permissions(user_id, production_id, role):
         migrate_v1_role_to_v2(user_id, production_id, role)
         perms = get_user_permissions(user_id, production_id)
     return perms
+
+
+# --- P6.15: Entity-level permission helpers ---
+
+VALID_ENTITY_TYPES = [
+    "boats", "picture-boats", "security-boats",
+    "transport", "locations", "fuel-machinery",
+    "guards", "fnb", "labour",
+]
+
+
+def get_user_entity_permissions(user_id, entity_type=None):
+    """Get entity-level permissions for a user.
+    If entity_type is given, filter by that type.
+    Returns list of dicts: [{id, user_id, entity_type, entity_id, permission, created_at}]
+    """
+    with get_auth_db() as conn:
+        if entity_type:
+            rows = conn.execute("""
+                SELECT id, user_id, entity_type, entity_id, permission, created_at
+                FROM user_entity_permissions
+                WHERE user_id = ?  AND entity_type = ?
+                ORDER BY entity_type, entity_id
+            """, (user_id, entity_type)).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT id, user_id, entity_type, entity_id, permission, created_at
+                FROM user_entity_permissions
+                WHERE user_id = ?
+                ORDER BY entity_type, entity_id
+            """, (user_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def add_user_entity_permission(user_id, entity_type, entity_id, permission="read"):
+    """Add an entity-level permission. Returns the new row id."""
+    with get_auth_db() as conn:
+        cur = conn.execute("""
+            INSERT OR REPLACE INTO user_entity_permissions
+            (user_id, entity_type, entity_id, permission)
+            VALUES (?, ?, ?, ?)
+        """, (user_id, entity_type, entity_id, permission))
+        return cur.lastrowid
+
+
+def delete_user_entity_permission(perm_id):
+    """Delete an entity-level permission by id."""
+    with get_auth_db() as conn:
+        conn.execute("DELETE FROM user_entity_permissions WHERE id = ?", (perm_id,))
+
+
+def delete_all_user_entity_permissions(user_id):
+    """Delete all entity-level permissions for a user."""
+    with get_auth_db() as conn:
+        conn.execute("DELETE FROM user_entity_permissions WHERE user_id = ?", (user_id,))
+
+
+def user_has_entity_restrictions(user_id):
+    """Check if a user has any entity-level restrictions.
+    Returns True if they do (meaning they should be filtered).
+    """
+    with get_auth_db() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) as c FROM user_entity_permissions WHERE user_id = ?",
+            (user_id,)
+        ).fetchone()
+        return row["c"] > 0
+
+
+def get_user_allowed_entity_ids(user_id, entity_type, min_permission="read"):
+    """Get the list of entity IDs a user is allowed to access for a given type.
+    Returns None if no restrictions (full access), or a set of int IDs.
+    min_permission: 'read', 'write', or 'admin' (hierarchical).
+    """
+    perm_levels = {"read": 1, "write": 2, "admin": 3}
+    min_level = perm_levels.get(min_permission, 1)
+
+    with get_auth_db() as conn:
+        # Check if user has ANY entity permissions at all for this type
+        rows = conn.execute("""
+            SELECT entity_id, permission
+            FROM user_entity_permissions
+            WHERE user_id = ? AND entity_type = ?
+        """, (user_id, entity_type)).fetchall()
+
+        if not rows:
+            return None  # No restrictions -> full access
+
+        return {
+            r["entity_id"] for r in rows
+            if perm_levels.get(r["permission"], 1) >= min_level
+        }
 
 
 def delete_user_permissions(user_id, production_id=None):

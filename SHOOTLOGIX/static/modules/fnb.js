@@ -88,10 +88,10 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
     let html = `<div style="padding:1rem">
       <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
-        <span class="section-title" style="margin:0">Food & Beverage</span>
+        <span class="section-title" style="margin:0"><span data-tooltip="F&B / FNB - Catering department">Food & Beverage</span></span>
         <div style="display:flex;gap:.3rem;margin-left:.5rem">
-          <button class="filter-pill ${state.fnbSubTab === 'achats' ? 'active' : ''}" onclick="App.fnbSetSubTab('achats')">ACHATS</button>
-          <button class="filter-pill ${state.fnbSubTab === 'consommation' ? 'active' : ''}" onclick="App.fnbSetSubTab('consommation')">CONSOMMATION</button>
+          <button class="filter-pill ${state.fnbSubTab === 'achats' ? 'active' : ''}" onclick="App.fnbSetSubTab('achats')">PURCHASES</button>
+          <button class="filter-pill ${state.fnbSubTab === 'consommation' ? 'active' : ''}" onclick="App.fnbSetSubTab('consommation')">CONSUMPTION</button>
           <button class="filter-pill ${state.fnbSubTab === 'budget' ? 'active' : ''}" onclick="App.fnbSetSubTab('budget')">BUDGET</button>
         </div>
         <div style="flex:1"></div>
@@ -102,11 +102,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       <div class="stat-grid" style="margin-bottom:.75rem">
         <div class="stat-card" style="border:1px solid var(--green);background:rgba(34,197,94,.07)">
           <div class="stat-val" style="font-size:1.3rem;color:var(--green)">${fmtMoney(totalPurchase)}</div>
-          <div class="stat-lbl">ACHATS</div>
+          <div class="stat-lbl">PURCHASES</div>
         </div>
         <div class="stat-card" style="border:1px solid #3B82F6;background:rgba(59,130,246,.07)">
           <div class="stat-val" style="font-size:1.3rem;color:#3B82F6">${fmtMoney(totalConso)}</div>
-          <div class="stat-lbl">CONSOMMATION</div>
+          <div class="stat-lbl">CONSUMPTION</div>
         </div>
         <div class="stat-card" style="border:1px solid ${balance >= 0 ? 'var(--green)' : '#EF4444'};background:${balance >= 0 ? 'rgba(34,197,94,.07)' : 'rgba(239,68,68,.07)'}">
           <div class="stat-val" style="font-size:1.3rem;color:${balance >= 0 ? 'var(--green)' : '#EF4444'}">${fmtMoney(balance)}</div>
@@ -265,9 +265,10 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     });
 
     if (cats.length === 0) {
-      html += `<tr><td colspan="100" style="text-align:center;padding:2rem;color:var(--text-4)">
-        No categories yet. Click "+ Category" then "+ Item" to get started.
-      </td></tr>`;
+      html += `<tr><td colspan="100">${SL.emptyState('food',
+        'No categories yet',
+        'Create your first category, then add items to start tracking purchases and consumption.',
+        '+ Category', "App.showFnbCatModal()")}</td></tr>`;
     }
 
     html += `</tbody></table></div>`;
@@ -299,11 +300,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     let html = `
     <div class="budget-dept-card">
       <div class="budget-dept-header">
-        <span style="font-weight:700;font-size:.82rem;color:var(--text-0)">FNB BUDGET SUMMARY</span>
+        <span style="font-weight:700;font-size:.82rem;color:var(--text-0)">CATERING BUDGET SUMMARY</span>
         <span style="font-weight:700;color:var(--green)">${fmtMoney(grandPurchase)}</span>
       </div>
       <table class="budget-table"><thead><tr>
-        <th>Category</th><th style="text-align:right">Achats</th><th style="text-align:right">Conso</th><th style="text-align:right">Balance</th><th style="text-align:center">% Used</th>
+        <th>Category</th><th style="text-align:right">Purchases</th><th style="text-align:right">Consumption</th><th style="text-align:right">Balance</th><th style="text-align:center">% Used</th>
       </tr></thead><tbody>`;
 
     catData.forEach(cd => {
@@ -460,10 +461,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('fc-confirm-btn').textContent = 'Create';
     $('fc-delete-btn').classList.add('hidden');
     $('fnb-cat-overlay').classList.remove('hidden');
+    _SL._snapshotModal('fnb-cat-overlay');
   }
 
-  function closeFnbCatModal() {
-    $('fnb-cat-overlay').classList.add('hidden');
+  function closeFnbCatModal(force) {
+    _SL._guardedClose('fnb-cat-overlay', () => $('fnb-cat-overlay').classList.add('hidden'), force);
   }
 
   function editFnbCategory(catId) {
@@ -476,6 +478,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('fc-confirm-btn').textContent = 'Save';
     $('fc-delete-btn').classList.remove('hidden');
     $('fnb-cat-overlay').classList.remove('hidden');
+    _SL._snapshotModal('fnb-cat-overlay');
   }
 
   async function saveFnbCategory() {
@@ -491,7 +494,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       }
       state.fnbCategories = null;
       state.fnbItems = null;
-      closeFnbCatModal();
+      closeFnbCatModal(true);
       toast(editId ? 'Category updated' : 'Category created', 'success');
       renderFnb();
     } catch(e) {
@@ -502,18 +505,25 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   async function deleteFnbCategory() {
     const editId = $('fc-edit-id').value;
     if (!editId) return;
-    if (!confirm('Delete this category and all its items?')) return;
     try {
-      await api('DELETE', `/api/fnb-categories/${editId}`);
-      state.fnbCategories = null;
-      state.fnbItems = null;
-      state.fnbEntries = null;
-      closeFnbCatModal();
-      toast('Category deleted', 'success');
-      renderFnb();
-    } catch(e) {
-      toast('Error: ' + e.message, 'error');
-    }
+      const cat = (state.fnbCategories || []).find(c => c.id === parseInt(editId));
+      const impact = await api('GET', `/api/fnb-categories/${editId}/impact`);
+      const parts = [];
+      if (impact.items > 0) parts.push(`${impact.items} item(s)`);
+      if (impact.entries > 0) parts.push(`${impact.entries} entry(ies)`);
+      const cascade = parts.length > 0 ? `\nThis will also remove ${parts.join(' and ')}.` : '';
+      showConfirm(`Delete category "${cat?.name || '?'}"?${cascade}`, async () => {
+        try {
+          await api('DELETE', `/api/fnb-categories/${editId}`);
+          state.fnbCategories = null;
+          state.fnbItems = null;
+          state.fnbEntries = null;
+          closeFnbCatModal(true);
+          toast('Category deleted', 'success');
+          renderFnb();
+        } catch(e) { toast('Error: ' + e.message, 'error'); }
+      });
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
   // ── FNB Item CRUD modals ──────────────────────────────────────
@@ -528,10 +538,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('fi-delete-btn').classList.add('hidden');
     _fnbPopulateCategorySelect('');
     $('fnb-item-overlay').classList.remove('hidden');
+    _SL._snapshotModal('fnb-item-overlay');
   }
 
-  function closeFnbItemModal() {
-    $('fnb-item-overlay').classList.add('hidden');
+  function closeFnbItemModal(force) {
+    _SL._guardedClose('fnb-item-overlay', () => $('fnb-item-overlay').classList.add('hidden'), force);
   }
 
   function editFnbItem(itemId) {
@@ -547,6 +558,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('fi-delete-btn').classList.remove('hidden');
     _fnbPopulateCategorySelect(it.category_id);
     $('fnb-item-overlay').classList.remove('hidden');
+    _SL._snapshotModal('fnb-item-overlay');
   }
 
   function _fnbPopulateCategorySelect(selectedId) {
@@ -576,7 +588,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         await api('POST', `/api/productions/${state.prodId}/fnb-items`, payload);
       }
       state.fnbItems = null;
-      closeFnbItemModal();
+      closeFnbItemModal(true);
       toast(editId ? 'Item updated' : 'Item created', 'success');
       renderFnb();
     } catch(e) {
@@ -587,22 +599,28 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   async function deleteFnbItem() {
     const editId = $('fi-edit-id').value;
     if (!editId) return;
-    if (!confirm('Delete this item and all its entries?')) return;
     try {
-      await api('DELETE', `/api/fnb-items/${editId}`);
-      state.fnbItems = null;
-      state.fnbEntries = null;
-      closeFnbItemModal();
-      toast('Item deleted', 'success');
-      renderFnb();
-    } catch(e) {
-      toast('Error: ' + e.message, 'error');
-    }
+      const item = (state.fnbItems || []).find(i => i.id === parseInt(editId));
+      const impact = await api('GET', `/api/fnb-items/${editId}/impact`);
+      const parts = [];
+      if (impact.entries > 0) parts.push(`${impact.entries} entry(ies)`);
+      const cascade = parts.length > 0 ? `\nThis will also remove ${parts.join(' and ')}.` : '';
+      showConfirm(`Delete item "${item?.name || '?'}"?${cascade}`, async () => {
+        try {
+          await api('DELETE', `/api/fnb-items/${editId}`);
+          state.fnbItems = null;
+          state.fnbEntries = null;
+          closeFnbItemModal(true);
+          toast('Item deleted', 'success');
+          renderFnb();
+        } catch(e) { toast('Error: ' + e.message, 'error'); }
+      });
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
   // ── FNB Export ────────────────────────────────────────────────
   function fnbExportCSV() {
-    SL.openExportDateModal('fnb', 'FNB', [
+    SL.openExportDateModal('fnb', 'Catering', [
       { key: 'csv', label: 'CSV' },
     ], (from, to, fmt) => {
       SL._exportWithDates(`/api/productions/${state.prodId}/export/fnb-budget/csv`, from, to);

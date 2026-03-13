@@ -301,12 +301,12 @@ const App = (() => {
     el.classList.remove('online', 'offline', 'fade-out');
     if (online) {
       el.classList.add('online');
-      if (label) label.textContent = 'Online';
+      if (label) label.textContent = t('common.online');
       // Fade out after 4s when online — stays visible when offline
       _netFadeTimer = setTimeout(() => el.classList.add('fade-out'), 4000);
     } else {
       el.classList.add('offline');
-      if (label) label.textContent = 'Offline';
+      if (label) label.textContent = t('common.offline');
     }
   }
 
@@ -650,7 +650,7 @@ const App = (() => {
   function _showProjectSelector() {
     const el = $('project-selector');
     if (!el) return;
-    $('ps-welcome').textContent = `Welcome, ${authState.user.nickname}`;
+    $('ps-welcome').textContent = t('auth.welcome', { name: authState.user.nickname });
     const list = $('ps-list');
     list.innerHTML = '';
     for (const m of authState.memberships) {
@@ -729,7 +729,7 @@ const App = (() => {
       logoutBtn.id = 'topbar-logout-btn';
       logoutBtn.className = 'tab-btn';
       logoutBtn.style.cssText = 'color:var(--text-3);font-size:0.75rem;';
-      logoutBtn.textContent = 'Sign Out';
+      logoutBtn.textContent = t('common.sign_out');
       logoutBtn.onclick = logout;
       topbar.appendChild(logoutBtn);
     }
@@ -778,7 +778,7 @@ const App = (() => {
       }
     }
     if (succeeded > 0) {
-      toast(`${succeeded} offline change(s) synced`, 'success');
+      toast(t('common.offline_synced', { count: succeeded }), 'success');
       setTab(state.tab); // Refresh current view
     }
   }
@@ -805,7 +805,7 @@ const App = (() => {
       _offlineQueue.push({ method, path, body, ts: Date.now() });
       _saveOfflineQueue();
       _updateOfflineCounter();
-      toast('Saved offline - will sync when back online', 'info');
+      toast(t('common.saved_offline'), 'info');
       return body || {};
     }
 
@@ -832,12 +832,13 @@ const App = (() => {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
+      const _te = typeof translateError === 'function' ? translateError : (s) => s;
       // Handle validation errors with field details
       if (res.status === 422 && err.fields) {
         const msgs = Object.values(err.fields).join(', ');
-        throw new Error(msgs);
+        throw new Error(_te(msgs));
       }
-      throw new Error(err.error || `HTTP ${res.status}`);
+      throw new Error(_te(err.error || `HTTP ${res.status}`));
     }
 
     const data = await res.json();
@@ -930,6 +931,7 @@ const App = (() => {
     if (tab === 'locations')       { state.locationSchedules = null; renderLocations(); }
     if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
+    if (tab === 'checklist')       loadChecklist();
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
     _updateBreadcrumb();
@@ -940,8 +942,8 @@ const App = (() => {
   const TAB_LABELS = {
     dashboard: 'Dashboard', pdt: 'PDT', locations: 'Locations',
     boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
-    transport: 'Transport', fuel: 'Fuel', labour: 'Labour',
-    guards: 'Guards', fnb: 'FNB', budget: 'Budget', admin: 'Admin',
+    transport: 'Transport', fuel: 'Fuel', labour: 'Labor',
+    guards: 'Guards', fnb: 'Catering', budget: 'Budget', admin: 'Admin',
   };
 
   function _updateBreadcrumb(view, entity) {
@@ -1397,7 +1399,8 @@ const App = (() => {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(err.error || `HTTP ${res.status}`);
+        const _te = typeof translateError === 'function' ? translateError : (s) => s;
+        throw new Error(_te(err.error || `HTTP ${res.status}`));
       }
       const result = await res.json();
       await loadShootingDays();
@@ -4692,10 +4695,10 @@ const App = (() => {
       { key: 'picture_boats', label: 'PB' },
       { key: 'security_boats', label: 'SB' },
       { key: 'transport', label: 'Transport' },
-      { key: 'labour', label: 'Labour' },
+      { key: 'labour', label: 'Labor' },
       { key: 'guards', label: 'Guards' },
       { key: 'locations', label: 'Loc.' },
-      { key: 'fnb', label: 'FNB' },
+      { key: 'fnb', label: 'Catering' },
       { key: 'fuel', label: 'Fuel' },
     ];
 
@@ -8694,7 +8697,7 @@ const App = (() => {
                   const cellClass = status ? `loc-cell-${status}` : 'loc-cell-empty';
                   const lockedClass = isLocked ? ' loc-locked-cell' : '';
                   return `<td class="${cellClass}${lockedClass}" style="text-align:center;cursor:${isLocked ? 'not-allowed' : 'pointer'};min-width:32px;height:28px"
-                    onclick="App.locCellClick('${esc(site.name)}','${esc(sType)}','${d}',${isLocked ? 'true' : 'false'})">${status}</td>`;
+                    onclick="App.locCellClick('${esc(site.name)}','${esc(sType)}','${d}',${isLocked ? 'true' : 'false'},${site.id})">${status}</td>`;
                 }).join('')}
               </tr>`;
             }).join('')}
@@ -8879,7 +8882,7 @@ const App = (() => {
     renderLocations();
   }
 
-  async function locCellClick(locName, locType, date, isLocked) {
+  async function locCellClick(locName, locType, date, isLocked, locId) {
     if (isLocked) { toast('This date is locked', 'info'); return; }
     const key = `${locName}|${date}`;
     const schedules = state.locationSchedules || [];
@@ -8889,7 +8892,7 @@ const App = (() => {
     if (!existing) {
       // Empty -> P
       const result = await api('POST', `/api/productions/${state.prodId}/location-schedules`, {
-        location_name: locName, location_type: locType, date, status: 'P'
+        location_id: locId, location_name: locName, location_type: locType, date, status: 'P'
       });
       if (result) state.locationSchedules.push(result);
     } else {
@@ -8898,7 +8901,7 @@ const App = (() => {
         // P -> F -> W
         const newStatus = statusCycle[idx + 1];
         const result = await api('POST', `/api/productions/${state.prodId}/location-schedules`, {
-          location_name: locName, location_type: locType, date, status: newStatus
+          location_id: locId, location_name: locName, location_type: locType, date, status: newStatus
         });
         if (result) {
           const i = state.locationSchedules.findIndex(s => s.location_name === locName && s.date === date);
@@ -8907,7 +8910,7 @@ const App = (() => {
       } else {
         // W -> empty (delete)
         await api('POST', `/api/productions/${state.prodId}/location-schedules/delete`, {
-          location_name: locName, date
+          location_id: locId, location_name: locName, date
         });
         state.locationSchedules = state.locationSchedules.filter(s => !(s.location_name === locName && s.date === date));
       }
@@ -9146,7 +9149,7 @@ const App = (() => {
     while (cur <= end) {
       const d = cur.toISOString().slice(0, 10);
       await api('POST', `/api/productions/${state.prodId}/location-schedules`, {
-        location_name: site.name, location_type: site.location_type, date: d, status
+        location_id: site.id, location_name: site.name, location_type: site.location_type, date: d, status
       });
       cur.setDate(cur.getDate() + 1);
     }
@@ -9156,12 +9159,12 @@ const App = (() => {
   }
 
   async function _locModalRemoveSchedule(locName, date) {
-    await api('POST', `/api/productions/${state.prodId}/location-schedules/delete`, {
-      location_name: locName, date
-    });
-    state.locationSchedules = state.locationSchedules.filter(s => !(s.location_name === locName && s.date === date));
     const editId = $('nl-edit-id').value;
     const site = (state.locationSites || []).find(s => s.id === parseInt(editId));
+    await api('POST', `/api/productions/${state.prodId}/location-schedules/delete`, {
+      location_id: site ? site.id : undefined, location_name: locName, date
+    });
+    state.locationSchedules = state.locationSchedules.filter(s => !(s.location_name === locName && s.date === date));
     if (site) _renderLocationScheduleInModal(site);
     renderLocations();
   }
@@ -9289,7 +9292,9 @@ const App = (() => {
     const totalGuardDays = Object.values(byLoc).reduce((s, v) => s + v.totalGuardDays, 0);
     const totalBudget = totalGuardDays * GUARD_RATE_LOCATION;
 
-    // Get unique location names that have guard schedule entries
+    // Get unique location names that have guard schedule entries + map name -> location_id
+    const locIdByName = {};
+    guardSchedules.forEach(g => { if (g.location_id) locIdByName[g.location_name] = g.location_id; });
     const activeLocNames = [...new Set(guardSchedules.map(g => g.location_name))];
     activeLocNames.sort((a, b) => {
       const ta = typeByName[a] || 'game', tb = typeByName[b] || 'game';
@@ -9400,7 +9405,7 @@ const App = (() => {
 
                 return `<td class="${cellClass}" style="text-align:center;min-width:32px;height:28px;cursor:pointer;font-size:.7rem;font-weight:600"
                   title="${actStatus} - ${nb} guard${nb !== 1 ? 's' : ''} - click to edit"
-                  onclick="App.gdlCellClick('${esc(locName)}','${d}',${nb})">${nb}</td>`;
+                  onclick="App.gdlCellClick('${esc(locName)}','${d}',${nb},${locIdByName[locName] || 'null'})">${nb}</td>`;
               }).join('')}
             </tr>`;
             }).join('')}
@@ -9566,17 +9571,15 @@ const App = (() => {
   }
 
   // Cell click -- prompt for guard count
-  async function gdlCellClick(locName, date, currentNb) {
+  async function gdlCellClick(locName, date, currentNb, locId) {
     const newVal = prompt(`Guards for ${locName} on ${date}:`, String(currentNb));
     if (newVal === null) return;
     const nb = parseInt(newVal, 10);
     if (isNaN(nb) || nb < 0) { toast('Invalid number', 'error'); return; }
     try {
-      await api('POST', `/api/productions/${state.prodId}/guard-schedules/update-guards`, {
-        location_name: locName,
-        date: date,
-        nb_guards: nb
-      });
+      const payload = { location_name: locName, date: date, nb_guards: nb };
+      if (locId) payload.location_id = locId;
+      await api('POST', `/api/productions/${state.prodId}/guard-schedules/update-guards`, payload);
       // Update local state
       const key = `${locName}|${date}`;
       const existing = state.guardLocSchedules.find(g => g.location_name === locName && g.date === date);
@@ -10792,8 +10795,8 @@ const App = (() => {
       <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
         <span class="section-title" style="margin:0">Food & Beverage</span>
         <div style="display:flex;gap:.3rem;margin-left:.5rem">
-          <button class="filter-pill ${state.fnbSubTab === 'achats' ? 'active' : ''}" onclick="App.fnbSetSubTab('achats')">ACHATS</button>
-          <button class="filter-pill ${state.fnbSubTab === 'consommation' ? 'active' : ''}" onclick="App.fnbSetSubTab('consommation')">CONSOMMATION</button>
+          <button class="filter-pill ${state.fnbSubTab === 'achats' ? 'active' : ''}" onclick="App.fnbSetSubTab('achats')">PURCHASES</button>
+          <button class="filter-pill ${state.fnbSubTab === 'consommation' ? 'active' : ''}" onclick="App.fnbSetSubTab('consommation')">CONSUMPTION</button>
           <button class="filter-pill ${state.fnbSubTab === 'budget' ? 'active' : ''}" onclick="App.fnbSetSubTab('budget')">BUDGET</button>
         </div>
         <div style="flex:1"></div>
@@ -10804,11 +10807,11 @@ const App = (() => {
       <div class="stat-grid" style="margin-bottom:.75rem">
         <div class="stat-card" style="border:1px solid var(--green);background:rgba(34,197,94,.07)">
           <div class="stat-val" style="font-size:1.3rem;color:var(--green)">${fmtMoney(totalPurchase)}</div>
-          <div class="stat-lbl">ACHATS</div>
+          <div class="stat-lbl">PURCHASES</div>
         </div>
         <div class="stat-card" style="border:1px solid #3B82F6;background:rgba(59,130,246,.07)">
           <div class="stat-val" style="font-size:1.3rem;color:#3B82F6">${fmtMoney(totalConso)}</div>
-          <div class="stat-lbl">CONSOMMATION</div>
+          <div class="stat-lbl">CONSUMPTION</div>
         </div>
         <div class="stat-card" style="border:1px solid ${balance >= 0 ? 'var(--green)' : '#EF4444'};background:${balance >= 0 ? 'rgba(34,197,94,.07)' : 'rgba(239,68,68,.07)'}">
           <div class="stat-val" style="font-size:1.3rem;color:${balance >= 0 ? 'var(--green)' : '#EF4444'}">${fmtMoney(balance)}</div>
@@ -10999,11 +11002,11 @@ const App = (() => {
     let html = `
     <div class="budget-dept-card">
       <div class="budget-dept-header">
-        <span style="font-weight:700;font-size:.82rem;color:var(--text-0)">FNB BUDGET SUMMARY</span>
+        <span style="font-weight:700;font-size:.82rem;color:var(--text-0)">CATERING BUDGET SUMMARY</span>
         <span style="font-weight:700;color:var(--green)">${fmtMoney(grandPurchase)}</span>
       </div>
       <table class="budget-table"><thead><tr>
-        <th>Category</th><th style="text-align:right">Achats</th><th style="text-align:right">Conso</th><th style="text-align:right">Balance</th><th style="text-align:center">% Used</th>
+        <th>Category</th><th style="text-align:right">Purchases</th><th style="text-align:right">Consumption</th><th style="text-align:right">Balance</th><th style="text-align:center">% Used</th>
       </tr></thead><tbody>`;
 
     catData.forEach(cd => {
@@ -11342,7 +11345,7 @@ const App = (() => {
       const deptNames = {
         locations: 'Locations', boats: 'Boats', picture_boats: 'Picture Boats',
         security_boats: 'Security Boats', transport: 'Transport',
-        fuel: 'Fuel', labour: 'Labour', guards: 'Guards (Camp)', fnb: 'FNB'
+        fuel: 'Fuel', labour: 'Labor', guards: 'Guards (Camp)', fnb: 'Catering'
       };
       const deptColors = {
         locations: '#22C55E', boats: '#3B82F6', picture_boats: '#8B5CF6',
@@ -11617,6 +11620,9 @@ const App = (() => {
           <h3 style="color:var(--text-1);font-size:.85rem;margin-bottom:.5rem">Budget by Department</h3>
           ${barsHTML}
         </div>`;
+
+      // Render executive KPIs (P5.1) in parallel
+      if (window.DashboardV2) window.DashboardV2.render(state.prodId);
     } catch (e) {
       container.innerHTML = `<div style="color:var(--red);padding:2rem">${esc(e.message)}</div>`;
     }
@@ -11869,6 +11875,9 @@ const App = (() => {
   }
 
   async function init() {
+    // Load i18n translations before rendering
+    if (typeof I18n !== 'undefined') await I18n.init(localStorage.getItem('locale') || 'en');
+
     // Apply saved theme
     _applyTheme(localStorage.getItem('theme') || 'dark');
 
@@ -12048,8 +12057,8 @@ const App = (() => {
       } else {
         document.getElementById('main-content').innerHTML =
           `<div style="color:var(--text-3);padding:3rem;text-align:center">
-            You are not assigned to any project.<br>
-            <small>Ask an administrator to invite you to a project.</small>
+            ${t('auth.no_project')}<br>
+            <small>${t('auth.ask_admin')}</small>
           </div>`;
       }
     } catch (e) {
@@ -12057,8 +12066,8 @@ const App = (() => {
       if (e.message === 'Session expired') return;
       document.getElementById('main-content').innerHTML =
         `<div style="color:var(--red);padding:3rem;text-align:center">
-          Load error: ${esc(e.message)}<br>
-          <small>Check that the Flask server is running on port 5002.</small>
+          ${t('auth.load_error', { message: esc(e.message) })}<br>
+          <small>${t('auth.check_server')}</small>
         </div>`;
     }
   }
@@ -12437,15 +12446,15 @@ const App = (() => {
   // ═══════════════════════════════════════════════════════════
 
   const FAB_CONFIG = {
-    pdt:              { label: '+ Day',       action: () => addDay() },
-    boats:            { label: '+ Boat',      action: () => showAddBoatModal() },
-    'picture-boats':  { label: '+ Boat',      action: () => showAddPictureBoatModal() },
-    'security-boats': { label: '+ Boat',      action: () => showAddSecurityBoatModal() },
-    transport:        { label: '+ Vehicle',   action: () => showAddTransportVehicleModal() },
-    labour:           { label: '+ Worker',    action: () => showAddWorkerModal() },
-    guards:           { label: '+ Guard',     action: () => gcShowAddWorkerModal() },
-    locations:        { label: '+ Location',  action: () => showAddLocationModal() },
-    fnb:              { label: '+ Category',  action: () => showFnbCatModal() },
+    pdt:              { get label() { return t('fab.day'); },       action: () => addDay() },
+    boats:            { get label() { return t('fab.boat'); },      action: () => showAddBoatModal() },
+    'picture-boats':  { get label() { return t('fab.boat'); },      action: () => showAddPictureBoatModal() },
+    'security-boats': { get label() { return t('fab.boat'); },      action: () => showAddSecurityBoatModal() },
+    transport:        { get label() { return t('fab.vehicle'); },   action: () => showAddTransportVehicleModal() },
+    labour:           { get label() { return t('fab.worker'); },    action: () => showAddWorkerModal() },
+    guards:           { get label() { return t('fab.guard'); },     action: () => gcShowAddWorkerModal() },
+    locations:        { get label() { return t('fab.location'); },  action: () => showAddLocationModal() },
+    fnb:              { get label() { return t('fab.category'); },  action: () => showFnbCatModal() },
   };
 
   function _updateFab() {
@@ -12500,11 +12509,11 @@ const App = (() => {
         indicator.classList.add('ptr-pulling');
         if (dy > 70) {
           icon.classList.add('ptr-ready');
-          text.textContent = 'Release to refresh';
+          text.textContent = t('ptr.release');
           _ptrTriggered = true;
         } else {
           icon.classList.remove('ptr-ready');
-          text.textContent = 'Pull to refresh';
+          text.textContent = t('ptr.pull');
           _ptrTriggered = false;
         }
       }
@@ -12524,7 +12533,7 @@ const App = (() => {
         spinner.className = 'ptr-spinner';
         icon.parentNode.insertBefore(spinner, icon);
         icon.style.display = 'none';
-        text.textContent = 'Refreshing...';
+        text.textContent = t('ptr.refreshing');
         indicator.classList.remove('ptr-pulling');
         indicator.classList.add('ptr-refreshing');
 
@@ -12536,14 +12545,14 @@ const App = (() => {
             icon.style.display = '';
             icon.innerHTML = '\u2193';
             icon.classList.remove('ptr-ready');
-            text.textContent = 'Pull to refresh';
-            toast('Data refreshed', 'success');
+            text.textContent = t('ptr.pull');
+            toast(t('common.data_refreshed'), 'success');
           }, 400);
         });
       } else {
         indicator.classList.remove('ptr-pulling');
         icon.classList.remove('ptr-ready');
-        text.textContent = 'Pull to refresh';
+        text.textContent = t('ptr.pull');
       }
       _ptrTriggered = false;
     }, { passive: true });
@@ -12565,6 +12574,94 @@ const App = (() => {
       else if (tab === 'budget')          { renderBudget(); }
       else if (tab === 'dashboard')       { renderDashboard(); }
     } catch(e) { toast('Refresh failed: ' + e.message, 'error'); }
+  }
+
+  // ── Daily Checklist ──────────────────────────────────────────
+
+  const _clCategoryIcons = {
+    boats: '\u26F5', security: '\uD83D\uDEE1\uFE0F', transport: '\uD83D\uDE9A',
+    fuel: '\u26FD', labour: '\uD83D\uDC77', guards: '\uD83D\uDC82',
+    locations: '\uD83D\uDCCD', general: '\u2611\uFE0F'
+  };
+
+  async function loadChecklist() {
+    const dateEl = $('checklist-date');
+    if (!dateEl.value) {
+      const today = new Date().toISOString().slice(0, 10);
+      dateEl.value = today;
+    }
+    const date = dateEl.value;
+    if (!state.production) return;
+    try {
+      const data = await api('GET', `/api/productions/${state.production.id}/checklists?date=${date}`);
+      _renderChecklist(data);
+    } catch (e) {
+      $('checklist-content').innerHTML = `<p style="color:var(--text-muted)">No checklist for this date.</p>`;
+      $('checklist-stats').textContent = '';
+    }
+  }
+
+  async function generateChecklist() {
+    const dateEl = $('checklist-date');
+    if (!dateEl.value || !state.production) return;
+    try {
+      const data = await api('POST', `/api/productions/${state.production.id}/checklists/generate?date=${dateEl.value}`);
+      _renderChecklist(data);
+      toast(`Checklist generated: ${(data.items || []).length} items`);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function toggleChecklistItem(itemId, checkbox) {
+    if (!state.production) return;
+    try {
+      await api('PUT', `/api/productions/${state.production.id}/checklists/items/${itemId}/check`, {
+        checked: checkbox.checked
+      });
+      const container = $('checklist-content');
+      const boxes = container.querySelectorAll('input[type="checkbox"]');
+      const total = boxes.length;
+      const done = [...boxes].filter(c => c.checked).length;
+      $('checklist-stats').textContent = `${done}/${total} completed`;
+      const row = checkbox.closest('.cl-item');
+      if (row) row.classList.toggle('cl-done', checkbox.checked);
+    } catch (e) { toast(e.message, 'error'); checkbox.checked = !checkbox.checked; }
+  }
+
+  function _renderChecklist(data) {
+    const container = $('checklist-content');
+    if (!data || !data.items || data.items.length === 0) {
+      container.innerHTML = `<p style="color:var(--text-muted)">No items. Click <b>Generate</b> to build the checklist from today's assignments.</p>`;
+      $('checklist-stats').textContent = '';
+      return;
+    }
+    const items = data.items;
+    const total = items.length;
+    const done = items.filter(i => i.checked).length;
+    $('checklist-stats').textContent = `${done}/${total} completed`;
+
+    const groups = {};
+    items.forEach(i => {
+      const cat = i.category || 'general';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(i);
+    });
+
+    let html = '';
+    for (const [cat, catItems] of Object.entries(groups)) {
+      const icon = _clCategoryIcons[cat] || '\u2611\uFE0F';
+      html += `<div class="cl-group">
+        <h3 class="cl-cat-title">${icon} ${cat.charAt(0).toUpperCase() + cat.slice(1)}</h3>`;
+      for (const item of catItems) {
+        const chk = item.checked ? 'checked' : '';
+        const doneClass = item.checked ? ' cl-done' : '';
+        html += `<label class="cl-item${doneClass}">
+          <input type="checkbox" ${chk} onchange="App.toggleChecklistItem(${item.id}, this)">
+          <span class="cl-text">${_esc(item.item_text)}</span>
+        </label>`;
+      }
+      html += '</div>';
+    }
+    container.innerHTML = html;
   }
 
   // ── Public API ─────────────────────────────────────────────
@@ -12673,6 +12770,8 @@ const App = (() => {
     fnbSetSubTab, fnbSetViewMode, fnbCellClick, fnbCellClear, fnbExportCSV,
     showFnbCatModal, closeFnbCatModal, editFnbCategory, saveFnbCategory, deleteFnbCategory,
     showFnbItemModal, closeFnbItemModal, editFnbItem, saveFnbItem, deleteFnbItem,
+    // Checklist
+    loadChecklist, generateChecklist, toggleChecklistItem,
     // Auth
     logout, authState,
     _canEdit, _canEditPrices, _canEditFuelPrices, _isAdmin, _canViewTab,
@@ -12718,7 +12817,7 @@ window.addEventListener('offline', () => {
   const banner = document.createElement('div');
   banner.id = 'offline-banner';
   banner.className = 'offline-banner';
-  banner.textContent = 'You are offline - changes will sync when connection returns';
+  banner.textContent = typeof t === 'function' ? t('offline_banner') : 'You are offline - changes will sync when connection returns';
   document.body.prepend(banner);
   // AXE 5.4: update network indicator
   if (typeof App !== 'undefined' && App._updateNetIndicator) App._updateNetIndicator(false);

@@ -65,7 +65,7 @@ function _entityLabel(type) {
     picture_boat_assignments: 'PB Assignment',
     security_boat_assignments: 'SB Assignment',
     transport_assignments: 'Transport Assignment',
-    helper_assignments: 'Labour Assignment',
+    helper_assignments: 'Labor Assignment',
     guard_camp_assignments: 'Guard Assignment',
     location_sites: 'Location',
     boats: 'Boat',

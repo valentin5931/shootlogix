@@ -47,7 +47,7 @@ from database import (
     get_transport_schedules,
     get_guard_schedules,
     get_budget, get_daily_budget,
-    get_history, undo_last_boat_assignment, undo_history_entry,
+    get_history, get_activity_feed, undo_last_boat_assignment, undo_history_entry,
     get_setting, set_setting,
     # Budget snapshots & price log (AXE 6.3)
     create_budget_snapshot, get_budget_snapshots, get_budget_snapshot,
@@ -89,9 +89,21 @@ from database import (
     create_notifications_for_production, mark_notification_read, mark_all_notifications_read,
     # AXE 10.2 — Duplication
     duplicate_assignment, duplicate_fnb_category,
+    # P2.3 — Physical Vessels
+    get_physical_vessels, create_physical_vessel, update_physical_vessel,
+    delete_physical_vessel, check_vessel_cross_module_conflict,
+    # P2.4 — Soft delete restore
+    restore_entity, restore_fnb_category,
+    # P6.4 — Exchange rates
+    get_exchange_rates, upsert_exchange_rate, get_latest_rate,
+    # Daily checklists
+    generate_daily_checklist, get_daily_checklist, check_checklist_item,
 )
 
-from validation import ValidationError, validate_assignment, validate_fuel_entry, validate_shooting_day, validate_date_range, validate_positive_number, validate_required, validate_guard_schedule, validate_assignment_overlap
+from validation import (ValidationError, validate_assignment, validate_assignment_dates,
+    validate_fuel_entry, validate_shooting_day, validate_date_range, validate_positive_number,
+    validate_required, validate_guard_schedule, validate_assignment_overlap,
+    validate_required_fields, validate_numeric_fields, validate_entity_name)
 
 app = Flask(__name__)
 
@@ -115,6 +127,7 @@ def _log_price_changes(prod_id, entity_type, entity_id, entity_name, old_data, n
     """Compare old and new data dicts; log any price field changes."""
     user_id = getattr(g, 'user_id', None)
     nickname = getattr(g, 'nickname', None)
+    override_reason = new_data.get('override_reason')
     for field in _PRICE_FIELDS:
         old_val = old_data.get(field)
         new_val = new_data.get(field)
@@ -123,10 +136,30 @@ def _log_price_changes(prod_id, entity_type, entity_id, entity_name, old_data, n
                 log_price_change(
                     prod_id, entity_type, entity_id, entity_name,
                     field, float(old_val) if old_val is not None else None,
-                    float(new_val), user_id, nickname
+                    float(new_val), user_id, nickname,
+                    override_reason=override_reason if field == 'price_override' else None
                 )
             except (ValueError, TypeError):
                 pass
+
+
+def _validate_price_override(data, old_data):
+    """If price_override is being set or changed, require override_reason."""
+    new_po = data.get('price_override')
+    if new_po is None:
+        return None
+    old_po = old_data.get('price_override') if old_data else None
+    # Convert for comparison
+    try:
+        new_po_f = float(new_po) if new_po is not None else None
+        old_po_f = float(old_po) if old_po is not None else None
+    except (ValueError, TypeError):
+        new_po_f, old_po_f = new_po, old_po
+    if new_po_f != old_po_f and new_po_f is not None and new_po_f != 0:
+        reason = (data.get('override_reason') or '').strip()
+        if not reason:
+            return jsonify({"error": "override_reason is required when changing price_override"}), 400
+    return None
 
 
 def _cleanup_old_exports():
@@ -256,7 +289,10 @@ from auth.routes import auth_bp
 from auth.admin_routes import admin_bp
 from auth.tokens import decode_access_token
 from auth.rbac import check_role_access, check_permission_access, get_user_allowed_tabs
-from auth.models import get_membership, ensure_user_permissions, get_user_global_permissions
+from auth.models import (
+    get_membership, ensure_user_permissions, get_user_global_permissions,
+    user_has_entity_restrictions, get_user_allowed_entity_ids,
+)
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(admin_bp)
@@ -358,6 +394,14 @@ def enforce_auth():
             g.permissions = {}
             g.global_permissions = {"can_lock_unlock": False, "can_view_history": False}
 
+    # P6.15: Entity-level restrictions flag
+    # If user has entity permissions, routes can use g.has_entity_restrictions
+    # and call get_user_allowed_entity_ids() to filter results
+    if g.is_admin:
+        g.has_entity_restrictions = False
+    else:
+        g.has_entity_restrictions = user_has_entity_restrictions(g.user_id)
+
     # RBAC: check access using V2 permissions (or V1 fallback for admin)
     if g.is_admin:
         pass  # Full access
@@ -376,6 +420,37 @@ def enforce_auth():
     return None  # Continue to the route handler
 
 
+# ─── P6.14: Access logging middleware ─────────────────────────────────────────
+
+_STATIC_EXTENSIONS = ('.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.map')
+
+@app.after_request
+def log_access(response):
+    """Log authenticated API requests for audit (P6.14)."""
+    path = request.path
+    # Skip static files
+    if not path.startswith("/api/") or path.lower().endswith(_STATIC_EXTENSIONS):
+        return response
+    # Skip auth endpoints (login/refresh generate too much noise)
+    for prefix in AUTH_EXEMPT_PREFIXES:
+        if path.startswith(prefix):
+            return response
+    # Only log if user was authenticated
+    user_id = getattr(g, 'user_id', None)
+    if user_id is None:
+        return response
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO access_logs (user_id, endpoint, method, status_code, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, path, request.method, response.status_code,
+                 request.remote_addr, str(request.user_agent)[:500])
+            )
+    except Exception:
+        pass  # Never break the response for logging failures
+    return response
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def prod_or_404(prod_id):
@@ -390,6 +465,25 @@ def _row_or_404(conn, table, id_):
     if not r:
         abort(404)
     return dict(r)
+
+
+def _validate_dates_for_prod(prod_id, data):
+    """Validate assignment dates against production date range."""
+    start = data.get("start_date")
+    end = data.get("end_date")
+    if start or end:
+        prod = get_production(prod_id)
+        if prod:
+            validate_assignment_dates(start, end, prod.get("start_date"), prod.get("end_date"))
+
+
+def _get_prod_id_from_function(boat_function_id):
+    """Get production_id from a boat_function_id."""
+    if not boat_function_id:
+        return None
+    with get_db() as conn:
+        bf = conn.execute("SELECT production_id FROM boat_functions WHERE id=?", (boat_function_id,)).fetchone()
+    return bf["production_id"] if bf else None
 
 
 # ─── UI ───────────────────────────────────────────────────────────────────────
@@ -498,6 +592,22 @@ def api_delete_shooting_day(prod_id, day_id):
     return jsonify({"deleted": day_id})
 
 
+# ─── Tides (P6.3) ────────────────────────────────────────────────────────────
+
+@app.route("/api/tides", methods=["GET"])
+def api_tides():
+    """Return tide predictions for a location and date range."""
+    from tides import get_tides
+    lat = request.args.get("lat", type=float)
+    lng = request.args.get("lng", type=float)
+    start = request.args.get("start", "")
+    end = request.args.get("end", "")
+    if not start or not end:
+        return jsonify({"error": "start and end required"}), 400
+    data = get_tides(lat, lng, start, end)
+    return jsonify(data)
+
+
 # ─── PDT Cascade (AXE 7.2) ──────────────────────────────────────────────────
 
 @app.route("/api/productions/<int:prod_id>/shooting-days/<int:day_id>/cascade-preview", methods=["POST"])
@@ -554,7 +664,9 @@ def api_create_event(prod_id, day_id):
 
 @app.route("/api/events/<int:event_id>", methods=["PUT"])
 def api_update_event(event_id):
-    update_event(event_id, request.json or {})
+    data = request.json or {}
+    validate_entity_name(data, field="event_type")
+    update_event(event_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM shooting_day_events WHERE id=?", (event_id,)).fetchone()
     return jsonify(dict(row)) if row else ("", 404)
@@ -683,7 +795,8 @@ def api_upload_pdt(prod_id):
 @app.route("/api/productions/<int:prod_id>/boats", methods=["GET"])
 def api_boats(prod_id):
     prod_or_404(prod_id)
-    return jsonify_cached(get_boats(prod_id))
+    include_deleted = request.args.get('include_deleted', '').lower() == 'true'
+    return jsonify_cached(get_boats(prod_id, include_deleted=include_deleted))
 
 
 @app.route("/api/productions/<int:prod_id>/boats", methods=["POST"])
@@ -709,13 +822,17 @@ def api_get_boat(boat_id):
 @app.route("/api/boats/<int:boat_id>", methods=["PUT"])
 def api_update_boat(boat_id):
     data = request.json or {}
+    validate_entity_name(data)
+    validate_numeric_fields(data, ['daily_rate_estimate', 'daily_rate_actual', 'boat_nr'])
     # AXE 6.3: capture old data for price change logging
     with get_db() as conn:
         old = conn.execute("SELECT * FROM boats WHERE id=?", (boat_id,)).fetchone()
     if old:
         old = dict(old)
         prod_id = old.get('production_id')
-    update_boat(boat_id, data)
+    ok = update_boat(boat_id, data)
+    if ok is False:
+        return jsonify({"error": "This record was modified by another user. Please refresh."}), 409
     with get_db() as conn:
         row = conn.execute("SELECT * FROM boats WHERE id=?", (boat_id,)).fetchone()
     if row and old:
@@ -771,7 +888,8 @@ def api_upload_boat_image(boat_id):
 def api_boat_functions(prod_id):
     prod_or_404(prod_id)
     context = request.args.get('context')
-    return jsonify_cached(get_boat_functions(prod_id, context=context))
+    include_deleted = request.args.get('include_deleted', '').lower() == 'true'
+    return jsonify_cached(get_boat_functions(prod_id, context=context, include_deleted=include_deleted))
 
 
 @app.route("/api/productions/<int:prod_id>/boat-functions", methods=["POST"])
@@ -789,13 +907,16 @@ def api_create_boat_function(prod_id):
 
 @app.route("/api/boat-functions/<int:func_id>", methods=["PUT"])
 def api_update_boat_function(func_id):
-    update_boat_function(func_id, request.json or {})
+    data = request.json or {}
+    validate_entity_name(data)
+    update_boat_function(func_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM boat_functions WHERE id=?", (func_id,)).fetchone()
     return jsonify(dict(row)) if row else ("", 404)
 
 
 @app.route("/api/boat-functions/<int:func_id>", methods=["DELETE"])
+
 def api_delete_boat_function(func_id):
     delete_boat_function(func_id)
     return jsonify({"deleted": func_id})
@@ -806,6 +927,11 @@ def api_reorder_boat_functions(prod_id):
     """Batch update sort_order and optionally function_group for functions."""
     prod_or_404(prod_id)
     items = (request.json or {}).get("items", [])
+    if not isinstance(items, list):
+        return jsonify({"error": "items must be a list"}), 400
+    for item in items:
+        if not isinstance(item, dict) or not item.get("id"):
+            return jsonify({"error": "Each item must have an id"}), 400
     with get_db() as conn:
         for item in items:
             fid = item.get("id")
@@ -833,6 +959,7 @@ def api_create_assignment(prod_id):
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
     validate_assignment(data)
+    _validate_dates_for_prod(prod_id, data)
     if data.get("boat_id") and data.get("start_date") and data.get("end_date"):
         validate_assignment_overlap('boat_assignments', 'boat_id', data['boat_id'],
                                     data['start_date'], data['end_date'])
@@ -843,13 +970,27 @@ def api_create_assignment(prod_id):
     if bf:
         _notify_assignment_change(bf['production_id'], 'create', 'boat assignment',
                                   data.get('boat_name_override', f'#{assignment_id}'))
-    return jsonify(dict(row)), 201
+    result = dict(row)
+    # P2.3: cross-module vessel conflict warning
+    if data.get("boat_id") and data.get("start_date") and data.get("end_date"):
+        with get_db() as conn:
+            boat = conn.execute("SELECT physical_vessel_id FROM boats WHERE id=?", (data["boat_id"],)).fetchone()
+        if boat and boat["physical_vessel_id"]:
+            warnings = check_vessel_cross_module_conflict(
+                boat["physical_vessel_id"], data["start_date"], data["end_date"],
+                exclude_module="boat_assignments", exclude_id=assignment_id)
+            if warnings:
+                result["_warnings"] = warnings
+    return jsonify(result), 201
 
 
 @app.route("/api/assignments/<int:assignment_id>", methods=["PUT"])
 def api_update_assignment(assignment_id):
     data = request.json or {}
     validate_assignment(data)
+    prod_id = _get_prod_id_from_function(data.get("boat_function_id"))
+    if prod_id:
+        _validate_dates_for_prod(prod_id, data)
     if data.get("boat_id") and data.get("start_date") and data.get("end_date"):
         validate_assignment_overlap('boat_assignments', 'boat_id', data['boat_id'],
                                     data['start_date'], data['end_date'], exclude_id=assignment_id)
@@ -857,6 +998,10 @@ def api_update_assignment(assignment_id):
     with get_db() as conn:
         old = conn.execute("SELECT ba.*, bf.production_id FROM boat_assignments ba LEFT JOIN boat_functions bf ON ba.boat_function_id=bf.id WHERE ba.id=?", (assignment_id,)).fetchone()
     old_d = dict(old) if old else {}
+    # P5.6: validate override_reason when price_override changes
+    err = _validate_price_override(data, old_d)
+    if err:
+        return err
     update_boat_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM boat_assignments WHERE id=?", (assignment_id,)).fetchone()
@@ -865,6 +1010,9 @@ def api_update_assignment(assignment_id):
                           old_d.get('boat_name_override', f'Assignment #{assignment_id}'), old_d, data)
         _notify_assignment_change(old_d['production_id'], 'update', 'boat assignment',
                                   old_d.get('boat_name_override', f'#{assignment_id}'))
+        if data.get('assignment_status') == 'breakdown' and old_d.get('assignment_status') != 'breakdown':
+            _notify_vessel_breakdown(old_d['production_id'],
+                                     old_d.get('boat_name_override', f'Boat #{assignment_id}'), 'Boats')
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -886,7 +1034,8 @@ def api_delete_assignment_by_function(prod_id, func_id):
 @app.route("/api/productions/<int:prod_id>/picture-boats", methods=["GET"])
 def api_picture_boats(prod_id):
     prod_or_404(prod_id)
-    return jsonify_cached(get_picture_boats(prod_id))
+    include_deleted = request.args.get('include_deleted', '').lower() == 'true'
+    return jsonify_cached(get_picture_boats(prod_id, include_deleted=include_deleted))
 
 
 @app.route("/api/productions/<int:prod_id>/picture-boats", methods=["POST"])
@@ -911,7 +1060,12 @@ def api_get_picture_boat(pb_id):
 
 @app.route("/api/picture-boats/<int:pb_id>", methods=["PUT"])
 def api_update_picture_boat(pb_id):
-    update_picture_boat(pb_id, request.json or {})
+    data = request.json or {}
+    validate_entity_name(data)
+    validate_numeric_fields(data, ['daily_rate_estimate', 'daily_rate_actual', 'boat_nr'])
+    ok = update_picture_boat(pb_id, data)
+    if ok is False:
+        return jsonify({"error": "This record was modified by another user. Please refresh."}), 409
     with get_db() as conn:
         row = conn.execute("SELECT * FROM picture_boats WHERE id=?", (pb_id,)).fetchone()
     return jsonify(dict(row)) if row else ("", 404)
@@ -973,6 +1127,7 @@ def api_create_picture_boat_assignment(prod_id):
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
     validate_assignment(data)
+    _validate_dates_for_prod(prod_id, data)
     if data.get("picture_boat_id") and data.get("start_date") and data.get("end_date"):
         validate_assignment_overlap('picture_boat_assignments', 'picture_boat_id', data['picture_boat_id'],
                                     data['start_date'], data['end_date'])
@@ -981,21 +1136,50 @@ def api_create_picture_boat_assignment(prod_id):
         row = conn.execute(
             "SELECT * FROM picture_boat_assignments WHERE id=?", (assignment_id,)
         ).fetchone()
-    return jsonify(dict(row)), 201
+    result = dict(row)
+    # P2.3: cross-module vessel conflict warning
+    if data.get("picture_boat_id") and data.get("start_date") and data.get("end_date"):
+        with get_db() as conn:
+            pb = conn.execute("SELECT physical_vessel_id FROM picture_boats WHERE id=?", (data["picture_boat_id"],)).fetchone()
+        if pb and pb["physical_vessel_id"]:
+            warnings = check_vessel_cross_module_conflict(
+                pb["physical_vessel_id"], data["start_date"], data["end_date"],
+                exclude_module="picture_boat_assignments", exclude_id=assignment_id)
+            if warnings:
+                result["_warnings"] = warnings
+    return jsonify(result), 201
 
 
 @app.route("/api/picture-boat-assignments/<int:assignment_id>", methods=["PUT"])
 def api_update_picture_boat_assignment(assignment_id):
     data = request.json or {}
     validate_assignment(data)
+    prod_id = _get_prod_id_from_function(data.get("boat_function_id"))
+    if prod_id:
+        _validate_dates_for_prod(prod_id, data)
     if data.get("picture_boat_id") and data.get("start_date") and data.get("end_date"):
         validate_assignment_overlap('picture_boat_assignments', 'picture_boat_id', data['picture_boat_id'],
                                     data['start_date'], data['end_date'], exclude_id=assignment_id)
+    old_status = None
+    with get_db() as conn:
+        old_row = conn.execute("SELECT * FROM picture_boat_assignments WHERE id=?", (assignment_id,)).fetchone()
+    old_d = dict(old_row) if old_row else {}
+    old_status = old_d.get('assignment_status')
+    old_name = old_d.get('boat_name_override', f'PB #{assignment_id}')
+    # P5.6: validate override_reason when price_override changes
+    err = _validate_price_override(data, old_d)
+    if err:
+        return err
     update_picture_boat_assignment(assignment_id, data)
+    # P5.6: log price changes
+    if prod_id:
+        _log_price_changes(prod_id, 'picture_boat_assignment', assignment_id, old_name, old_d, data)
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM picture_boat_assignments WHERE id=?", (assignment_id,)
         ).fetchone()
+    if data.get('assignment_status') == 'breakdown' and old_status != 'breakdown' and prod_id:
+        _notify_vessel_breakdown(prod_id, old_name, 'Picture Boats')
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -1018,7 +1202,8 @@ def api_delete_picture_boat_assignment_by_function(prod_id, func_id):
 @app.route("/api/productions/<int:prod_id>/helpers", methods=["GET"])
 def api_helpers(prod_id):
     prod_or_404(prod_id)
-    return jsonify_cached(get_helpers(prod_id))
+    include_deleted = request.args.get('include_deleted', '').lower() == 'true'
+    return jsonify_cached(get_helpers(prod_id, include_deleted=include_deleted))
 
 
 @app.route("/api/productions/<int:prod_id>/helpers", methods=["POST"])
@@ -1044,10 +1229,14 @@ def api_get_helper(helper_id):
 @app.route("/api/helpers/<int:helper_id>", methods=["PUT"])
 def api_update_helper(helper_id):
     data = request.json or {}
+    validate_entity_name(data)
+    validate_numeric_fields(data, ['daily_rate_estimate', 'daily_rate_actual'])
     with get_db() as conn:
         old = conn.execute("SELECT * FROM helpers WHERE id=?", (helper_id,)).fetchone()
     old_d = dict(old) if old else {}
-    update_helper(helper_id, data)
+    ok = update_helper(helper_id, data)
+    if ok is False:
+        return jsonify({"error": "This record was modified by another user. Please refresh."}), 409
     with get_db() as conn:
         row = conn.execute("SELECT * FROM helpers WHERE id=?", (helper_id,)).fetchone()
     if old_d.get('production_id'):
@@ -1081,7 +1270,10 @@ def api_duplicate_helper(helper_id):
 def api_bulk_create_helpers(prod_id):
     prod_or_404(prod_id)
     data = request.json or {}
-    count = int(data.get("count", 0))
+    try:
+        count = int(data.get("count", 0))
+    except (ValueError, TypeError):
+        return jsonify({"error": "count must be an integer"}), 400
     prefix = data.get("prefix", "Helper")
     if count < 1 or count > 200:
         return jsonify({"error": "count must be 1-200"}), 400
@@ -1167,6 +1359,7 @@ def api_create_helper_assignment(prod_id):
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
     validate_assignment(data)
+    _validate_dates_for_prod(prod_id, data)
     if data.get("helper_id") and data.get("start_date") and data.get("end_date"):
         validate_assignment_overlap('helper_assignments', 'helper_id', data['helper_id'],
                                     data['start_date'], data['end_date'])
@@ -1180,12 +1373,25 @@ def api_create_helper_assignment(prod_id):
 def api_update_helper_assignment(assignment_id):
     data = request.json or {}
     validate_assignment(data)
+    prod_id = _get_prod_id_from_function(data.get("boat_function_id"))
+    if prod_id:
+        _validate_dates_for_prod(prod_id, data)
     if data.get("helper_id") and data.get("start_date") and data.get("end_date"):
         validate_assignment_overlap('helper_assignments', 'helper_id', data['helper_id'],
                                     data['start_date'], data['end_date'], exclude_id=assignment_id)
+    # P5.6: validate override_reason when price_override changes
+    with get_db() as conn:
+        old_row = conn.execute("SELECT ha.*, bf.production_id FROM helper_assignments ha LEFT JOIN boat_functions bf ON ha.boat_function_id=bf.id WHERE ha.id=?", (assignment_id,)).fetchone()
+    old_d = dict(old_row) if old_row else {}
+    err = _validate_price_override(data, old_d)
+    if err:
+        return err
     update_helper_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM helper_assignments WHERE id=?", (assignment_id,)).fetchone()
+    if old_d.get('production_id'):
+        _log_price_changes(old_d['production_id'], 'helper_assignment', assignment_id,
+                          old_d.get('helper_name_override', f'Assignment #{assignment_id}'), old_d, data)
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -1275,7 +1481,8 @@ def api_export_helpers_csv(prod_id):
 @app.route("/api/productions/<int:prod_id>/security-boats", methods=["GET"])
 def api_security_boats(prod_id):
     prod_or_404(prod_id)
-    return jsonify_cached(get_security_boats(prod_id))
+    include_deleted = request.args.get('include_deleted', '').lower() == 'true'
+    return jsonify_cached(get_security_boats(prod_id, include_deleted=include_deleted))
 
 
 @app.route("/api/productions/<int:prod_id>/security-boats", methods=["POST"])
@@ -1300,7 +1507,12 @@ def api_get_security_boat(sb_id):
 
 @app.route("/api/security-boats/<int:sb_id>", methods=["PUT"])
 def api_update_security_boat(sb_id):
-    update_security_boat(sb_id, request.json or {})
+    data = request.json or {}
+    validate_entity_name(data)
+    validate_numeric_fields(data, ['daily_rate_estimate', 'daily_rate_actual', 'boat_nr'])
+    ok = update_security_boat(sb_id, data)
+    if ok is False:
+        return jsonify({"error": "This record was modified by another user. Please refresh."}), 409
     with get_db() as conn:
         row = conn.execute("SELECT * FROM security_boats WHERE id=?", (sb_id,)).fetchone()
     return jsonify(dict(row)) if row else ("", 404)
@@ -1360,25 +1572,54 @@ def api_create_security_boat_assignment(prod_id):
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
     validate_assignment(data)
+    _validate_dates_for_prod(prod_id, data)
     if data.get("security_boat_id") and data.get("start_date") and data.get("end_date"):
         validate_assignment_overlap('security_boat_assignments', 'security_boat_id', data['security_boat_id'],
                                     data['start_date'], data['end_date'])
     aid = create_security_boat_assignment(data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM security_boat_assignments WHERE id=?", (aid,)).fetchone()
-    return jsonify(dict(row)), 201
+    result = dict(row)
+    # P2.3: cross-module vessel conflict warning
+    if data.get("security_boat_id") and data.get("start_date") and data.get("end_date"):
+        with get_db() as conn:
+            sb = conn.execute("SELECT physical_vessel_id FROM security_boats WHERE id=?", (data["security_boat_id"],)).fetchone()
+        if sb and sb["physical_vessel_id"]:
+            warnings = check_vessel_cross_module_conflict(
+                sb["physical_vessel_id"], data["start_date"], data["end_date"],
+                exclude_module="security_boat_assignments", exclude_id=aid)
+            if warnings:
+                result["_warnings"] = warnings
+    return jsonify(result), 201
 
 
 @app.route("/api/security-boat-assignments/<int:assignment_id>", methods=["PUT"])
 def api_update_security_boat_assignment(assignment_id):
     data = request.json or {}
     validate_assignment(data)
+    prod_id = _get_prod_id_from_function(data.get("boat_function_id"))
+    if prod_id:
+        _validate_dates_for_prod(prod_id, data)
     if data.get("security_boat_id") and data.get("start_date") and data.get("end_date"):
         validate_assignment_overlap('security_boat_assignments', 'security_boat_id', data['security_boat_id'],
                                     data['start_date'], data['end_date'], exclude_id=assignment_id)
+    old_status = None
+    with get_db() as conn:
+        old_row = conn.execute("SELECT * FROM security_boat_assignments WHERE id=?", (assignment_id,)).fetchone()
+    old_d = dict(old_row) if old_row else {}
+    old_status = old_d.get('assignment_status')
+    old_name = old_d.get('boat_name_override', f'SB #{assignment_id}')
+    # P5.6: validate override_reason when price_override changes
+    err = _validate_price_override(data, old_d)
+    if err:
+        return err
     update_security_boat_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM security_boat_assignments WHERE id=?", (assignment_id,)).fetchone()
+    if prod_id:
+        _log_price_changes(prod_id, 'security_boat_assignment', assignment_id, old_name, old_d, data)
+    if data.get('assignment_status') == 'breakdown' and old_status != 'breakdown' and prod_id:
+        _notify_vessel_breakdown(prod_id, old_name, 'Security Boats')
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -1455,6 +1696,181 @@ def api_export_security_boats_json(prod_id):
     )
 
 
+# ─── Incidents (P6.7) ─────────────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/incidents", methods=["GET"])
+def api_get_incidents(prod_id):
+    prod_or_404(prod_id)
+    status_filter = request.args.get('status')
+    with get_db() as conn:
+        if status_filter:
+            rows = conn.execute(
+                "SELECT * FROM incidents WHERE production_id=? AND status=? ORDER BY date DESC",
+                (prod_id, status_filter)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM incidents WHERE production_id=? ORDER BY date DESC",
+                (prod_id,)
+            ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/productions/<int:prod_id>/incidents", methods=["POST"])
+def api_create_incident(prod_id):
+    prod_or_404(prod_id)
+    data = request.json or {}
+    required = ['entity_type', 'entity_id', 'incident_type', 'date']
+    for f in required:
+        if not data.get(f):
+            return jsonify({"error": f"{f} required"}), 400
+    valid_types = ('engine_failure', 'accident', 'delay', 'weather', 'other')
+    if data['incident_type'] not in valid_types:
+        return jsonify({"error": f"incident_type must be one of {valid_types}"}), 400
+    with get_db() as conn:
+        cur = conn.execute(
+            """INSERT INTO incidents (production_id, entity_type, entity_id, incident_type,
+               date, description, status, schedule_impact)
+               VALUES (?, ?, ?, ?, ?, ?, 'open', ?)""",
+            (prod_id, data['entity_type'], data['entity_id'], data['incident_type'],
+             data['date'], data.get('description', ''), data.get('schedule_impact', ''))
+        )
+        iid = cur.lastrowid
+        row = conn.execute("SELECT * FROM incidents WHERE id=?", (iid,)).fetchone()
+    # Auto-set breakdown on matching boat assignments for today
+    _apply_breakdown_for_incident(prod_id, data['entity_type'], data['entity_id'], data['date'])
+    return jsonify(dict(row)), 201
+
+
+@app.route("/api/productions/<int:prod_id>/incidents/<int:iid>", methods=["PUT"])
+def api_update_incident(prod_id, iid):
+    prod_or_404(prod_id)
+    data = request.json or {}
+    with get_db() as conn:
+        old = conn.execute("SELECT * FROM incidents WHERE id=? AND production_id=?", (iid, prod_id)).fetchone()
+        if not old:
+            return jsonify({"error": "not found"}), 404
+        old_d = dict(old)
+        sets, vals = [], []
+        for col in ('entity_type', 'entity_id', 'incident_type', 'date', 'description',
+                     'status', 'schedule_impact'):
+            if col in data:
+                sets.append(f"{col}=?")
+                vals.append(data[col])
+        if data.get('status') == 'resolved' and old_d['status'] != 'resolved':
+            sets.append("resolved_at=CURRENT_TIMESTAMP")
+        if not sets:
+            return jsonify(dict(old_d))
+        vals.append(iid)
+        conn.execute(f"UPDATE incidents SET {', '.join(sets)} WHERE id=?", vals)
+        row = conn.execute("SELECT * FROM incidents WHERE id=?", (iid,)).fetchone()
+    # If resolved, clear breakdown on matching assignments
+    if data.get('status') == 'resolved' and old_d['status'] != 'resolved':
+        _clear_breakdown_for_incident(prod_id, old_d['entity_type'], old_d['entity_id'], old_d['date'])
+    return jsonify(dict(row))
+
+
+@app.route("/api/productions/<int:prod_id>/incidents/<int:iid>", methods=["DELETE"])
+def api_delete_incident(prod_id, iid):
+    prod_or_404(prod_id)
+    with get_db() as conn:
+        old = conn.execute("SELECT * FROM incidents WHERE id=? AND production_id=?", (iid, prod_id)).fetchone()
+        if old:
+            old_d = dict(old)
+            conn.execute("DELETE FROM incidents WHERE id=?", (iid,))
+            # Clear breakdown if the incident was open
+            if old_d['status'] == 'open':
+                _clear_breakdown_for_incident(prod_id, old_d['entity_type'], old_d['entity_id'], old_d['date'])
+    return jsonify({"deleted": iid})
+
+
+def _apply_breakdown_for_incident(prod_id, entity_type, entity_id, date):
+    """Set assignment_status='breakdown' on matching boat assignments active on incident date."""
+    table_map = {
+        'boat': ('boat_assignments', 'boat_id', 'boat_functions'),
+        'picture': ('picture_boat_assignments', 'picture_boat_id', 'boat_functions'),
+        'security': ('security_boat_assignments', 'security_boat_id', 'boat_functions'),
+    }
+    info = table_map.get(entity_type)
+    if not info:
+        return
+    tbl, id_col, func_tbl = info
+    with get_db() as conn:
+        conn.execute(
+            f"""UPDATE {tbl} SET assignment_status='breakdown'
+                WHERE {id_col}=? AND start_date<=? AND end_date>=?
+                AND assignment_status != 'breakdown'
+                AND boat_function_id IN (SELECT id FROM {func_tbl} WHERE production_id=?)""",
+            (entity_id, date, date, prod_id)
+        )
+
+
+def _clear_breakdown_for_incident(prod_id, entity_type, entity_id, date):
+    """Remove breakdown status when incident is resolved (revert to confirmed)."""
+    table_map = {
+        'boat': ('boat_assignments', 'boat_id', 'boat_functions'),
+        'picture': ('picture_boat_assignments', 'picture_boat_id', 'boat_functions'),
+        'security': ('security_boat_assignments', 'security_boat_id', 'boat_functions'),
+    }
+    info = table_map.get(entity_type)
+    if not info:
+        return
+    tbl, id_col, func_tbl = info
+    # Only clear if no other open incident exists for same entity on same date
+    with get_db() as conn:
+        other = conn.execute(
+            "SELECT COUNT(*) as cnt FROM incidents WHERE production_id=? AND entity_type=? AND entity_id=? AND date=? AND status='open'",
+            (prod_id, entity_type, entity_id, date)
+        ).fetchone()
+        if other and other['cnt'] > 0:
+            return
+        conn.execute(
+            f"""UPDATE {tbl} SET assignment_status='confirmed'
+                WHERE {id_col}=? AND start_date<=? AND end_date>=?
+                AND assignment_status='breakdown'
+                AND boat_function_id IN (SELECT id FROM {func_tbl} WHERE production_id=?)""",
+            (entity_id, date, date, prod_id)
+        )
+
+
+# ─── Physical Vessels (P2.3) ──────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/physical-vessels", methods=["GET"])
+def api_physical_vessels(prod_id):
+    prod_or_404(prod_id)
+    include_deleted = request.args.get('include_deleted', '').lower() == 'true'
+    return jsonify(get_physical_vessels(prod_id, include_deleted=include_deleted))
+
+
+@app.route("/api/productions/<int:prod_id>/physical-vessels", methods=["POST"])
+def api_create_physical_vessel(prod_id):
+    prod_or_404(prod_id)
+    data = request.json or {}
+    data["production_id"] = prod_id
+    if not data.get("vessel_name"):
+        return jsonify({"error": "vessel_name required"}), 400
+    vessel_id = create_physical_vessel(data)
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM physical_vessels WHERE id=?", (vessel_id,)).fetchone()
+    return jsonify(dict(row)), 201
+
+
+@app.route("/api/physical-vessels/<int:vessel_id>", methods=["PUT"])
+def api_update_physical_vessel(vessel_id):
+    data = request.json or {}
+    validate_entity_name(data, field="vessel_name")
+    update_physical_vessel(vessel_id, data)
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM physical_vessels WHERE id=?", (vessel_id,)).fetchone()
+    return jsonify(dict(row)) if row else ("", 404)
+
+
+@app.route("/api/physical-vessels/<int:vessel_id>", methods=["DELETE"])
+def api_delete_physical_vessel(vessel_id):
+    delete_physical_vessel(vessel_id)
+    return jsonify({"deleted": vessel_id})
+
+
 # ─── FNB ──────────────────────────────────────────────────────────────────────
 
 @app.route("/api/productions/<int:prod_id>/fnb", methods=["GET"])
@@ -1492,10 +1908,53 @@ def api_guards(prod_id):
 @app.route("/api/productions/<int:prod_id>/budget", methods=["GET"])
 def api_budget(prod_id):
     prod_or_404(prod_id)
-    return jsonify_cached(get_budget(prod_id))
+    ref_cur = request.args.get("currency", "USD").upper()
+    return jsonify(get_budget(prod_id, ref_currency=ref_cur))
+
+
+# ─── Exchange Rates (P6.4) ───────────────────────────────────────────────────
+
+@app.route("/api/exchange-rates", methods=["GET"])
+def api_exchange_rates_list():
+    return jsonify(get_exchange_rates())
+
+
+@app.route("/api/exchange-rates", methods=["POST"])
+def api_exchange_rates_create():
+    d = request.get_json(force=True)
+    date = d.get("date")
+    from_cur = d.get("from_currency", d.get("from", ""))
+    to_cur = d.get("to_currency", d.get("to", ""))
+    rate = d.get("rate")
+    if not date or not from_cur or not to_cur or rate is None:
+        return jsonify({"error": "date, from_currency, to_currency, rate required"}), 400
+    try:
+        rate = float(rate)
+    except (ValueError, TypeError):
+        return jsonify({"error": "rate must be a number"}), 400
+    if rate <= 0:
+        return jsonify({"error": "rate must be positive"}), 400
+    result = upsert_exchange_rate(date, from_cur, to_cur, rate)
+    return jsonify(result), 201
 
 
 # ─── History / Undo ───────────────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/activity", methods=["GET"])
+def api_activity(prod_id):
+    """Enriched activity feed with date grouping, module mapping, and change details."""
+    prod_or_404(prod_id)
+    limit = int(request.args.get("limit", 100))
+    module = request.args.get("module")
+    user_id = request.args.get("user_id")
+    date = request.args.get("date")
+    date_from = request.args.get("date_from")
+    date_to = request.args.get("date_to")
+    return jsonify(get_activity_feed(
+        prod_id, limit=limit, module=module, user_id=user_id,
+        date=date, date_from=date_from, date_to=date_to
+    ))
+
 
 @app.route("/api/productions/<int:prod_id>/history", methods=["GET"])
 def api_history(prod_id):
@@ -1528,6 +1987,165 @@ def api_undo(prod_id):
 @app.route("/api/history/<int:history_id>/undo", methods=["POST"])
 def api_undo_history(history_id):
     return jsonify(undo_history_entry(history_id))
+
+
+@app.route("/api/productions/<int:prod_id>/history/<int:history_id>/undo", methods=["POST"])
+def api_undo_history_scoped(prod_id, history_id):
+    """Production-scoped undo endpoint."""
+    prod_or_404(prod_id)
+    return jsonify(undo_history_entry(history_id))
+
+
+@app.route("/api/productions/<int:prod_id>/history/undoable", methods=["GET"])
+def api_undoable_history(prod_id):
+    """Return the last 50 undoable history entries for the production."""
+    prod_or_404(prod_id)
+    limit = int(request.args.get("limit", 50))
+    since = request.args.get("since")  # ISO timestamp for session filtering
+    from database import get_db
+    with get_db() as conn:
+        query = """SELECT id, table_name, record_id, action, human_description,
+                          user_nickname, created_at, undone_at
+                   FROM history
+                   WHERE (production_id = ? OR production_id IS NULL)
+                     AND action IN ('create', 'update', 'delete')
+                     AND undone_at IS NULL"""
+        params = [prod_id]
+        if since:
+            query += " AND created_at >= ?"
+            params.append(since)
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(query, params).fetchall()
+        return jsonify([dict(r) for r in rows])
+
+
+# ─── Delete Impact (cascade preview) ─────────────────────────────────────────
+
+@app.route("/api/boats/<int:boat_id>/impact")
+def api_boat_impact(boat_id):
+    with get_db() as conn:
+        assignments = conn.execute(
+            "SELECT COUNT(*) AS c FROM boat_assignments WHERE boat_id=? AND deleted_at IS NULL", (boat_id,)
+        ).fetchone()["c"]
+        fuel = conn.execute(
+            "SELECT COUNT(*) AS c FROM fuel_entries WHERE source_type='boats' AND source_id=?", (boat_id,)
+        ).fetchone()["c"]
+    return jsonify({"assignments": assignments, "fuel_entries": fuel})
+
+
+@app.route("/api/picture-boats/<int:pb_id>/impact")
+def api_picture_boat_impact(pb_id):
+    with get_db() as conn:
+        assignments = conn.execute(
+            "SELECT COUNT(*) AS c FROM picture_boat_assignments WHERE picture_boat_id=? AND deleted_at IS NULL", (pb_id,)
+        ).fetchone()["c"]
+        fuel = conn.execute(
+            "SELECT COUNT(*) AS c FROM fuel_entries WHERE source_type='picture_boats' AND source_id=?", (pb_id,)
+        ).fetchone()["c"]
+    return jsonify({"assignments": assignments, "fuel_entries": fuel})
+
+
+@app.route("/api/security-boats/<int:sb_id>/impact")
+def api_security_boat_impact(sb_id):
+    with get_db() as conn:
+        assignments = conn.execute(
+            "SELECT COUNT(*) AS c FROM security_boat_assignments WHERE security_boat_id=? AND deleted_at IS NULL", (sb_id,)
+        ).fetchone()["c"]
+        fuel = conn.execute(
+            "SELECT COUNT(*) AS c FROM fuel_entries WHERE source_type='security_boats' AND source_id=?", (sb_id,)
+        ).fetchone()["c"]
+    return jsonify({"assignments": assignments, "fuel_entries": fuel})
+
+
+@app.route("/api/transport-vehicles/<int:vehicle_id>/impact")
+def api_transport_vehicle_impact(vehicle_id):
+    with get_db() as conn:
+        assignments = conn.execute(
+            "SELECT COUNT(*) AS c FROM transport_assignments WHERE vehicle_id=? AND deleted_at IS NULL", (vehicle_id,)
+        ).fetchone()["c"]
+        fuel = conn.execute(
+            "SELECT COUNT(*) AS c FROM fuel_entries WHERE source_type='transport' AND source_id=?", (vehicle_id,)
+        ).fetchone()["c"]
+    return jsonify({"assignments": assignments, "fuel_entries": fuel})
+
+
+@app.route("/api/helpers/<int:helper_id>/impact")
+def api_helper_impact(helper_id):
+    with get_db() as conn:
+        assignments = conn.execute(
+            "SELECT COUNT(*) AS c FROM helper_assignments WHERE helper_id=? AND deleted_at IS NULL", (helper_id,)
+        ).fetchone()["c"]
+    return jsonify({"assignments": assignments})
+
+
+@app.route("/api/guard-camp-workers/<int:worker_id>/impact")
+def api_guard_camp_worker_impact(worker_id):
+    with get_db() as conn:
+        assignments = conn.execute(
+            "SELECT COUNT(*) AS c FROM guard_camp_assignments WHERE helper_id=? AND deleted_at IS NULL", (worker_id,)
+        ).fetchone()["c"]
+    return jsonify({"assignments": assignments})
+
+
+@app.route("/api/locations/<int:loc_id>/impact")
+def api_location_impact(loc_id):
+    with get_db() as conn:
+        loc = conn.execute("SELECT * FROM locations WHERE id=?", (loc_id,)).fetchone()
+        schedules = 0
+        guard_schedules = 0
+        if loc:
+            schedules = conn.execute(
+                "SELECT COUNT(*) AS c FROM location_schedules WHERE location_id=?", (loc_id,)
+            ).fetchone()["c"]
+            guard_schedules = conn.execute(
+                "SELECT COUNT(*) AS c FROM guard_location_schedules WHERE location_name=? AND production_id=?",
+                (loc["name"], loc["production_id"])
+            ).fetchone()["c"]
+    return jsonify({"schedules": schedules, "guard_schedules": guard_schedules})
+
+
+@app.route("/api/guard-posts/<int:post_id>/impact")
+def api_guard_post_impact(post_id):
+    with get_db() as conn:
+        post = conn.execute("SELECT * FROM guard_posts WHERE id=?", (post_id,)).fetchone()
+        guard_schedules = 0
+        if post:
+            guard_schedules = conn.execute(
+                "SELECT COUNT(*) AS c FROM guard_location_schedules WHERE location_name=? AND production_id=?",
+                (post["name"], post["production_id"])
+            ).fetchone()["c"]
+    return jsonify({"guard_schedules": guard_schedules})
+
+
+@app.route("/api/fuel-machinery/<int:machinery_id>/impact")
+def api_fuel_machinery_impact(machinery_id):
+    with get_db() as conn:
+        fuel = conn.execute(
+            "SELECT COUNT(*) AS c FROM fuel_entries WHERE source_type='machinery' AND source_id=?", (machinery_id,)
+        ).fetchone()["c"]
+    return jsonify({"fuel_entries": fuel})
+
+
+@app.route("/api/fnb-categories/<int:cat_id>/impact")
+def api_fnb_category_impact(cat_id):
+    with get_db() as conn:
+        items = conn.execute(
+            "SELECT COUNT(*) AS c FROM fnb_items WHERE category_id=? AND deleted_at IS NULL", (cat_id,)
+        ).fetchone()["c"]
+        entries = conn.execute(
+            "SELECT COUNT(*) AS c FROM fnb_entries WHERE item_id IN (SELECT id FROM fnb_items WHERE category_id=?)", (cat_id,)
+        ).fetchone()["c"]
+    return jsonify({"items": items, "entries": entries})
+
+
+@app.route("/api/fnb-items/<int:item_id>/impact")
+def api_fnb_item_impact(item_id):
+    with get_db() as conn:
+        entries = conn.execute(
+            "SELECT COUNT(*) AS c FROM fnb_entries WHERE item_id=?", (item_id,)
+        ).fetchone()["c"]
+    return jsonify({"entries": entries})
 
 
 # ─── Working days util ────────────────────────────────────────────────────────
@@ -1666,7 +2284,8 @@ def api_export_pb_json(prod_id):
 @app.route("/api/productions/<int:prod_id>/transport-vehicles", methods=["GET"])
 def api_transport_vehicles(prod_id):
     prod_or_404(prod_id)
-    return jsonify_cached(get_transport_vehicles(prod_id))
+    include_deleted = request.args.get('include_deleted', '').lower() == 'true'
+    return jsonify_cached(get_transport_vehicles(prod_id, include_deleted=include_deleted))
 
 
 @app.route("/api/productions/<int:prod_id>/transport-vehicles", methods=["POST"])
@@ -1692,10 +2311,14 @@ def api_get_transport_vehicle(vehicle_id):
 @app.route("/api/transport-vehicles/<int:vehicle_id>", methods=["PUT"])
 def api_update_transport_vehicle(vehicle_id):
     data = request.json or {}
+    validate_entity_name(data)
+    validate_numeric_fields(data, ['daily_rate_estimate', 'daily_rate_actual'])
     with get_db() as conn:
         old = conn.execute("SELECT * FROM transport_vehicles WHERE id=?", (vehicle_id,)).fetchone()
     old_d = dict(old) if old else {}
-    update_transport_vehicle(vehicle_id, data)
+    ok = update_transport_vehicle(vehicle_id, data)
+    if ok is False:
+        return jsonify({"error": "This record was modified by another user. Please refresh."}), 409
     with get_db() as conn:
         row = conn.execute("SELECT * FROM transport_vehicles WHERE id=?", (vehicle_id,)).fetchone()
     if old_d.get('production_id'):
@@ -1757,6 +2380,7 @@ def api_create_transport_assignment(prod_id):
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
     validate_assignment(data)
+    _validate_dates_for_prod(prod_id, data)
     if data.get("vehicle_id") and data.get("start_date") and data.get("end_date"):
         validate_assignment_overlap('transport_assignments', 'vehicle_id', data['vehicle_id'],
                                     data['start_date'], data['end_date'])
@@ -1770,12 +2394,25 @@ def api_create_transport_assignment(prod_id):
 def api_update_transport_assignment(assignment_id):
     data = request.json or {}
     validate_assignment(data)
+    prod_id = _get_prod_id_from_function(data.get("boat_function_id"))
+    if prod_id:
+        _validate_dates_for_prod(prod_id, data)
     if data.get("vehicle_id") and data.get("start_date") and data.get("end_date"):
         validate_assignment_overlap('transport_assignments', 'vehicle_id', data['vehicle_id'],
                                     data['start_date'], data['end_date'], exclude_id=assignment_id)
+    # P5.6: validate override_reason when price_override changes
+    with get_db() as conn:
+        old_row = conn.execute("SELECT ta.*, bf.production_id FROM transport_assignments ta LEFT JOIN boat_functions bf ON ta.boat_function_id=bf.id WHERE ta.id=?", (assignment_id,)).fetchone()
+    old_d = dict(old_row) if old_row else {}
+    err = _validate_price_override(data, old_d)
+    if err:
+        return err
     update_transport_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM transport_assignments WHERE id=?", (assignment_id,)).fetchone()
+    if old_d.get('production_id'):
+        _log_price_changes(old_d['production_id'], 'transport_assignment', assignment_id,
+                          old_d.get('vehicle_name_override', f'Assignment #{assignment_id}'), old_d, data)
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -1853,6 +2490,99 @@ def api_export_transport_json(prod_id):
     )
 
 
+# ─── Fuel overview ────────────────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/fuel/overview", methods=["GET"])
+def api_fuel_overview(prod_id):
+    prod_or_404(prod_id)
+    from database import get_db
+    with get_db() as conn:
+        # All fuel entries for this production
+        entries = conn.execute(
+            "SELECT fe.source_type, fe.assignment_id, fe.date, fe.liters, fe.fuel_type "
+            "FROM fuel_entries fe WHERE fe.production_id=? ORDER BY fe.date, fe.source_type",
+            (prod_id,)
+        ).fetchall()
+
+        # Get source names from assignments / machinery
+        boat_names = {}
+        for tbl, ctx in [('boat_assignments','boats'), ('picture_boat_assignments','picture_boats'),
+                         ('security_boat_assignments','security_boats'), ('transport_assignments','transport')]:
+            name_col = 'vehicle_name_override' if ctx == 'transport' else 'boat_name_override'
+            fallback_col = 'vehicle_name' if ctx == 'transport' else 'boat_name'
+            try:
+                rows = conn.execute(
+                    f"SELECT a.id, COALESCE(a.{name_col}, a.{fallback_col}, '?') as name "
+                    f"FROM {tbl} a WHERE a.production_id=?", (prod_id,)
+                ).fetchall()
+                for r in rows:
+                    boat_names[(ctx, r['id'])] = r['name']
+            except Exception:
+                pass
+
+        mach_rows = conn.execute(
+            "SELECT id, name FROM fuel_machinery WHERE production_id=?", (prod_id,)
+        ).fetchall()
+        for r in mach_rows:
+            boat_names[('machinery', r['id'])] = r['name']
+
+    # Build overview data
+    dates_set = set()
+    sources = {}  # key = "source_type:assignment_id"
+    for e in entries:
+        dk = e['date']
+        dates_set.add(dk)
+        skey = f"{e['source_type']}:{e['assignment_id']}"
+        if skey not in sources:
+            sources[skey] = {
+                'key': skey,
+                'source_type': e['source_type'],
+                'assignment_id': e['assignment_id'],
+                'name': boat_names.get((e['source_type'], e['assignment_id']), '?'),
+                'by_date': {},
+                'total': 0,
+                'diesel': 0,
+                'petrol': 0,
+            }
+        src = sources[skey]
+        liters = e['liters'] or 0
+        ft = e['fuel_type'] or 'DIESEL'
+        if dk not in src['by_date']:
+            src['by_date'][dk] = 0
+        src['by_date'][dk] += liters
+        src['total'] += liters
+        if ft == 'PETROL':
+            src['petrol'] += liters
+        else:
+            src['diesel'] += liters
+
+    dates = sorted(dates_set)
+
+    # Daily totals
+    daily_totals = {}
+    for dk in dates:
+        daily_totals[dk] = 0
+    for src in sources.values():
+        for dk, l in src['by_date'].items():
+            daily_totals[dk] = daily_totals.get(dk, 0) + l
+
+    # Category labels
+    cat_labels = {
+        'boats': 'BOAT', 'picture_boats': 'PB',
+        'security_boats': 'SB', 'transport': 'TRANSPO', 'machinery': 'MACH'
+    }
+    source_list = sorted(sources.values(), key=lambda s: (s['source_type'], s['name']))
+    for s in source_list:
+        s['category'] = cat_labels.get(s['source_type'], s['source_type'].upper())
+
+    return jsonify({
+        'dates': dates,
+        'sources': source_list,
+        'daily_totals': daily_totals,
+        'grand_total': sum(daily_totals.values()),
+    })
+
+
 # ─── Fuel entries ────────────────────────────────────────────────────────────
 
 @app.route("/api/productions/<int:prod_id>/fuel-entries", methods=["GET"])
@@ -1890,7 +2620,8 @@ def api_delete_fuel_entries_for_assignment(prod_id, source_type, assignment_id):
 @app.route("/api/productions/<int:prod_id>/fuel-machinery", methods=["GET"])
 def api_get_fuel_machinery(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_fuel_machinery(prod_id))
+    include_deleted = request.args.get('include_deleted', '').lower() == 'true'
+    return jsonify(get_fuel_machinery(prod_id, include_deleted=include_deleted))
 
 
 @app.route("/api/productions/<int:prod_id>/fuel-machinery", methods=["POST"])
@@ -1898,6 +2629,9 @@ def api_create_fuel_machinery(prod_id):
     prod_or_404(prod_id)
     data = request.json or {}
     data['production_id'] = prod_id
+    if not data.get("name"):
+        return jsonify({"error": "name required"}), 400
+    validate_numeric_fields(data, ['liters_per_day'])
     mid = create_fuel_machinery(data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM fuel_machinery WHERE id=?", (mid,)).fetchone()
@@ -1906,7 +2640,10 @@ def api_create_fuel_machinery(prod_id):
 
 @app.route("/api/fuel-machinery/<int:machinery_id>", methods=["PUT"])
 def api_update_fuel_machinery(machinery_id):
-    update_fuel_machinery(machinery_id, request.json or {})
+    data = request.json or {}
+    validate_entity_name(data)
+    validate_numeric_fields(data, ['liters_per_day'])
+    update_fuel_machinery(machinery_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM fuel_machinery WHERE id=?", (machinery_id,)).fetchone()
     return jsonify(dict(row) if row else {})
@@ -1932,6 +2669,7 @@ def api_get_fuel_prices():
 def api_set_fuel_prices():
     """Set global fuel prices."""
     data = request.json or {}
+    validate_numeric_fields(data, ['diesel', 'petrol'])
     if "diesel" in data:
         set_setting("fuel_price_diesel", str(float(data["diesel"])))
     if "petrol" in data:
@@ -1956,9 +2694,11 @@ def api_lock_fuel_day():
     date = data.get("date")
     if not date:
         return jsonify({"error": "date is required"}), 400
+    validate_numeric_fields(data, ['diesel_price', 'petrol_price'])
     diesel_price = float(data.get("diesel_price", 0))
     petrol_price = float(data.get("petrol_price", 0))
-    set_fuel_locked_price(date, diesel_price, petrol_price)
+    locked_by = getattr(g, 'nickname', None)
+    set_fuel_locked_price(date, diesel_price, petrol_price, locked_by=locked_by)
     # AXE 6.3: auto-snapshot on fuel lock
     # Need prod_id — try X-Project-Id header
     prod_id_header = request.headers.get("X-Project-Id")
@@ -2419,7 +3159,8 @@ def api_reload(prod_id):
 @app.route("/api/productions/<int:prod_id>/locations", methods=["GET"])
 def api_get_locations(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_location_sites(prod_id))
+    include_deleted = request.args.get('include_deleted', '').lower() == 'true'
+    return jsonify(get_location_sites(prod_id, include_deleted=include_deleted))
 
 
 @app.route("/api/productions/<int:prod_id>/locations", methods=["POST"])
@@ -2436,6 +3177,8 @@ def api_create_location(prod_id):
 @app.route("/api/locations/<int:loc_id>", methods=["PUT"])
 def api_update_location(loc_id):
     data = request.json or {}
+    validate_entity_name(data)
+    validate_numeric_fields(data, ['price_p', 'price_f', 'price_w', 'global_deal'])
     # Get old name for schedule cascade
     from database import get_db
     with get_db() as conn:
@@ -2445,6 +3188,8 @@ def api_update_location(loc_id):
     old = dict(old)
     old_name = old['name']
     result = update_location_site(loc_id, data)
+    if result is False:
+        return jsonify({"error": "This record was modified by another user. Please refresh."}), 409
     # Cascade rename in schedules
     if 'name' in data and data['name'] != old_name:
         rename_location_in_schedules(old['production_id'], old_name, data['name'])
@@ -2465,7 +3210,8 @@ def api_delete_location(loc_id):
 @app.route("/api/productions/<int:prod_id>/guard-posts", methods=["GET"])
 def api_get_guard_posts(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_guard_posts(prod_id))
+    include_deleted = request.args.get('include_deleted', '').lower() == 'true'
+    return jsonify(get_guard_posts(prod_id, include_deleted=include_deleted))
 
 
 @app.route("/api/productions/<int:prod_id>/guard-posts", methods=["POST"])
@@ -2482,6 +3228,7 @@ def api_create_guard_post(prod_id):
 @app.route("/api/guard-posts/<int:post_id>", methods=["PUT"])
 def api_update_guard_post(post_id):
     data = request.json or {}
+    validate_entity_name(data)
     from database import get_db
     with get_db() as conn:
         old = conn.execute("SELECT * FROM guard_posts WHERE id=?", (post_id,)).fetchone()
@@ -2515,8 +3262,8 @@ def api_upsert_location_schedule(prod_id):
     prod_or_404(prod_id)
     data = request.json or {}
     data['production_id'] = prod_id
-    if not data.get('location_name') or not data.get('date') or not data.get('status'):
-        return jsonify({"error": "location_name, date, status required"}), 400
+    if (not data.get('location_name') and not data.get('location_id')) or not data.get('date') or not data.get('status'):
+        return jsonify({"error": "location_name or location_id, date, status required"}), 400
     result = upsert_location_schedule(data)
     return jsonify(result or {}), 200
 
@@ -2525,9 +3272,9 @@ def api_upsert_location_schedule(prod_id):
 def api_delete_location_schedule(prod_id):
     prod_or_404(prod_id)
     data = request.json or {}
-    if not data.get('location_name') or not data.get('date'):
-        return jsonify({"error": "location_name and date required"}), 400
-    delete_location_schedule(prod_id, data['location_name'], data['date'])
+    if (not data.get('location_name') and not data.get('location_id')) or not data.get('date'):
+        return jsonify({"error": "location_name or location_id, and date required"}), 400
+    delete_location_schedule(prod_id, data.get('location_name'), data['date'], location_id=data.get('location_id'))
     return jsonify({"ok": True})
 
 
@@ -2543,6 +3290,8 @@ def api_lock_location_schedules(prod_id):
     prod_or_404(prod_id)
     data = request.json or {}
     dates = data.get('dates', [])
+    if not isinstance(dates, list):
+        return jsonify({"error": "dates must be a list"}), 400
     locked = data.get('locked', True)
     lock_location_schedules(prod_id, dates, locked)
     # AXE 6.3: auto-snapshot on lock
@@ -2628,8 +3377,8 @@ def api_upsert_guard_location_schedule(prod_id):
     prod_or_404(prod_id)
     data = request.json or {}
     data['production_id'] = prod_id
-    if not data.get('location_name') or not data.get('date') or not data.get('status'):
-        return jsonify({"error": "location_name, date, status required"}), 400
+    if (not data.get('location_name') and not data.get('location_id')) or not data.get('date') or not data.get('status'):
+        return jsonify({"error": "location_name or location_id, date, status required"}), 400
     result = upsert_guard_location_schedule(data)
     return jsonify(result or {}), 200
 
@@ -2638,9 +3387,9 @@ def api_upsert_guard_location_schedule(prod_id):
 def api_delete_guard_location_schedule(prod_id):
     prod_or_404(prod_id)
     data = request.json or {}
-    if not data.get('location_name') or not data.get('date'):
-        return jsonify({"error": "location_name and date required"}), 400
-    delete_guard_location_schedule(prod_id, data['location_name'], data['date'])
+    if (not data.get('location_name') and not data.get('location_id')) or not data.get('date'):
+        return jsonify({"error": "location_name or location_id, and date required"}), 400
+    delete_guard_location_schedule(prod_id, data.get('location_name'), data['date'], location_id=data.get('location_id'))
     return jsonify({"ok": True})
 
 
@@ -2649,6 +3398,8 @@ def api_lock_guard_location_schedules(prod_id):
     prod_or_404(prod_id)
     data = request.json or {}
     dates = data.get('dates', [])
+    if not isinstance(dates, list):
+        return jsonify({"error": "dates must be a list"}), 400
     locked = data.get('locked', True)
     lock_guard_location_schedules(prod_id, dates, locked)
     # AXE 6.3: auto-snapshot on lock
@@ -2678,11 +3429,11 @@ def api_update_guard_location_nb_guards(prod_id):
     """Update nb_guards for a specific location/date."""
     prod_or_404(prod_id)
     data = request.json or {}
-    if not data.get('location_name') or not data.get('date'):
-        return jsonify({"error": "location_name and date required"}), 400
+    if (not data.get('location_name') and not data.get('location_id')) or not data.get('date'):
+        return jsonify({"error": "location_name or location_id, and date required"}), 400
     validate_guard_schedule(data)
     nb_guards = int(data.get('nb_guards', 0))
-    result = update_guard_location_nb_guards(prod_id, data['location_name'], data['date'], nb_guards)
+    result = update_guard_location_nb_guards(prod_id, data.get('location_name'), data['date'], nb_guards, location_id=data.get('location_id'))
     return jsonify(result or {})
 
 
@@ -2691,7 +3442,8 @@ def api_update_guard_location_nb_guards(prod_id):
 @app.route("/api/productions/<int:prod_id>/guard-camp-workers", methods=["GET"])
 def api_guard_camp_workers(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_guard_camp_workers(prod_id))
+    include_deleted = request.args.get('include_deleted', '').lower() == 'true'
+    return jsonify(get_guard_camp_workers(prod_id, include_deleted=include_deleted))
 
 
 @app.route("/api/productions/<int:prod_id>/guard-camp-workers", methods=["POST"])
@@ -2711,7 +3463,10 @@ def api_create_guard_camp_worker(prod_id):
 def api_bulk_create_guard_camp_workers(prod_id):
     prod_or_404(prod_id)
     data = request.json or {}
-    count = int(data.get("count", 0))
+    try:
+        count = int(data.get("count", 0))
+    except (ValueError, TypeError):
+        return jsonify({"error": "count must be an integer"}), 400
     prefix = data.get("prefix", "Guard")
     if count < 1 or count > 200:
         return jsonify({"error": "count must be 1-200"}), 400
@@ -2768,7 +3523,11 @@ def api_import_guard_camp_workers_csv(prod_id):
 @app.route("/api/guard-camp-workers/<int:worker_id>", methods=["PUT"])
 def api_update_guard_camp_worker(worker_id):
     data = request.json or {}
-    update_guard_camp_worker(worker_id, data)
+    validate_entity_name(data)
+    validate_numeric_fields(data, ['daily_rate_estimate', 'daily_rate_actual'])
+    ok = update_guard_camp_worker(worker_id, data)
+    if ok is False:
+        return jsonify({"error": "This record was modified by another user. Please refresh."}), 409
     with get_db() as conn:
         row = conn.execute("SELECT * FROM guard_camp_workers WHERE id=?", (worker_id,)).fetchone()
     if not row:
@@ -2856,7 +3615,7 @@ def api_bulk_update(prod_id):
     # Whitelist safe fields
     safe_fields = {"group_name", "daily_rate_estimate", "daily_rate_actual", "rate_estimated",
                    "rate_actual", "vendor", "notes", "role", "sort_order", "pricing_type",
-                   "include_sunday", "function_group"}
+                   "include_sunday", "function_group", "currency"}
     filtered = {k: v for k, v in updates.items() if k in safe_fields}
     if not filtered:
         return jsonify({"error": "No valid fields to update"}), 400
@@ -2927,6 +3686,7 @@ def api_create_guard_camp_assignment(prod_id):
     if not data.get("boat_function_id"):
         return jsonify({"error": "boat_function_id required"}), 400
     validate_assignment(data)
+    _validate_dates_for_prod(prod_id, data)
     if data.get("helper_id") and data.get("start_date") and data.get("end_date"):
         validate_assignment_overlap('guard_camp_assignments', 'helper_id', data['helper_id'],
                                     data['start_date'], data['end_date'])
@@ -2940,12 +3700,25 @@ def api_create_guard_camp_assignment(prod_id):
 def api_update_guard_camp_assignment(assignment_id):
     data = request.json or {}
     validate_assignment(data)
+    prod_id = _get_prod_id_from_function(data.get("boat_function_id"))
+    if prod_id:
+        _validate_dates_for_prod(prod_id, data)
     if data.get("helper_id") and data.get("start_date") and data.get("end_date"):
         validate_assignment_overlap('guard_camp_assignments', 'helper_id', data['helper_id'],
                                     data['start_date'], data['end_date'], exclude_id=assignment_id)
+    # P5.6: validate override_reason when price_override changes
+    with get_db() as conn:
+        old_row = conn.execute("SELECT gca.*, bf.production_id FROM guard_camp_assignments gca LEFT JOIN boat_functions bf ON gca.boat_function_id=bf.id WHERE gca.id=?", (assignment_id,)).fetchone()
+    old_d = dict(old_row) if old_row else {}
+    err = _validate_price_override(data, old_d)
+    if err:
+        return err
     update_guard_camp_assignment(assignment_id, data)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM guard_camp_assignments WHERE id=?", (assignment_id,)).fetchone()
+    if old_d.get('production_id'):
+        _log_price_changes(old_d['production_id'], 'guard_camp_assignment', assignment_id,
+                          old_d.get('helper_name_override', f'Assignment #{assignment_id}'), old_d, data)
     if not row:
         abort(404)
     return jsonify(dict(row))
@@ -3076,7 +3849,7 @@ def api_export_fnb_budget_csv(prod_id):
     w.writerow([f"Balance (Estimate - Up to Date): ${balance}"])
 
     out.seek(0)
-    fname = _export_fname(prod_name, "FNB", date_from, date_to, "csv")
+    fname = _export_fname(prod_name, "CATERING", date_from, date_to, "csv")
     return Response(out.read(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename={fname}"})
 
@@ -3117,7 +3890,8 @@ def api_fnb_summary(prod_id):
 @app.route("/api/productions/<int:prod_id>/fnb-categories", methods=["GET"])
 def api_get_fnb_categories(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_fnb_categories(prod_id))
+    include_deleted = request.args.get('include_deleted', '').lower() == 'true'
+    return jsonify(get_fnb_categories(prod_id, include_deleted=include_deleted))
 
 
 @app.route("/api/productions/<int:prod_id>/fnb-categories", methods=["POST"])
@@ -3137,6 +3911,7 @@ def api_create_fnb_category(prod_id):
 @app.route("/api/fnb-categories/<int:cat_id>", methods=["PUT"])
 def api_update_fnb_category(cat_id):
     data = request.json or {}
+    validate_entity_name(data)
     result = update_fnb_category(cat_id, data)
     if not result:
         abort(404)
@@ -3161,7 +3936,8 @@ def api_duplicate_fnb_category(cat_id):
 @app.route("/api/productions/<int:prod_id>/fnb-items", methods=["GET"])
 def api_get_fnb_items(prod_id):
     prod_or_404(prod_id)
-    return jsonify(get_fnb_items(prod_id))
+    include_deleted = request.args.get('include_deleted', '').lower() == 'true'
+    return jsonify(get_fnb_items(prod_id, include_deleted=include_deleted))
 
 
 @app.route("/api/productions/<int:prod_id>/fnb-items", methods=["POST"])
@@ -3181,6 +3957,8 @@ def api_create_fnb_item(prod_id):
 @app.route("/api/fnb-items/<int:item_id>", methods=["PUT"])
 def api_update_fnb_item(item_id):
     data = request.json or {}
+    validate_entity_name(data)
+    validate_numeric_fields(data, ['unit_price'])
     result = update_fnb_item(item_id, data)
     if not result:
         abort(404)
@@ -3209,6 +3987,7 @@ def api_upsert_fnb_entry(prod_id):
         return jsonify({"error": "item_id, entry_type and date required"}), 400
     if data['entry_type'] not in ('purchase', 'consumption'):
         return jsonify({"error": "entry_type must be 'purchase' or 'consumption'"}), 400
+    validate_numeric_fields(data, ['quantity', 'unit_price'])
     result = upsert_fnb_entry(data)
     return jsonify(result or {}), 200
 
@@ -3575,14 +4354,14 @@ def api_export_budget_global(prod_id):
     summary_data["FUEL"] = round(fuel_total_cost, 2)
 
     # ── Sheet 7: LABOUR ───────────────────────────────────────────────────────
-    ws = wb.create_sheet("Labour")
+    ws = wb.create_sheet("Labor")
     lb_rows = [r for r in get_helper_assignments(prod_id) if r.get("working_days")]
     by_group = OrderedDict()
     for r in lb_rows:
         g = r.get("function_group") or r.get("helper_group") or "GENERAL"
         by_group.setdefault(g, []).append(r)
 
-    ws.append(["KLAS 7 - LABOUR BUDGET"])
+    ws.append(["KLAS 7 - LABOR BUDGET"])
     ws.cell(row=1, column=1).font = title_font
     ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
     ws.append([])
@@ -3708,9 +4487,9 @@ def api_export_budget_global(prod_id):
     summary_data["GUARDS"] = round(total_guards, 2)
 
     # ── Sheet 10: FNB ─────────────────────────────────────────────────────────
-    ws = wb.create_sheet("FNB")
+    ws = wb.create_sheet("Catering")
     fnb_budget = get_fnb_budget_data(prod_id)
-    ws.append(["KLAS 7 - FNB BUDGET"])
+    ws.append(["KLAS 7 - CATERING BUDGET"])
     ws.cell(row=1, column=1).font = title_font
     ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
     ws.append([])
@@ -3733,7 +4512,7 @@ def api_export_budget_global(prod_id):
     balance = round(fnb_grand_est - fnb_grand_utd, 2)
     ws.append([f"Balance (Estimate - Up to Date): ${balance}"])
     auto_width(ws)
-    summary_data["FNB"] = round(fnb_grand_est, 2)  # Use purchase (estimate) as budget total
+    summary_data["CATERING"] = round(fnb_grand_est, 2)  # Use purchase (estimate) as budget total
 
     # ── Insert Summary sheet at position 0 ────────────────────────────────────
     ws_summary = wb.create_sheet("Summary", 0)
@@ -3761,6 +4540,199 @@ def api_export_budget_global(prod_id):
     output.seek(0)
 
     fname = f"KLAS7_BUDGET_{dt.now().strftime('%y%m%d')}.xlsx"
+    return Response(
+        output.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
+    )
+
+
+# ─── ENRICHED BUDGET XLSX EXPORT (P5.8) ─────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/export/budget-xlsx")
+def api_export_budget_xlsx(prod_id):
+    """Export enriched multi-sheet budget XLSX with variance summary and history."""
+    from datetime import datetime as dt
+    from collections import OrderedDict
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    prod = prod_or_404(prod_id)
+    prod_name = prod.get("name", "PROD") if isinstance(prod, dict) else "PROD"
+
+    wb = Workbook()
+
+    # -- Style constants --
+    header_font = Font(bold=True, color="FFFFFF", size=10)
+    header_fill = PatternFill(start_color="2D2D2D", end_color="2D2D2D", fill_type="solid")
+    title_font = Font(bold=True, size=12)
+    subtotal_font = Font(bold=True, size=10)
+    money_fmt = '#,##0.00'
+    green_font = Font(bold=True, color="22C55E")
+    red_font = Font(bold=True, color="EF4444")
+    thin_border = Border(bottom=Side(style='thin', color='CCCCCC'))
+
+    def style_header_row(ws, num_cols):
+        for col in range(1, num_cols + 1):
+            cell = ws.cell(row=ws.max_row, column=col)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center')
+
+    def auto_width(ws):
+        for col in ws.columns:
+            max_len = 0
+            col_letter = get_column_letter(col[0].column)
+            for cell in col:
+                try:
+                    if cell.value:
+                        max_len = max(max_len, len(str(cell.value)))
+                except:
+                    pass
+            ws.column_dimensions[col_letter].width = min(max(max_len + 2, 8), 40)
+
+    def add_total_row(ws, label_col, label, value_cols, values, font=green_font):
+        row_data = [""] * (max(value_cols) + 1)
+        row_data[label_col] = label
+        for c, v in zip(value_cols, values):
+            row_data[c] = v
+        ws.append(row_data)
+        for c in value_cols:
+            ws.cell(row=ws.max_row, column=c + 1).font = font
+            ws.cell(row=ws.max_row, column=c + 1).number_format = money_fmt
+
+    # ── Collect budget data via get_budget ──
+    budget = get_budget(prod_id)
+    by_dept = budget.get("by_department", {})
+
+    # Build summary data: dept -> {estimated, actual, variance, variance_pct, lines}
+    summary_rows = OrderedDict()
+    for dept_name, ddata in sorted(by_dept.items()):
+        est = ddata.get("total_estimate", 0) or 0
+        act = ddata.get("total_actual", 0) or 0
+        var = act - est
+        var_pct = round((var / est) * 100, 1) if est else 0
+        lines = ddata.get("lines", [])
+        summary_rows[dept_name] = {
+            "estimated": round(est, 2),
+            "actual": round(act, 2),
+            "variance": round(var, 2),
+            "variance_pct": var_pct,
+            "lines": lines,
+        }
+
+    # ── Department sheets ──
+    for dept_name, dept_info in summary_rows.items():
+        ws = wb.create_sheet(dept_name[:31])  # Excel max 31 chars for sheet name
+        ws.append([f"{prod_name} - {dept_name} BUDGET"])
+        ws.cell(row=1, column=1).font = title_font
+        ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+        ws.append([])
+        ws.append(["Entity", "Detail", "Daily Rate", "Working Days",
+                    "Start", "End", "Estimate ($)", "Actual ($)", "Variance ($)"])
+        style_header_row(ws, 9)
+
+        dept_est = 0
+        dept_act = 0
+        for row in dept_info["lines"]:
+            r_est = row.get("amount_estimate", 0) or 0
+            r_act = row.get("amount_actual", 0) or 0
+            r_var = r_act - r_est
+            entity = row.get("name") or row.get("function_name") or ""
+            detail = row.get("boat") or row.get("detail") or row.get("vehicle") or ""
+            rate = row.get("price_override") or row.get("daily_rate") or row.get("daily_rate_estimate") or ""
+            days = row.get("working_days") or ""
+            start = row.get("start_date") or ""
+            end = row.get("end_date") or ""
+            ws.append([entity, detail, rate, days, start, end,
+                        round(r_est, 2), round(r_act, 2) if r_act else "", round(r_var, 2) if r_act else ""])
+            # Number format
+            for c in (7, 8, 9):
+                ws.cell(row=ws.max_row, column=c).number_format = money_fmt
+            dept_est += r_est
+            dept_act += r_act
+
+        ws.append([])
+        ws.append(["", "", "", "", "", "TOTAL",
+                    round(dept_est, 2), round(dept_act, 2), round(dept_act - dept_est, 2)])
+        for c in (7, 8):
+            ws.cell(row=ws.max_row, column=c).font = green_font
+            ws.cell(row=ws.max_row, column=c).number_format = money_fmt
+        variance_font = red_font if (dept_act - dept_est) > 0 else green_font
+        ws.cell(row=ws.max_row, column=9).font = variance_font
+        ws.cell(row=ws.max_row, column=9).number_format = money_fmt
+        auto_width(ws)
+
+    # ── Summary sheet (insert at position 0) ──
+    ws_summary = wb.create_sheet("Summary", 0)
+    ws_summary.append([f"{prod_name} - BUDGET VARIANCE SUMMARY"])
+    ws_summary.cell(row=1, column=1).font = Font(bold=True, size=14)
+    ws_summary.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws_summary.append([])
+    ws_summary.append(["Department", "Estimate ($)", "Actual ($)", "Variance ($)", "Variance (%)"])
+    style_header_row(ws_summary, 5)
+
+    grand_est = 0
+    grand_act = 0
+    for dept_name, info in summary_rows.items():
+        ws_summary.append([dept_name, info["estimated"], info["actual"],
+                            info["variance"],
+                            f"{info['variance_pct']:+.1f}%" if info["actual"] else ""])
+        for c in (2, 3, 4):
+            ws_summary.cell(row=ws_summary.max_row, column=c).number_format = money_fmt
+        if info["variance"] > 0:
+            ws_summary.cell(row=ws_summary.max_row, column=4).font = red_font
+        elif info["variance"] < 0:
+            ws_summary.cell(row=ws_summary.max_row, column=4).font = green_font
+        grand_est += info["estimated"]
+        grand_act += info["actual"]
+
+    ws_summary.append([])
+    grand_var = grand_act - grand_est
+    grand_pct = round((grand_var / grand_est) * 100, 1) if grand_est else 0
+    ws_summary.append(["GRAND TOTAL", round(grand_est, 2), round(grand_act, 2),
+                        round(grand_var, 2), f"{grand_pct:+.1f}%"])
+    ws_summary.cell(row=ws_summary.max_row, column=1).font = Font(bold=True, size=12)
+    ws_summary.cell(row=ws_summary.max_row, column=2).font = Font(bold=True, size=12, color="22C55E")
+    ws_summary.cell(row=ws_summary.max_row, column=2).number_format = money_fmt
+    ws_summary.cell(row=ws_summary.max_row, column=3).font = Font(bold=True, size=12)
+    ws_summary.cell(row=ws_summary.max_row, column=3).number_format = money_fmt
+    var_font = Font(bold=True, size=12, color="EF4444") if grand_var > 0 else Font(bold=True, size=12, color="22C55E")
+    ws_summary.cell(row=ws_summary.max_row, column=4).font = var_font
+    ws_summary.cell(row=ws_summary.max_row, column=4).number_format = money_fmt
+    auto_width(ws_summary)
+
+    # ── History sheet ──
+    ws_hist = wb.create_sheet("History")
+    ws_hist.append([f"{prod_name} - RECENT MODIFICATIONS"])
+    ws_hist.cell(row=1, column=1).font = title_font
+    ws_hist.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
+    ws_hist.append([])
+    ws_hist.append(["Date", "User", "Action", "Module", "Description"])
+    style_header_row(ws_hist, 5)
+
+    history = get_history(prod_id, limit=100)
+    for entry in history:
+        ws_hist.append([
+            entry.get("created_at", ""),
+            entry.get("user_nickname", "") or entry.get("username", ""),
+            entry.get("action", ""),
+            entry.get("table_name", ""),
+            entry.get("human_description", "") or entry.get("description", ""),
+        ])
+    auto_width(ws_hist)
+
+    # Remove default empty sheet if still present
+    if "Sheet" in wb.sheetnames:
+        del wb["Sheet"]
+
+    # Save to bytes
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    fname = f"{prod_name}_BUDGET_{dt.now().strftime('%y%m%d')}.xlsx"
     return Response(
         output.getvalue(),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -4143,8 +5115,8 @@ def api_export_logistics(prod_id):
     auto_width(ws)
 
     # ── Sheet 8: LABOUR (matrix) ────────────────────────────────────────────
-    ws = wb.create_sheet("Labour")
-    lb_matrix = _write_assignment_matrix(ws, "LABOUR SCHEDULE", helper_rows,
+    ws = wb.create_sheet("Labor")
+    lb_matrix = _write_assignment_matrix(ws, "LABOR SCHEDULE", helper_rows,
         lambda r: f"{r.get('function_name','') or ''} — {r.get('helper_name_override') or r.get('helper_name') or ''}")
 
     # ── Sheet 9: GUARDS (matrix + base camp) ─────────────────────────────────
@@ -4244,8 +5216,8 @@ def api_export_logistics(prod_id):
     auto_width(ws)
 
     # ── Sheet 10: FNB ────────────────────────────────────────────────────────
-    ws = wb.create_sheet("FNB")
-    ws.append(["KLAS 7 - FOOD & BEVERAGE"])
+    ws = wb.create_sheet("Catering")
+    ws.append(["KLAS 7 - CATERING"])
     ws.cell(row=1, column=1).font = title_font
     ws.append([f"Generated: {dt.now().strftime('%Y-%m-%d %H:%M')}"])
     ws.append([])
@@ -4324,9 +5296,9 @@ def api_export_logistics(prod_id):
     ws_summary.append(["SECURITY BOATS", active_sb, f"{active_sb} active assignments"])
     ws_summary.append(["TRANSPORT", active_transport, f"{active_transport} active assignments"])
     ws_summary.append(["FUEL", len(fuel_entries), f"{round(fuel_grand_liters, 0)} total liters logged"])
-    ws_summary.append(["LABOUR", active_helpers, f"{active_helpers} active assignments"])
+    ws_summary.append(["LABOR", active_helpers, f"{active_helpers} active assignments"])
     ws_summary.append(["GUARDS", len(gl_locations), f"{len(gl_locations)} guard locations + {active_gc} base camp"])
-    ws_summary.append(["FNB", len(fnb_items), f"{len(fnb_cats)} categories, {len(fnb_items)} items"])
+    ws_summary.append(["CATERING", len(fnb_items), f"{len(fnb_cats)} categories, {len(fnb_items)} items"])
 
     auto_width(ws_summary)
 
@@ -4722,8 +5694,8 @@ def api_export_daily_report_pdf(prod_id):
         # Department cost breakdown
         dept_keys = [("boats", "Boats"), ("picture_boats", "Picture Boats"),
                      ("security_boats", "Security Boats"), ("transport", "Transport"),
-                     ("labour", "Labour"), ("guards", "Guards"),
-                     ("locations", "Locations"), ("fnb", "FNB"), ("fuel", "Fuel")]
+                     ("labour", "Labor"), ("guards", "Guards"),
+                     ("locations", "Locations"), ("fnb", "Catering"), ("fuel", "Fuel")]
 
         cost_headers = ["Department", "Cost ($)"]
         cost_widths = [250, 120]
@@ -5021,6 +5993,218 @@ def api_export_vendor_summary_pdf(prod_id):
     )
 
 
+# ─── Today View (P3.2) ────────────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/today", methods=["GET"])
+def api_today(prod_id):
+    """Return all active resources for a given date (defaults to today)."""
+    prod_or_404(prod_id)
+    from datetime import datetime as dt
+
+    target_date = request.args.get("date") or dt.now().strftime("%Y-%m-%d")
+
+    # ── 1. PDT / Schedule info for the day ──
+    shooting_days = get_shooting_days(prod_id)
+    day_info = None
+    for d in shooting_days:
+        if d.get("date") == target_date:
+            day_info = d
+            break
+
+    schedule = None
+    if day_info:
+        schedule = {
+            "day_number": day_info.get("day_number"),
+            "date": day_info.get("date"),
+            "location": day_info.get("location"),
+            "game_name": day_info.get("game_name"),
+            "status": day_info.get("status"),
+            "heure_rehearsal": day_info.get("heure_rehearsal"),
+            "heure_animateur": day_info.get("heure_animateur"),
+            "heure_game": day_info.get("heure_game"),
+            "heure_depart_candidats": day_info.get("heure_depart_candidats"),
+            "maree_hauteur": day_info.get("maree_hauteur"),
+            "maree_statut": day_info.get("maree_statut"),
+            "nb_candidats": day_info.get("nb_candidats"),
+            "conseil_soir": day_info.get("conseil_soir"),
+            "notes": day_info.get("notes"),
+            "events": day_info.get("events", []),
+        }
+
+    # Helper: check if an assignment covers a date (respecting day_overrides)
+    def _is_active_on(asgn, date_str):
+        start = asgn.get("start_date", "")
+        end = asgn.get("end_date", "")
+        if not start or not end:
+            return False
+        overrides = {}
+        raw = asgn.get("day_overrides")
+        if raw:
+            try:
+                overrides = json.loads(raw) if isinstance(raw, str) else raw
+            except Exception:
+                pass
+        # If explicitly overridden on this date
+        if date_str in overrides:
+            return overrides[date_str] not in ("empty", "", None)
+        # Otherwise check date range
+        return start <= date_str <= end
+
+    # ── 2. Boats (main boats) ──
+    boat_assignments = get_boat_assignments(prod_id, context='boats')
+    boats_today = []
+    for a in boat_assignments:
+        if _is_active_on(a, target_date):
+            boats_today.append({
+                "id": a.get("id"),
+                "boat_name": a.get("boat_name") or a.get("boat_name_override", ""),
+                "function_name": a.get("function_name"),
+                "function_group": a.get("function_group"),
+                "captain": a.get("captain"),
+                "capacity": a.get("boat_capacity"),
+                "status": a.get("assignment_status"),
+                "wave_rating": a.get("wave_rating"),
+                "image_path": a.get("image_path"),
+                "color": a.get("color"),
+                "notes": a.get("notes"),
+            })
+
+    # ── 3. Picture Boats ──
+    pb_assignments = get_picture_boat_assignments(prod_id)
+    picture_boats_today = []
+    for a in pb_assignments:
+        if _is_active_on(a, target_date):
+            picture_boats_today.append({
+                "id": a.get("id"),
+                "boat_name": a.get("boat_name") or a.get("boat_name_override", ""),
+                "function_name": a.get("function_name"),
+                "function_group": a.get("function_group"),
+                "status": a.get("assignment_status"),
+                "image_path": a.get("image_path"),
+                "color": a.get("color"),
+                "notes": a.get("notes"),
+            })
+
+    # ── 4. Security Boats ──
+    sb_assignments = get_security_boat_assignments(prod_id)
+    security_boats_today = []
+    for a in sb_assignments:
+        if _is_active_on(a, target_date):
+            security_boats_today.append({
+                "id": a.get("id"),
+                "boat_name": a.get("boat_name") or a.get("boat_name_override", ""),
+                "function_name": a.get("function_name"),
+                "function_group": a.get("function_group"),
+                "status": a.get("assignment_status"),
+                "image_path": a.get("image_path"),
+                "color": a.get("color"),
+                "notes": a.get("notes"),
+            })
+
+    # ── 5. Transport ──
+    tr_assignments = get_transport_assignments(prod_id)
+    transport_today = []
+    for a in tr_assignments:
+        if _is_active_on(a, target_date):
+            transport_today.append({
+                "id": a.get("id"),
+                "vehicle_name": a.get("vehicle_name") or a.get("vehicle_name_override", ""),
+                "vehicle_type": a.get("vehicle_type"),
+                "function_name": a.get("function_name"),
+                "function_group": a.get("function_group"),
+                "status": a.get("assignment_status"),
+                "color": a.get("color"),
+                "notes": a.get("notes"),
+            })
+
+    # ── 6. Labour (helpers) ──
+    lb_assignments = get_helper_assignments(prod_id)
+    labour_today = []
+    for a in lb_assignments:
+        if _is_active_on(a, target_date):
+            labour_today.append({
+                "id": a.get("id"),
+                "helper_name": a.get("helper_name") or a.get("helper_name_override", ""),
+                "role": a.get("helper_role"),
+                "function_name": a.get("function_name"),
+                "function_group": a.get("function_group"),
+                "status": a.get("assignment_status"),
+                "color": a.get("color"),
+                "notes": a.get("notes"),
+            })
+
+    # ── 7. Guards (camp) ──
+    gc_assignments = get_guard_camp_assignments(prod_id)
+    guards_today = []
+    for a in gc_assignments:
+        if _is_active_on(a, target_date):
+            guards_today.append({
+                "id": a.get("id"),
+                "helper_name": a.get("helper_name") or a.get("helper_name_override", ""),
+                "role": a.get("helper_role"),
+                "function_name": a.get("function_name"),
+                "function_group": a.get("function_group"),
+                "status": a.get("assignment_status"),
+                "color": a.get("color"),
+                "notes": a.get("notes"),
+            })
+
+    # ── 8. Fuel for the day ──
+    fuel_entries = get_fuel_entries(prod_id)
+    fuel_today = [e for e in fuel_entries if e.get("date") == target_date]
+    cur_diesel = float(get_setting("fuel_price_diesel", "0"))
+    cur_petrol = float(get_setting("fuel_price_petrol", "0"))
+    locked_prices = get_fuel_locked_prices()
+    fuel_liters = sum(e.get("liters", 0) or 0 for e in fuel_today)
+    fuel_cost = 0
+    for e in fuel_today:
+        liters = e.get("liters", 0) or 0
+        ft = e.get("fuel_type", "DIESEL")
+        if target_date in locked_prices:
+            price = locked_prices[target_date]["diesel_price"] if ft == "DIESEL" else locked_prices[target_date]["petrol_price"]
+        else:
+            price = cur_diesel if ft == "DIESEL" else cur_petrol
+        fuel_cost += liters * price
+
+    fuel_summary = {
+        "entries": len(fuel_today),
+        "total_liters": round(fuel_liters, 1),
+        "total_cost": round(fuel_cost, 2),
+        "diesel_price": cur_diesel,
+        "petrol_price": cur_petrol,
+    }
+
+    # ── 9. Location schedules for the day ──
+    loc_schedules = get_location_schedules(prod_id)
+    locations_today = [
+        {"location_name": ls["location_name"], "status": ls.get("status"), "notes": ls.get("notes")}
+        for ls in loc_schedules if ls.get("date") == target_date
+    ]
+
+    return jsonify({
+        "date": target_date,
+        "schedule": schedule,
+        "boats": boats_today,
+        "picture_boats": picture_boats_today,
+        "security_boats": security_boats_today,
+        "transport": transport_today,
+        "labour": labour_today,
+        "guards": guards_today,
+        "fuel": fuel_summary,
+        "locations": locations_today,
+        "counts": {
+            "boats": len(boats_today),
+            "picture_boats": len(picture_boats_today),
+            "security_boats": len(security_boats_today),
+            "transport": len(transport_today),
+            "labour": len(labour_today),
+            "guards": len(guards_today),
+            "fleet_total": len(boats_today) + len(picture_boats_today) + len(security_boats_today),
+            "crew_total": len(labour_today) + len(guards_today),
+        },
+    })
+
+
 # ─── Dashboard ───────────────────────────────────────────────────────────────
 
 @app.route("/api/productions/<int:prod_id>/dashboard", methods=["GET"])
@@ -5253,6 +6437,266 @@ def api_dashboard(prod_id):
     })
 
 
+# ─── Executive Dashboard KPIs (P5.1) ──────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/dashboard/kpis", methods=["GET"])
+def api_dashboard_kpis(prod_id):
+    """Return executive KPIs: fleet coverage, crew coverage, unconfirmed assignments, breakdowns."""
+    prod_or_404(prod_id)
+    from datetime import datetime as dt, timedelta
+
+    from database import _is_assignment_active_on
+
+    today = dt.now().strftime("%Y-%m-%d")
+    horizon = [(dt.now() + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(3)]
+
+    # All fleet assignments (boats + picture boats + security boats + transport)
+    boat_assigns = get_boat_assignments(prod_id, context='boats')
+    pb_assigns = get_picture_boat_assignments(prod_id)
+    sb_assigns = get_security_boat_assignments(prod_id)
+    tr_assigns = get_transport_assignments(prod_id)
+    fleet_all = boat_assigns + pb_assigns + sb_assigns + tr_assigns
+
+    # Fleet coverage: % of functions with a vessel/vehicle assigned for next 3 days
+    functions_needing = 0
+    functions_covered = 0
+    for a in fleet_all:
+        for d in horizon:
+            if _is_assignment_active_on(d, a):
+                functions_needing += 1
+                has_asset = (a.get("boat_id") or a.get("picture_boat_id") or
+                             a.get("security_boat_id") or a.get("vehicle_id"))
+                if has_asset and a.get("assignment_status") != "breakdown":
+                    functions_covered += 1
+                break
+    fleet_coverage = round(functions_covered / max(functions_needing, 1) * 100, 1)
+
+    # Crew coverage: % of guard + labour posts filled
+    helper_assigns = get_helper_assignments(prod_id)
+    guard_assigns = get_guard_camp_assignments(prod_id)
+    crew_all = helper_assigns + guard_assigns
+
+    crew_needing = 0
+    crew_covered = 0
+    for a in crew_all:
+        for d in horizon:
+            if _is_assignment_active_on(d, a):
+                crew_needing += 1
+                has_person = a.get("helper_id") or a.get("helper_name_override")
+                if has_person and a.get("assignment_status") not in ("estimate", "off"):
+                    crew_covered += 1
+                break
+    crew_coverage = round(crew_covered / max(crew_needing, 1) * 100, 1)
+
+    # Unconfirmed at J-2 (assignments still 'estimate' within 2 days)
+    j2 = [(dt.now() + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(3)]
+    all_assigns = fleet_all + crew_all
+    unconfirmed = 0
+    for a in all_assigns:
+        if a.get("assignment_status") == "estimate":
+            for d in j2:
+                if _is_assignment_active_on(d, a):
+                    unconfirmed += 1
+                    break
+
+    # Breakdowns: fleet items with status 'breakdown'
+    breakdowns = sum(1 for a in fleet_all if a.get("assignment_status") == "breakdown")
+
+    return jsonify({
+        "fleet_coverage": fleet_coverage,
+        "crew_coverage": crew_coverage,
+        "unconfirmed_assignments": unconfirmed,
+        "breakdowns": breakdowns,
+    })
+
+
+@app.route("/api/productions/<int:prod_id>/dashboard/alerts", methods=["GET"])
+def api_dashboard_alerts(prod_id):
+    """Return executive alerts: unconfirmed at J-2, breakdowns, budget overruns >10%."""
+    prod_or_404(prod_id)
+    from datetime import datetime as dt, timedelta
+
+    from database import _is_assignment_active_on
+
+    today = dt.now().strftime("%Y-%m-%d")
+    j2 = [(dt.now() + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(3)]
+    alerts = []
+
+    # All assignments
+    boat_assigns = get_boat_assignments(prod_id, context='boats')
+    pb_assigns = get_picture_boat_assignments(prod_id)
+    sb_assigns = get_security_boat_assignments(prod_id)
+    tr_assigns = get_transport_assignments(prod_id)
+    helper_assigns = get_helper_assignments(prod_id)
+    guard_assigns = get_guard_camp_assignments(prod_id)
+    fleet_all = boat_assigns + pb_assigns + sb_assigns + tr_assigns
+    all_assigns = fleet_all + helper_assigns + guard_assigns
+
+    # 1. Unconfirmed assignments at J-2
+    for a in all_assigns:
+        if a.get("assignment_status") == "estimate":
+            for d in j2:
+                if _is_assignment_active_on(d, a):
+                    name = (a.get("function_name") or a.get("boat_name_override")
+                            or a.get("helper_name_override") or f"#{a.get('id','?')}")
+                    alerts.append({
+                        "type": "unconfirmed",
+                        "severity": "warning",
+                        "msg": f"Unconfirmed assignment: {name} (estimate, active within 2 days)",
+                        "entity_id": a.get("id"),
+                    })
+                    break
+
+    # 2. Breakdowns
+    for a in fleet_all:
+        if a.get("assignment_status") == "breakdown":
+            name = (a.get("boat_name") or a.get("name") or a.get("vehicle_name")
+                    or a.get("boat_name_override") or f"#{a.get('id','?')}")
+            alerts.append({
+                "type": "breakdown",
+                "severity": "danger",
+                "msg": f"Breakdown: {name}",
+                "entity_id": a.get("id"),
+            })
+
+    # 3. Budget overruns >10% per department
+    dept_data = {}
+    def _add_dept(key, rows):
+        est = sum(r.get("amount_estimate") or 0 for r in rows if r.get("working_days"))
+        act = sum(r.get("amount_actual") or 0 for r in rows if r.get("working_days"))
+        dept_data[key] = {"estimate": est, "actual": act}
+
+    _add_dept("boats", boat_assigns)
+    _add_dept("picture_boats", pb_assigns)
+    _add_dept("security_boats", sb_assigns)
+    _add_dept("transport", tr_assigns)
+    _add_dept("labour", helper_assigns)
+    _add_dept("guards", guard_assigns)
+
+    dept_labels = {
+        "boats": "Boats", "picture_boats": "Picture Boats",
+        "security_boats": "Security Boats", "transport": "Transport",
+        "labour": "Labour", "guards": "Guards",
+    }
+    for key, d in dept_data.items():
+        est = d["estimate"]
+        act = d["actual"]
+        if est > 0:
+            overrun_pct = round((act - est) / est * 100, 1)
+            if overrun_pct > 10:
+                alerts.append({
+                    "type": "budget_overrun",
+                    "severity": "danger" if overrun_pct > 25 else "warning",
+                    "msg": f"{dept_labels.get(key, key)}: +{overrun_pct}% over budget",
+                    "dept": key,
+                    "overrun_pct": overrun_pct,
+                })
+                _notify_budget_overrun(prod_id, dept_labels.get(key, key), overrun_pct)
+
+    return jsonify({"alerts": alerts, "count": len(alerts)})
+
+
+@app.route("/api/productions/<int:prod_id>/dashboard/burnrate", methods=["GET"])
+def api_dashboard_burnrate(prod_id):
+    """Return burn rate data: cumulative spend per day, linear projection, % consumed."""
+    prod_or_404(prod_id)
+    from datetime import datetime as dt
+
+    shooting_days = get_shooting_days(prod_id)
+    today = dt.now().strftime("%Y-%m-%d")
+
+    # Get daily budget breakdown
+    daily = get_daily_budget(prod_id)
+    days_list = daily.get("days", [])
+
+    # Cumulative spend per day
+    cumulative = 0
+    burn_data = []
+    for d in days_list:
+        total_day = d.get("total", 0) or 0
+        if d["date"] <= today:
+            cumulative += total_day
+            burn_data.append({
+                "date": d["date"],
+                "day_number": d.get("day_number"),
+                "daily": round(total_day, 2),
+                "cumulative": round(cumulative, 2),
+                "is_actual": True,
+            })
+        else:
+            burn_data.append({
+                "date": d["date"],
+                "day_number": d.get("day_number"),
+                "daily": round(total_day, 2),
+                "cumulative": None,
+                "is_actual": False,
+            })
+
+    # Compute totals
+    total_spent = cumulative
+    days_elapsed = sum(1 for d in days_list if d["date"] <= today)
+    total_days = len(days_list)
+    days_remaining = total_days - days_elapsed
+
+    # Linear projection
+    daily_rate = total_spent / max(days_elapsed, 1)
+    projected_cumulative = cumulative
+    for d in burn_data:
+        if not d["is_actual"]:
+            projected_cumulative += daily_rate
+            d["projected_cumulative"] = round(projected_cumulative, 2)
+
+    # Total budget estimate
+    boat_assigns = get_boat_assignments(prod_id, context='boats')
+    pb_assigns = get_picture_boat_assignments(prod_id)
+    sb_assigns = get_security_boat_assignments(prod_id)
+    tr_assigns = get_transport_assignments(prod_id)
+    helper_assigns = get_helper_assignments(prod_id)
+    guard_assigns = get_guard_camp_assignments(prod_id)
+    all_assigns = boat_assigns + pb_assigns + sb_assigns + tr_assigns + helper_assigns + guard_assigns
+
+    total_estimate = sum(r.get("amount_estimate") or 0 for r in all_assigns if r.get("working_days"))
+    budget_consumed_pct = round(total_spent / max(total_estimate, 1) * 100, 1)
+
+    return jsonify({
+        "burn_data": burn_data,
+        "total_spent": round(total_spent, 2),
+        "total_estimate": round(total_estimate, 2),
+        "budget_consumed_pct": budget_consumed_pct,
+        "daily_rate": round(daily_rate, 2),
+        "projected_total": round(daily_rate * total_days, 2),
+        "days_elapsed": days_elapsed,
+        "days_remaining": days_remaining,
+    })
+
+
+# ─── Export PDF Dashboard (P5.4) ─────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/export/dashboard-pdf", methods=["GET"])
+def api_export_dashboard_pdf(prod_id):
+    """Generate and return a one-page PDF summary of the executive dashboard."""
+    from datetime import datetime as dt
+    from export_dashboard import generate_dashboard_pdf
+
+    prod = prod_or_404(prod_id)
+
+    # Fetch KPI data by calling endpoint functions directly
+    kpis = api_dashboard_kpis(prod_id).get_json()
+    alerts_data = api_dashboard_alerts(prod_id).get_json()
+    burnrate = api_dashboard_burnrate(prod_id).get_json()
+
+    production_name = prod.get("name", prod.get("title", f"Production #{prod_id}"))
+    pdf_bytes = generate_dashboard_pdf(production_name, kpis, alerts_data, burnrate)
+
+    response = make_response(pdf_bytes)
+    response.headers['Content-Type'] = 'application/pdf'
+    safe_name = production_name.replace(' ', '_').replace('/', '-')
+    response.headers['Content-Disposition'] = (
+        f'attachment; filename="dashboard_{safe_name}_{dt.now().strftime("%Y%m%d")}.pdf"'
+    )
+    return response
+
+
 # ─── Conflict Alerts (AXE 7.3) ────────────────────────────────────────────────
 
 @app.route("/api/productions/<int:prod_id>/alerts", methods=["GET"])
@@ -5427,6 +6871,64 @@ def api_budget_daily(prod_id):
     """Return cost breakdown per shooting day."""
     prod_or_404(prod_id)
     return jsonify_cached(get_daily_budget(prod_id))
+
+
+# ─── Budget Variance (P5.5) ───────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/budget/variance", methods=["GET"])
+def api_budget_variance(prod_id):
+    """Return estimated vs actual variance per department with drill-down rows."""
+    prod_or_404(prod_id)
+    budget = get_budget(prod_id)
+    by_dept = budget.get("by_department", {})
+
+    departments = []
+    for dept_name, ddata in by_dept.items():
+        estimated = ddata.get("total_estimate", 0) or 0
+        actual = ddata.get("total_actual", 0) or 0
+        variance = actual - estimated
+        variance_pct = round((variance / estimated) * 100, 1) if estimated else 0
+
+        # Drill-down: individual lines with variance
+        lines = []
+        for row in ddata.get("lines", []):
+            r_est = row.get("amount_estimate", 0) or 0
+            r_act = row.get("amount_actual", 0) or 0
+            r_var = r_act - r_est
+            r_pct = round((r_var / r_est) * 100, 1) if r_est else 0
+            lines.append({
+                "name": row.get("name", ""),
+                "detail": row.get("boat") or row.get("detail") or "",
+                "estimated": round(r_est, 2),
+                "actual": round(r_act, 2),
+                "variance": round(r_var, 2),
+                "variance_percent": r_pct,
+            })
+
+        departments.append({
+            "department_name": dept_name,
+            "estimated_total": round(estimated, 2),
+            "actual_total": round(actual, 2),
+            "variance": round(variance, 2),
+            "variance_percent": variance_pct,
+            "lines": lines,
+        })
+
+    # Sort by absolute variance descending
+    departments.sort(key=lambda d: abs(d["variance"]), reverse=True)
+
+    grand_est = budget.get("grand_total_estimate", 0)
+    grand_act = budget.get("grand_total_actual", 0)
+    grand_var = grand_act - grand_est
+    grand_pct = round((grand_var / grand_est) * 100, 1) if grand_est else 0
+
+    return jsonify({
+        "departments": departments,
+        "grand_estimated": round(grand_est, 2),
+        "grand_actual": round(grand_act, 2),
+        "grand_variance": round(grand_var, 2),
+        "grand_variance_percent": grand_pct,
+    })
 
 
 # ─── Budget Snapshots & Price Log (AXE 6.3) ──────────────────────────────────
@@ -5624,6 +7126,32 @@ def _notify_assignment_change(prod_id, action, entity_type, entity_name):
             f'{nickname} {verb} {entity_type}',
             entity_name,
             exclude_user_id=getattr(g, 'user_id', None)
+        )
+    except Exception:
+        pass
+
+
+def _notify_vessel_breakdown(prod_id, vessel_name, module_label):
+    """Send notification when a vessel/vehicle assignment status changes to breakdown."""
+    try:
+        nickname = getattr(g, 'nickname', 'Someone')
+        create_notifications_for_production(
+            prod_id, 'vessel_breakdown',
+            f'{vessel_name} is in breakdown',
+            f'{nickname} marked {vessel_name} ({module_label}) as breakdown',
+            exclude_user_id=getattr(g, 'user_id', None)
+        )
+    except Exception:
+        pass
+
+
+def _notify_budget_overrun(prod_id, dept_label, overrun_pct):
+    """Send notification when budget exceeds +10% for a department."""
+    try:
+        create_notifications_for_production(
+            prod_id, 'budget_overrun',
+            f'{dept_label}: +{overrun_pct}% over budget',
+            f'Department {dept_label} has exceeded its estimated budget by {overrun_pct}%',
         )
     except Exception:
         pass
@@ -5834,6 +7362,619 @@ def api_csv_template(module):
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment; filename={module}_template.csv"}
     )
+
+
+# ─── Soft Delete: Restore endpoints (P2.4) ───────────────────────────────────
+
+_RESTORE_ROUTES = {
+    "boats":              ("boats",              "/api/boats/<int:entity_id>/restore"),
+    "picture_boats":      ("picture_boats",      "/api/picture-boats/<int:entity_id>/restore"),
+    "security_boats":     ("security_boats",     "/api/security-boats/<int:entity_id>/restore"),
+    "transport_vehicles": ("transport_vehicles",  "/api/transport-vehicles/<int:entity_id>/restore"),
+    "helpers":            ("helpers",             "/api/helpers/<int:entity_id>/restore"),
+    "guard_camp_workers": ("guard_camp_workers",  "/api/guard-camp-workers/<int:entity_id>/restore"),
+    "locations":          ("locations",           "/api/locations/<int:entity_id>/restore"),
+    "boat_functions":     ("boat_functions",      "/api/boat-functions/<int:entity_id>/restore"),
+    "physical_vessels":   ("physical_vessels",    "/api/physical-vessels/<int:entity_id>/restore"),
+    "fuel_machinery":     ("fuel_machinery",      "/api/fuel-machinery/<int:entity_id>/restore"),
+    "guard_posts":        ("guard_posts",         "/api/guard-posts/<int:entity_id>/restore"),
+    "fnb_items":          ("fnb_items",           "/api/fnb-items/<int:entity_id>/restore"),
+}
+
+for _key, (_table, _route) in _RESTORE_ROUTES.items():
+    def _make_restore(table):
+        def _restore(entity_id):
+            restore_entity(table, entity_id)
+            return jsonify({"restored": entity_id})
+        _restore.__name__ = f"api_restore_{table}"
+        return _restore
+    app.add_url_rule(_route, view_func=_make_restore(_table), methods=["POST"])
+
+
+@app.route("/api/fnb-categories/<int:cat_id>/restore", methods=["POST"])
+def api_restore_fnb_category(cat_id):
+    restore_fnb_category(cat_id)
+    return jsonify({"restored": cat_id})
+
+
+# ─── Documents & Versioning (P5.7) ────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/documents", methods=["GET"])
+def api_get_documents(prod_id):
+    prod_or_404(prod_id)
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM documents WHERE production_id = ? ORDER BY uploaded_at DESC",
+        (prod_id,)
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/productions/<int:prod_id>/documents", methods=["POST"])
+def api_create_document(prod_id):
+    prod_or_404(prod_id)
+    db = get_db()
+    data = request.form if request.files else request.get_json(force=True)
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    doc_type = data.get("doc_type", "")
+    department_id = data.get("department_id") or None
+    status = data.get("status", "draft")
+    user_id = getattr(g, 'user_id', None)
+    nickname = getattr(g, 'nickname', None)
+
+    file_path = None
+    fmt = data.get("format", "")
+    if "file" in request.files:
+        f = request.files["file"]
+        if f.filename:
+            import werkzeug.utils
+            upload_dir = os.path.join(os.path.dirname(__file__), 'data', 'documents', str(prod_id))
+            os.makedirs(upload_dir, exist_ok=True)
+            safe_name = werkzeug.utils.secure_filename(f.filename)
+            dest = os.path.join(upload_dir, safe_name)
+            f.save(dest)
+            file_path = f"data/documents/{prod_id}/{safe_name}"
+            fmt = fmt or os.path.splitext(safe_name)[1].lstrip('.')
+
+    cur = db.execute(
+        """INSERT INTO documents (production_id, department_id, name, doc_type, format, file_path, uploaded_by, status, current_version)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+        (prod_id, department_id, name, doc_type, fmt, file_path, user_id, status)
+    )
+    doc_id = cur.lastrowid
+
+    # Create initial version entry
+    db.execute(
+        """INSERT INTO document_versions (document_id, version_number, file_path, uploaded_by, upload_nickname)
+           VALUES (?, 1, ?, ?, ?)""",
+        (doc_id, file_path, user_id, nickname)
+    )
+    db.commit()
+    return jsonify({"id": doc_id}), 201
+
+
+@app.route("/api/productions/<int:prod_id>/documents/<int:doc_id>", methods=["PUT"])
+def api_update_document(prod_id, doc_id):
+    prod_or_404(prod_id)
+    db = get_db()
+    row = db.execute("SELECT * FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id)).fetchone()
+    if not row:
+        abort(404, description="Document not found")
+    data = request.get_json(force=True)
+    name = data.get("name", row["name"])
+    doc_type = data.get("doc_type", row["doc_type"])
+    department_id = data.get("department_id", row["department_id"])
+    db.execute(
+        "UPDATE documents SET name = ?, doc_type = ?, department_id = ? WHERE id = ?",
+        (name, doc_type, department_id, doc_id)
+    )
+    db.commit()
+    return jsonify({"updated": doc_id})
+
+
+@app.route("/api/productions/<int:prod_id>/documents/<int:doc_id>", methods=["DELETE"])
+def api_delete_document(prod_id, doc_id):
+    prod_or_404(prod_id)
+    db = get_db()
+    db.execute("DELETE FROM document_versions WHERE document_id = ?", (doc_id,))
+    db.execute("DELETE FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id))
+    db.commit()
+    return jsonify({"deleted": doc_id})
+
+
+@app.route("/api/productions/<int:prod_id>/documents/<int:doc_id>/status", methods=["PUT"])
+def api_update_document_status(prod_id, doc_id):
+    prod_or_404(prod_id)
+    db = get_db()
+    row = db.execute("SELECT * FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id)).fetchone()
+    if not row:
+        abort(404, description="Document not found")
+    data = request.get_json(force=True)
+    new_status = data.get("status", "").strip()
+    valid = ('draft', 'under_review', 'approved', 'archived')
+    if new_status not in valid:
+        return jsonify({"error": f"status must be one of {valid}"}), 400
+    db.execute("UPDATE documents SET status = ? WHERE id = ?", (new_status, doc_id))
+    db.commit()
+    return jsonify({"id": doc_id, "status": new_status})
+
+
+@app.route("/api/productions/<int:prod_id>/documents/<int:doc_id>/versions", methods=["GET"])
+def api_get_document_versions(prod_id, doc_id):
+    prod_or_404(prod_id)
+    db = get_db()
+    row = db.execute("SELECT id FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id)).fetchone()
+    if not row:
+        abort(404, description="Document not found")
+    versions = db.execute(
+        "SELECT * FROM document_versions WHERE document_id = ? ORDER BY version_number DESC",
+        (doc_id,)
+    ).fetchall()
+    return jsonify([dict(v) for v in versions])
+
+
+@app.route("/api/productions/<int:prod_id>/documents/<int:doc_id>/versions", methods=["POST"])
+def api_upload_document_version(prod_id, doc_id):
+    prod_or_404(prod_id)
+    db = get_db()
+    row = db.execute("SELECT * FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id)).fetchone()
+    if not row:
+        abort(404, description="Document not found")
+
+    user_id = getattr(g, 'user_id', None)
+    nickname = getattr(g, 'nickname', None)
+    current_ver = row["current_version"] or 1
+    new_ver = current_ver + 1
+
+    file_path = None
+    if "file" in request.files:
+        f = request.files["file"]
+        if f.filename:
+            import werkzeug.utils
+            upload_dir = os.path.join(os.path.dirname(__file__), 'data', 'documents', str(prod_id))
+            os.makedirs(upload_dir, exist_ok=True)
+            safe_name = werkzeug.utils.secure_filename(f.filename)
+            base, ext = os.path.splitext(safe_name)
+            versioned_name = f"{base}_v{new_ver}{ext}"
+            dest = os.path.join(upload_dir, versioned_name)
+            f.save(dest)
+            file_path = f"data/documents/{prod_id}/{versioned_name}"
+
+    db.execute(
+        """INSERT INTO document_versions (document_id, version_number, file_path, uploaded_by, upload_nickname)
+           VALUES (?, ?, ?, ?, ?)""",
+        (doc_id, new_ver, file_path, user_id, nickname)
+    )
+    db.execute(
+        "UPDATE documents SET current_version = ?, file_path = ? WHERE id = ?",
+        (new_ver, file_path or row["file_path"], doc_id)
+    )
+    db.commit()
+    return jsonify({"id": doc_id, "version": new_ver}), 201
+
+
+@app.route("/api/documents/download/<path:filepath>", methods=["GET"])
+def api_download_document(filepath):
+    """Serve a document file from the data/documents directory."""
+    full = os.path.join(os.path.dirname(__file__), filepath)
+    if not os.path.isfile(full):
+        abort(404, description="File not found")
+    from flask import send_file
+    return send_file(full, as_attachment=True)
+
+
+# ─── Daily Production Report (P5.9) ──────────────────────────────────────────
+
+def _assignment_active_on_date(asgn, target_date):
+    """Check if an assignment is active on a specific date (respects day_overrides)."""
+    start = (asgn.get("start_date") or "")[:10]
+    end = (asgn.get("end_date") or "")[:10]
+    if not start or not end:
+        return False
+    if target_date < start or target_date > end:
+        # Check if override explicitly activates this date
+        overrides = json.loads(asgn.get("day_overrides") or "{}")
+        ov = overrides.get(target_date, "")
+        return bool(ov and ov != "empty")
+    # Date is in range - check if override disables it
+    overrides = json.loads(asgn.get("day_overrides") or "{}")
+    return overrides.get(target_date, "") != "empty"
+
+
+def _daily_rate(asgn, rate_actual_key="boat_daily_rate_actual",
+                rate_estimate_key="boat_daily_rate_estimate"):
+    """Get effective daily rate (price_override > actual > estimate)."""
+    if asgn.get("price_override") is not None:
+        return asgn["price_override"]
+    return asgn.get(rate_actual_key) or asgn.get(rate_estimate_key) or 0
+
+
+@app.route("/api/productions/<int:prod_id>/reports/daily", methods=["GET"])
+def api_daily_report(prod_id):
+    """Generate a PDF daily production report for a given date."""
+    from datetime import datetime as dt
+    from daily_report import generate_daily_report
+
+    prod = prod_or_404(prod_id)
+    target_date = request.args.get("date")
+    if not target_date:
+        target_date = dt.now().strftime("%Y-%m-%d")
+
+    production_name = prod.get("name", prod.get("title", f"Production #{prod_id}"))
+
+    # ── PDT info for the day ──
+    shooting_days = get_shooting_days(prod_id)
+    day_info = {"day_number": "?", "location": "N/A", "status": "", "events": []}
+    for day in shooting_days:
+        if (day.get("date") or "")[:10] == target_date:
+            day_info = day
+            break
+
+    # ── Boats active on this date ──
+    boat_assigns = get_boat_assignments(prod_id, context='boats')
+    boats = []
+    for a in boat_assigns:
+        if _assignment_active_on_date(a, target_date):
+            boats.append({
+                "name": a.get("boat_name") or a.get("boat_name_override") or "",
+                "function": a.get("function_name") or "",
+                "group_name": a.get("function_group") or "",
+                "status": a.get("assignment_status") or "",
+                "rate": _daily_rate(a, "boat_daily_rate_actual", "boat_daily_rate_estimate"),
+            })
+
+    # ── Picture Boats ──
+    pb_assigns = get_picture_boat_assignments(prod_id)
+    picture_boats = []
+    for a in pb_assigns:
+        if _assignment_active_on_date(a, target_date):
+            picture_boats.append({
+                "name": a.get("boat_name") or a.get("boat_name_override") or "",
+                "function": a.get("function_name") or "",
+                "group_name": a.get("function_group") or "",
+                "status": a.get("assignment_status") or "",
+                "rate": _daily_rate(a, "boat_daily_rate_actual", "boat_daily_rate_estimate"),
+            })
+
+    # ── Security Boats ──
+    sb_assigns = get_security_boat_assignments(prod_id)
+    security_boats = []
+    for a in sb_assigns:
+        if _assignment_active_on_date(a, target_date):
+            security_boats.append({
+                "name": a.get("boat_name") or a.get("boat_name_override") or "",
+                "function": a.get("function_name") or "",
+                "group_name": a.get("function_group") or "",
+                "status": a.get("assignment_status") or "",
+                "rate": _daily_rate(a, "boat_daily_rate_actual", "boat_daily_rate_estimate"),
+            })
+
+    # ── Transport ──
+    tr_assigns = get_transport_assignments(prod_id)
+    vehicles = []
+    for a in tr_assigns:
+        if _assignment_active_on_date(a, target_date):
+            vehicles.append({
+                "name": a.get("vehicle_name") or "",
+                "vehicle_type": a.get("vehicle_type") or "",
+                "group_name": a.get("function_group") or "",
+                "rate": _daily_rate(a, "vehicle_daily_rate_actual", "vehicle_daily_rate_estimate"),
+            })
+
+    # ── Personnel / Labour ──
+    helper_assigns = get_helper_assignments(prod_id)
+    personnel = []
+    for a in helper_assigns:
+        if _assignment_active_on_date(a, target_date):
+            personnel.append({
+                "name": a.get("helper_name") or "",
+                "function": a.get("function_name") or "",
+                "group_name": a.get("function_group") or a.get("helper_group") or "",
+                "rate": _daily_rate(a, "helper_daily_rate_actual", "helper_daily_rate_estimate"),
+            })
+
+    # ── Guards (Camp) ──
+    guard_assigns = get_guard_camp_assignments(prod_id)
+    guards = []
+    for a in guard_assigns:
+        if _assignment_active_on_date(a, target_date):
+            guards.append({
+                "name": a.get("helper_name") or "",
+                "post": a.get("function_name") or "",
+                "shift": a.get("function_group") or "",
+                "rate": _daily_rate(a, "helper_daily_rate_actual", "helper_daily_rate_estimate"),
+            })
+
+    # ── Fuel entries for this date ──
+    all_fuel = get_fuel_entries(prod_id)
+    fuel = [f for f in all_fuel if (f.get("date") or "")[:10] == target_date]
+
+    # ── Alerts for this date ──
+    alerts_resp = api_alerts(prod_id)
+    all_alerts = alerts_resp.get_json() if hasattr(alerts_resp, 'get_json') else []
+    day_alerts = [a for a in all_alerts if a.get("date", "") == target_date]
+
+    # ── Generate PDF ──
+    pdf_bytes = generate_daily_report(
+        production_name=production_name,
+        report_date=target_date,
+        day_info=day_info,
+        boats=boats,
+        picture_boats=picture_boats,
+        security_boats=security_boats,
+        vehicles=vehicles,
+        personnel=personnel,
+        fuel_entries=fuel,
+        alerts=day_alerts,
+        guards=guards,
+    )
+
+    response = make_response(pdf_bytes)
+    response.headers['Content-Type'] = 'application/pdf'
+    safe_name = production_name.replace(' ', '_').replace('/', '-')
+    response.headers['Content-Disposition'] = (
+        f'attachment; filename="daily_report_{safe_name}_{target_date}.pdf"'
+    )
+    return response
+
+
+@app.route("/api/productions/<int:prod_id>/reports/daily/data", methods=["GET"])
+def api_daily_report_data(prod_id):
+    """Return daily report data as JSON (for dashboard preview)."""
+    from datetime import datetime as dt
+
+    prod = prod_or_404(prod_id)
+    target_date = request.args.get("date")
+    if not target_date:
+        target_date = dt.now().strftime("%Y-%m-%d")
+
+    shooting_days = get_shooting_days(prod_id)
+    day_info = None
+    for day in shooting_days:
+        if (day.get("date") or "")[:10] == target_date:
+            day_info = day
+            break
+
+    # Count active resources
+    boats_count = sum(1 for a in get_boat_assignments(prod_id, context='boats')
+                      if _assignment_active_on_date(a, target_date))
+    pb_count = sum(1 for a in get_picture_boat_assignments(prod_id)
+                   if _assignment_active_on_date(a, target_date))
+    sb_count = sum(1 for a in get_security_boat_assignments(prod_id)
+                   if _assignment_active_on_date(a, target_date))
+    tr_count = sum(1 for a in get_transport_assignments(prod_id)
+                   if _assignment_active_on_date(a, target_date))
+    pers_count = sum(1 for a in get_helper_assignments(prod_id)
+                     if _assignment_active_on_date(a, target_date))
+    guard_count = sum(1 for a in get_guard_camp_assignments(prod_id)
+                      if _assignment_active_on_date(a, target_date))
+    fuel_count = sum(1 for f in get_fuel_entries(prod_id)
+                     if (f.get("date") or "")[:10] == target_date)
+
+    return jsonify({
+        "date": target_date,
+        "day_number": day_info.get("day_number") if day_info else None,
+        "location": day_info.get("location") if day_info else None,
+        "has_shooting_day": day_info is not None,
+        "resources": {
+            "boats": boats_count,
+            "picture_boats": pb_count,
+            "security_boats": sb_count,
+            "transport": tr_count,
+            "personnel": pers_count,
+            "guards": guard_count,
+            "fuel_entries": fuel_count,
+        },
+        "total_resources": boats_count + pb_count + sb_count + tr_count + pers_count + guard_count,
+    })
+
+
+# TODO: Add a cron job (e.g. via APScheduler or system cron) to auto-generate
+# the daily report at 06:00 each morning for the current shooting day:
+#   0 6 * * * curl -H "Authorization: Bearer $TOKEN" \
+#     "https://shootlogix.app/api/productions/<id>/reports/daily?date=$(date +%Y-%m-%d)" \
+#     -o /data/reports/daily_$(date +%Y-%m-%d).pdf
+
+
+# ─── Holidays API (P5.10) ─────────────────────────────────────────────────────
+
+@app.route("/api/holidays", methods=["GET"])
+def api_holidays():
+    """Return all holidays (optionally filtered by country)."""
+    country = request.args.get("country")
+    with get_db() as conn:
+        if country:
+            rows = conn.execute("SELECT id, date, name, country FROM holidays WHERE country=?", (country,)).fetchall()
+        else:
+            rows = conn.execute("SELECT id, date, name, country FROM holidays").fetchall()
+        return jsonify([dict(r) for r in rows])
+
+
+# ─── Timeline (Gantt) ─────────────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/timeline", methods=["GET"])
+def api_timeline(prod_id):
+    """Aggregate all resources and assignments for the Gantt timeline view."""
+    prod = prod_or_404(prod_id)
+    with get_db() as conn:
+        # Production date range
+        start_date = prod.get('start_date') or prod.get('shooting_start')
+        end_date = prod.get('end_date') or prod.get('shooting_end')
+
+        # Shooting days
+        days = [dict(r) for r in conn.execute(
+            "SELECT id, date, day_number, location, game_name, status FROM shooting_days WHERE production_id=? ORDER BY date",
+            (prod_id,)
+        ).fetchall()]
+
+        resources = []
+
+        # --- Boats ---
+        boats = conn.execute("SELECT id, name, group_name FROM boats WHERE production_id=?", (prod_id,)).fetchall()
+        for b in boats:
+            assignments = conn.execute(
+                "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM boat_assignments WHERE boat_id=?",
+                (b['id'],)
+            ).fetchall()
+            resources.append({
+                'id': f"boat-{b['id']}", 'name': b['name'], 'type': 'boat', 'group': 'Boats',
+                'subgroup': b['group_name'] or 'Boats',
+                'assignments': [_timeline_assign(a) for a in assignments]
+            })
+
+        # --- Picture boats ---
+        pboats = conn.execute("SELECT id, name, group_name FROM picture_boats WHERE production_id=?", (prod_id,)).fetchall()
+        for b in pboats:
+            assignments = conn.execute(
+                "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM picture_boat_assignments WHERE picture_boat_id=?",
+                (b['id'],)
+            ).fetchall()
+            resources.append({
+                'id': f"pboat-{b['id']}", 'name': b['name'], 'type': 'picture_boat', 'group': 'Boats',
+                'subgroup': b['group_name'] or 'Picture Boats',
+                'assignments': [_timeline_assign(a) for a in assignments]
+            })
+
+        # --- Security boats ---
+        sboats = conn.execute("SELECT id, name, group_name FROM security_boats WHERE production_id=?", (prod_id,)).fetchall()
+        for b in sboats:
+            assignments = conn.execute(
+                "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM security_boat_assignments WHERE security_boat_id=?",
+                (b['id'],)
+            ).fetchall()
+            resources.append({
+                'id': f"sboat-{b['id']}", 'name': b['name'], 'type': 'security_boat', 'group': 'Boats',
+                'subgroup': b['group_name'] or 'Security Boats',
+                'assignments': [_timeline_assign(a) for a in assignments]
+            })
+
+        # --- Vehicles ---
+        vehicles = conn.execute("SELECT id, name, type FROM transport_vehicles WHERE production_id=?", (prod_id,)).fetchall()
+        for v in vehicles:
+            assignments = conn.execute(
+                "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM transport_assignments WHERE vehicle_id=?",
+                (v['id'],)
+            ).fetchall()
+            resources.append({
+                'id': f"vehicle-{v['id']}", 'name': v['name'], 'type': 'vehicle', 'group': 'Vehicles',
+                'subgroup': v['type'] or 'Vehicle',
+                'assignments': [_timeline_assign(a) for a in assignments]
+            })
+
+        # --- Labour (helpers) ---
+        helpers = conn.execute("SELECT id, name, role, group_name FROM helpers WHERE production_id=?", (prod_id,)).fetchall()
+        for h in helpers:
+            assignments = conn.execute(
+                "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM helper_assignments WHERE helper_id=?",
+                (h['id'],)
+            ).fetchall()
+            resources.append({
+                'id': f"helper-{h['id']}", 'name': h['name'], 'type': 'labour', 'group': 'Crew',
+                'subgroup': h['group_name'] or h['role'] or 'Labour',
+                'assignments': [_timeline_assign(a) for a in assignments]
+            })
+
+        # --- Guards (camp workers) ---
+        guards = conn.execute("SELECT id, name, role FROM guard_camp_workers WHERE production_id=?", (prod_id,)).fetchall()
+        for g in guards:
+            assignments = conn.execute(
+                "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM guard_camp_assignments WHERE worker_id=?",
+                (g['id'],)
+            ).fetchall()
+            resources.append({
+                'id': f"guard-{g['id']}", 'name': g['name'], 'type': 'guard', 'group': 'Crew',
+                'subgroup': g['role'] or 'Guards',
+                'assignments': [_timeline_assign(a) for a in assignments]
+            })
+
+        # --- Locations ---
+        locations = conn.execute("SELECT id, name, site FROM locations WHERE production_id=?", (prod_id,)).fetchall()
+        for loc in locations:
+            schedules = conn.execute(
+                "SELECT id, date, prep, filming, wrap FROM location_schedules WHERE location_id=?",
+                (loc['id'],)
+            ).fetchall()
+            loc_assignments = []
+            for s in schedules:
+                phases = []
+                if s['prep']: phases.append('P')
+                if s['filming']: phases.append('F')
+                if s['wrap']: phases.append('W')
+                if phases:
+                    loc_assignments.append({
+                        'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
+                        'status': 'confirmed', 'phases': '/'.join(phases)
+                    })
+            resources.append({
+                'id': f"loc-{loc['id']}", 'name': loc['name'], 'type': 'location', 'group': 'Locations',
+                'subgroup': loc['site'] or 'Location',
+                'assignments': loc_assignments
+            })
+
+        # Boat functions for label lookups
+        functions = [dict(f) for f in conn.execute(
+            "SELECT id, name, context FROM boat_functions WHERE production_id=?", (prod_id,)
+        ).fetchall()]
+
+    return jsonify({
+        'start_date': start_date,
+        'end_date': end_date,
+        'shooting_days': days,
+        'resources': resources,
+        'functions': functions,
+    })
+
+
+def _timeline_assign(row):
+    """Convert an assignment row to a timeline-friendly dict."""
+    d = {
+        'id': row['id'],
+        'start_date': row['start_date'],
+        'end_date': row['end_date'],
+        'status': row['assignment_status'] or 'confirmed',
+        'function_id': row['boat_function_id'],
+    }
+    if row['day_overrides']:
+        try:
+            d['day_overrides'] = json.loads(row['day_overrides']) if isinstance(row['day_overrides'], str) else row['day_overrides']
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return d
+
+
+# ─── Daily Checklists ─────────────────────────────────────────────────────────
+
+@app.route("/api/productions/<int:prod_id>/checklists/generate", methods=["POST"])
+def api_generate_checklist(prod_id):
+    date = request.args.get("date") or (request.json or {}).get("date")
+    if not date:
+        return jsonify({"error": "date parameter required"}), 400
+    checklist = generate_daily_checklist(prod_id, date)
+    return jsonify(checklist), 201
+
+
+@app.route("/api/productions/<int:prod_id>/checklists", methods=["GET"])
+def api_get_checklist(prod_id):
+    date = request.args.get("date")
+    if not date:
+        return jsonify({"error": "date parameter required"}), 400
+    checklist = get_daily_checklist(prod_id, date)
+    if not checklist:
+        return jsonify(None), 200
+    return jsonify(checklist)
+
+
+@app.route("/api/productions/<int:prod_id>/checklists/items/<int:item_id>/check", methods=["PUT"])
+def api_check_checklist_item(prod_id, item_id):
+    data = request.json or {}
+    checked = data.get("checked", True)
+    user_id = data.get("user_id")
+    item = check_checklist_item(item_id, checked, user_id)
+    if not item:
+        return jsonify({"error": "Item not found"}), 404
+    return jsonify(item)
 
 
 # ─── Bootstrap ────────────────────────────────────────────────────────────────

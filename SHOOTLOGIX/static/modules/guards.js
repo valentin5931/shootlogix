@@ -142,7 +142,9 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     const totalGuardDays = Object.values(byLoc).reduce((s, v) => s + v.totalGuardDays, 0);
     const totalBudget = totalGuardDays * GUARD_RATE_LOCATION;
 
-    // Get unique location names that have guard schedule entries
+    // Get unique location names that have guard schedule entries + map name -> location_id
+    const locIdByName = {};
+    guardSchedules.forEach(g => { if (g.location_id) locIdByName[g.location_name] = g.location_id; });
     const activeLocNames = [...new Set(guardSchedules.map(g => g.location_name))];
     activeLocNames.sort((a, b) => {
       const ta = typeByName[a] || 'game', tb = typeByName[b] || 'game';
@@ -158,7 +160,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     let html = `<div style="padding:1rem">
       <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
         <span class="section-title" style="margin:0">Location Guards</span>
-        <span style="font-size:.72rem;color:var(--text-4);padding:.15rem .5rem;background:var(--bg-surface);border-radius:4px">Editable &mdash; only active location/date cells (P/F/W) can be modified</span>
+        <span style="font-size:.72rem;color:var(--text-4);padding:.15rem .5rem;background:var(--bg-surface);border-radius:4px">Editable &mdash; only active location/date cells (<span data-tooltip="Prep / Film / Wrap">P/F/W</span>) can be modified</span>
         <div class="view-toggle">${viewBtns}</div>
         <div style="margin-left:auto;display:flex;gap:.3rem">
           <button class="btn btn-sm btn-secondary" onclick="App.gdlRefresh()">Refresh</button>
@@ -253,11 +255,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
                 return `<td class="${cellClass}" style="text-align:center;min-width:32px;height:28px;cursor:pointer;font-size:.7rem;font-weight:600"
                   title="${actStatus} - ${nb} guard${nb !== 1 ? 's' : ''} - click to edit"
-                  onclick="App.gdlCellClick('${esc(locName)}','${d}',${nb})">${nb}</td>`;
+                  onclick="App.gdlCellClick('${esc(locName)}','${d}',${nb},${locIdByName[locName] || 'null'})">${nb}</td>`;
               }).join('')}
             </tr>`;
             }).join('')}
-            ${!activeLocNames.length ? '<tr><td colspan="99" style="text-align:center;color:var(--text-4);padding:2rem">No locations with P/F/W schedules yet. Add schedule data in the LOCATIONS tab first.</td></tr>' : ''}
+            ${!activeLocNames.length ? '<tr><td colspan="99" style="text-align:center;color:var(--text-4);padding:2rem">No locations with <span data-tooltip="Prep / Film / Wrap">P/F/W</span> schedules yet. Add schedule data in the LOCATIONS tab first.</td></tr>' : ''}
           </tbody>
         </table>
       </div>`;
@@ -419,17 +421,15 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
 
   // Cell click -- prompt for guard count
-  async function gdlCellClick(locName, date, currentNb) {
+  async function gdlCellClick(locName, date, currentNb, locId) {
     const newVal = prompt(`Guards for ${locName} on ${date}:`, String(currentNb));
     if (newVal === null) return;
     const nb = parseInt(newVal, 10);
     if (isNaN(nb) || nb < 0) { toast('Invalid number', 'error'); return; }
     try {
-      await api('POST', `/api/productions/${state.prodId}/guard-schedules/update-guards`, {
-        location_name: locName,
-        date: date,
-        nb_guards: nb
-      });
+      const payload = { location_name: locName, date: date, nb_guards: nb };
+      if (locId) payload.location_id = locId;
+      await api('POST', `/api/productions/${state.prodId}/guard-schedules/update-guards`, payload);
       // Update local state
       const key = `${locName}|${date}`;
       const existing = state.guardLocSchedules.find(g => g.location_name === locName && g.date === date);
@@ -526,6 +526,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('ngp-confirm-btn').textContent = 'Create';
     $('ngp-delete-btn').classList.add('hidden');
     $('add-guard-overlay').classList.remove('hidden');
+    _SL._snapshotModal('add-guard-overlay');
   }
 
   function editGuardPost(postId) {
@@ -542,10 +543,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('ngp-confirm-btn').textContent = 'Save';
     $('ngp-delete-btn').classList.remove('hidden');
     $('add-guard-overlay').classList.remove('hidden');
+    _SL._snapshotModal('add-guard-overlay');
   }
 
-  function closeAddGuardModal() {
-    $('add-guard-overlay').classList.add('hidden');
+  function closeAddGuardModal(force) {
+    _SL._guardedClose('add-guard-overlay', () => $('add-guard-overlay').classList.add('hidden'), force);
   }
 
   async function saveGuardPost() {
@@ -570,7 +572,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       }
       state.guardPosts = await api('GET', `/api/productions/${state.prodId}/guard-posts`);
       state.guardSchedules = await api('GET', `/api/productions/${state.prodId}/guard-schedules`);
-      closeAddGuardModal();
+      closeAddGuardModal(true);
       renderGuards();
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -579,14 +581,21 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     const editId = $('ngp-edit-id').value;
     if (!editId) return;
     const post = (state.guardPosts || []).find(p => p.id === parseInt(editId));
-    if (!confirm(`Delete guard post "${post?.name}"? This will also delete all schedule data for this post.`)) return;
     try {
-      await api('DELETE', `/api/guard-posts/${editId}`);
-      toast('Guard post deleted');
-      state.guardPosts = await api('GET', `/api/productions/${state.prodId}/guard-posts`);
-      state.guardSchedules = await api('GET', `/api/productions/${state.prodId}/guard-schedules`);
-      closeAddGuardModal();
-      renderGuards();
+      const impact = await api('GET', `/api/guard-posts/${editId}/impact`);
+      const parts = [];
+      if (impact.guard_schedules > 0) parts.push(`${impact.guard_schedules} guard schedule(s)`);
+      const cascade = parts.length > 0 ? `\nThis will also remove ${parts.join(' and ')}.` : '';
+      showConfirm(`Delete guard post "${post?.name}"?${cascade}`, async () => {
+        try {
+          await api('DELETE', `/api/guard-posts/${editId}`);
+          toast('Guard post deleted');
+          state.guardPosts = await api('GET', `/api/productions/${state.prodId}/guard-posts`);
+          state.guardSchedules = await api('GET', `/api/productions/${state.prodId}/guard-schedules`);
+          closeAddGuardModal(true);
+          renderGuards();
+        } catch(e) { toast('Error: ' + e.message, 'error'); }
+      });
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -684,13 +693,18 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     return state.gcAssignments.filter(a => a.boat_function_id === funcId);
   }
 
-  function renderGcWorkerList() {
+  async function renderGcWorkerList() {
     const workers = _gcFilteredWorkers();
     const assignedIds = new Set(state.gcAssignments.filter(a => a.helper_id).map(a => a.helper_id));
     const container = $('gc-worker-list');
     if (!container) return;
+    const workerIds = workers.map(w => w.id);
+    if (workerIds.length) await App.loadCommentCounts('guards', workerIds);
     if (!workers.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No guards</div>';
+      container.innerHTML = SL.emptyState('shield',
+        'No guards registered yet',
+        'Add guards to assign them to base camp security functions.',
+        'Add a guard', "App.showAddGuardModal()");
       return;
     }
     container.innerHTML = workers.map(w => {
@@ -726,26 +740,32 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
             onclick="event.stopPropagation();App.gcOpenWorkerDetail(${w.id})">&#x270E;</button>
           <button class="boat-edit-btn" title="Duplicate" style="font-size:.65rem"
             onclick="event.stopPropagation();App.duplicateEntity('guard_camp',${w.id})">&#x2398;</button>
+          ${App.commentBadgeHTML('guards', w.id)}
           <button class="card-delete-btn" title="Delete guard"
-            onclick="event.stopPropagation();App.confirmDeleteGuardCampWorker(${w.id},'${esc(w.name).replace(/'/g,"\\'")}',${wAsgns.length})">&#x1F5D1;</button>
+            onclick="event.stopPropagation();App.confirmDeleteGuardCampWorker(${w.id},'${esc(w.name).replace(/'/g,"\\'")}')">&#x1F5D1;</button>
         </div>
       </div>`;
     }).join('');
   }
 
   // ── Delete guard camp worker from card ──────────────────────
-  function confirmDeleteGuardCampWorker(workerId, workerName, assignmentCount) {
-    const impact = assignmentCount > 0 ? `\n${assignmentCount} assignment(s) will also be deleted.` : '';
-    showConfirm(`Delete guard "${workerName}"?${impact}`, async () => {
-      try {
-        await api('DELETE', `/api/guard-camp-workers/${workerId}`);
-        state.gcWorkers = state.gcWorkers.filter(w => w.id !== workerId);
-        state.gcAssignments = state.gcAssignments.filter(a => a.helper_id !== workerId);
-        closeBoatDetail();
-        renderGuardCamp();
-        toast('Guard deleted');
-      } catch (e) { toast('Error: ' + e.message, 'error'); }
-    });
+  async function confirmDeleteGuardCampWorker(workerId, workerName) {
+    try {
+      const impact = await api('GET', `/api/guard-camp-workers/${workerId}/impact`);
+      const parts = [];
+      if (impact.assignments > 0) parts.push(`${impact.assignments} assignment(s)`);
+      const cascade = parts.length > 0 ? `\nThis will also remove ${parts.join(' and ')}.` : '';
+      showConfirm(`Delete guard "${workerName}"?${cascade}`, async () => {
+        try {
+          await api('DELETE', `/api/guard-camp-workers/${workerId}`);
+          state.gcWorkers = state.gcWorkers.filter(w => w.id !== workerId);
+          state.gcAssignments = state.gcAssignments.filter(a => a.helper_id !== workerId);
+          closeBoatDetail();
+          renderGuardCamp();
+          toast('Guard deleted');
+        } catch (e) { toast('Error: ' + e.message, 'error'); }
+      });
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
   // ── Role / function cards (Guard Camp) ─────────────────────────
@@ -774,7 +794,10 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
           ${funcs.map(f => renderGcRoleCard(f, color)).join('')}
         </div>`;
     });
-    container.innerHTML = html || '<div style="color:var(--text-4);text-align:center;padding:3rem">No functions. Click + Function to add one.</div>';
+    container.innerHTML = html || SL.emptyState('shield',
+      'No guard functions yet',
+      'Create a function to start assigning guards to roles.',
+      '+ Function', "App.showAddFunctionModal()");
   }
 
   function renderGcRoleCard(func, color) {
@@ -846,7 +869,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
   function gcOnWorkerDragEnd() {
     state.gcDragWorker = null;
-    document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+    document.querySelectorAll('.dragging').forEach(el => {
+      el.classList.remove('dragging');
+      el.classList.add('drag-landing');
+      el.addEventListener('animationend', () => el.classList.remove('drag-landing'), { once: true });
+    });
   }
   function gcOnDragOver(event, funcId) {
     event.preventDefault();
@@ -949,6 +976,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('bd-vendor').value   = w.contact             || '';
     $('bd-rate-est').value = w.daily_rate_estimate  || '';
     $('bd-rate-act').value = w.daily_rate_actual    || '';
+    if ($('bd-currency')) $('bd-currency').value = w.currency || 'USD';
     $('bd-notes').value    = w.notes               || '';
     _setDetailLabels('guard_camp');
     const hideIds = ['bd-group', 'bd-category', 'bd-waves', 'bd-night', 'bd-capacity'];
@@ -996,6 +1024,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       const w = await api('POST', `/api/productions/${state.prodId}/guard-camp-workers`, {
         name,
         daily_rate_estimate: parseFloat($('gcw-price').value) || 45,
+        currency:     $('gcw-currency')?.value || 'USD',
         group_name:   $('gcw-group').value || 'GENERAL',
         role:         $('gcw-role').value.trim()    || null,
         contact:      $('gcw-contact').value.trim() || null,
@@ -1100,6 +1129,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     };
     $('add-func-overlay').dataset.ctx = 'guard_camp';
     $('add-func-overlay').classList.remove('hidden');
+    _SL._snapshotModal('add-func-overlay');
     setTimeout(() => { const el = $('nf-name'); if(el) el.focus(); }, 80);
   }
 

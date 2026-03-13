@@ -234,7 +234,7 @@ def check_permission_access(permissions, global_perms, path, method, is_admin=Fa
 ROLE_TABS = {
     "UNIT":    {"pdt", "locations", "boats", "picture-boats", "security-boats",
                 "transport", "fuel", "labour", "guards", "fnb", "budget"},
-    "TRANSPO": {"boats", "picture-boats", "security-boats", "transport", "fuel"},
+    "TRANSPO": {"pdt", "locations", "boats", "picture-boats", "security-boats", "transport", "fuel"},
     "READER":  {"pdt", "locations", "boats", "picture-boats", "security-boats",
                 "transport", "fuel", "labour", "guards", "fnb", "budget"},
 }
@@ -273,6 +273,12 @@ def check_role_access(role, path, method):
     if role == "READER":
         if method not in READ_METHODS:
             return False, "Read-only access: you cannot modify data"
+        return True, None
+
+    # TRANSPO: read-only on pdt and locations
+    if role == "TRANSPO" and tab in ("pdt", "locations"):
+        if method not in READ_METHODS:
+            return False, "Read-only access: you cannot modify data on this module"
         return True, None
 
     return True, None

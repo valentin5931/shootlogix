@@ -58,6 +58,16 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
     if (state.locView === 'budget') {
       renderLocBudget();
+    } else if (state.locView === 'map') {
+      if (typeof App.renderLocMap === 'function') {
+        App.renderLocMap();
+      } else {
+        // Load map.js on first use
+        const s = document.createElement('script');
+        s.src = '/static/js/map.js';
+        s.onload = () => { if (typeof App.renderLocMap === 'function') App.renderLocMap(); };
+        document.head.appendChild(s);
+      }
     } else {
       renderLocSchedule();
     }
@@ -66,16 +76,26 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   function locSetView(view) {
     state.locView = view;
     renderLocations();
-    _updateBreadcrumb(view === 'schedule' ? 'Schedule' : 'Sites');
+    _updateBreadcrumb(view === 'schedule' ? 'Schedule' : view === 'map' ? 'Map' : 'Sites');
   }
 
-  function renderLocSchedule() {
+  async function renderLocSchedule() {
     const container = $('view-locations');
     if (!container) return;
 
     const sites = state.locationSites || [];
     const schedules = state.locationSchedules || [];
     const dates = _locDates();
+    const siteIds = sites.map(s => s.id);
+    if (siteIds.length) await App.loadCommentCounts('location_sites', siteIds);
+
+    if (!sites.length) {
+      container.innerHTML = SL.emptyState('location',
+        'No filming locations yet',
+        'Add locations to build your P/F/W schedule and track site costs.',
+        '+ Add Location', "App.showAddLocationModal()");
+      return;
+    }
 
     // PDT lookup for tooltips on day headers
     const pdtByDate = {};
@@ -106,11 +126,12 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         <div class="view-toggle" style="margin-left:1rem">
           <button class="${state.locView === 'schedule' ? 'active' : ''}" onclick="App.locSetView('schedule')">Schedule</button>
           <button class="${state.locView === 'budget' ? 'active' : ''}" onclick="App.locSetView('budget')">Budget</button>
+          <button class="${state.locView === 'map' ? 'active' : ''}" onclick="App.locSetView('map')">Map</button>
         </div>
         <div style="margin-left:auto;display:flex;gap:.3rem">
           <button class="btn btn-sm btn-primary" onclick="App.showAddLocationModal()">+ Add Location</button>
-          <button class="btn btn-sm btn-secondary" onclick="App.locAutoFill()">Auto-fill from PDT</button>
-          <button class="btn btn-sm btn-secondary" onclick="App.locResyncPdt()" title="Resync all PDT locations (normalized matching)">Resync PDT</button>
+          <button class="btn btn-sm btn-secondary" onclick="App.locAutoFill()">Auto-fill from <span data-tooltip="Plan De Travail (Shooting Schedule)">PDT</span></button>
+          <button class="btn btn-sm btn-secondary" onclick="App.locResyncPdt()" title="Resync all PDT locations (normalized matching)">Resync <span data-tooltip="Plan De Travail (Shooting Schedule)">PDT</span></button>
           <button class="btn btn-sm btn-secondary" onclick="App.locExportCSV()">Export CSV</button>
         </div>
       </div>
@@ -176,6 +197,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
                   <div style="display:flex;align-items:center;gap:.3rem">
                     <span style="width:8px;height:8px;border-radius:2px;background:${typeColor};flex-shrink:0"></span>
                     <span style="font-size:.72rem;font-weight:600;white-space:nowrap">${esc(site.name)}</span>
+                    ${App.commentBadgeHTML('location_sites', site.id)}
                   </div>
                 </td>
                 ${dates.map(d => {
@@ -186,7 +208,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
                   const cellClass = status ? `loc-cell-${status}` : 'loc-cell-empty';
                   const lockedClass = isLocked ? ' loc-locked-cell' : '';
                   return `<td class="${cellClass}${lockedClass}" style="text-align:center;cursor:${isLocked ? 'not-allowed' : 'pointer'};min-width:32px;height:28px"
-                    onclick="App.locCellClick('${esc(site.name)}','${esc(sType)}','${d}',${isLocked ? 'true' : 'false'})">${status}</td>`;
+                    onclick="App.locCellClick('${esc(site.name)}','${esc(sType)}','${d}',${isLocked ? 'true' : 'false'},${site.id})">${status}</td>`;
                 }).join('')}
               </tr>`;
             }).join('')}
@@ -295,6 +317,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         <div class="view-toggle" style="margin-left:1rem">
           <button class="${state.locView === 'schedule' ? 'active' : ''}" onclick="App.locSetView('schedule')">Schedule</button>
           <button class="${state.locView === 'budget' ? 'active' : ''}" onclick="App.locSetView('budget')">Budget</button>
+          <button class="${state.locView === 'map' ? 'active' : ''}" onclick="App.locSetView('map')">Map</button>
         </div>
         <div style="margin-left:auto;display:flex;gap:.3rem">
           <button class="btn btn-sm btn-primary" onclick="App.showAddLocationModal()">+ Add Location</button>
@@ -325,12 +348,12 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
             <tr>
               <th>Location</th>
               <th>Type</th>
-              <th style="text-align:center">P days</th>
-              <th style="text-align:center">F days</th>
-              <th style="text-align:center">W days</th>
-              <th style="text-align:right">$/P</th>
-              <th style="text-align:right">$/F</th>
-              <th style="text-align:right">$/W</th>
+              <th style="text-align:center"><span data-tooltip="Prep days">P days</span></th>
+              <th style="text-align:center"><span data-tooltip="Filming days">F days</span></th>
+              <th style="text-align:center"><span data-tooltip="Wrap days">W days</span></th>
+              <th style="text-align:right"><span data-tooltip="Price per Prep day">$/P</span></th>
+              <th style="text-align:right"><span data-tooltip="Price per Filming day">$/F</span></th>
+              <th style="text-align:right"><span data-tooltip="Price per Wrap day">$/W</span></th>
               <th style="text-align:right">Global Deal</th>
               <th style="text-align:right">Total $</th>
             </tr>
@@ -353,7 +376,10 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
               <td style="text-align:right;font-size:.72rem;color:${r.hasGlobalDeal ? 'var(--cyan)' : 'var(--text-4)'};font-weight:${r.hasGlobalDeal ? '600' : '400'}">${r.hasGlobalDeal ? fmtMoney(r.globalDeal) : '-'}</td>
               <td style="text-align:right;font-weight:700;color:var(--green)">${fmtMoney(r.total)}</td>
             </tr>`).join('')}
-            ${rows.length === 0 ? `<tr><td colspan="10" style="text-align:center;color:var(--text-4);padding:2rem">No location data yet. Add locations and set their schedule to see budget.</td></tr>` : ''}
+            ${rows.length === 0 ? `<tr><td colspan="10">${SL.emptyState('location',
+              'No location data yet',
+              'Add locations and set their schedule to see budget estimates.',
+              '+ Add Location', "App.showAddLocationModal()")}</td></tr>` : ''}
             <tr class="budget-total-row">
               <td colspan="9" style="text-align:right;color:var(--text-1)">TOTAL LOCATIONS</td>
               <td style="text-align:right;color:var(--green);font-size:1.05rem">${fmtMoney(grandTotal)}</td>
@@ -370,7 +396,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     renderLocations();
   }
 
-  async function locCellClick(locName, locType, date, isLocked) {
+  async function locCellClick(locName, locType, date, isLocked, locId) {
     if (isLocked) { toast('This date is locked', 'info'); return; }
     const key = `${locName}|${date}`;
     const schedules = state.locationSchedules || [];
@@ -380,7 +406,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     if (!existing) {
       // Empty -> P
       const result = await api('POST', `/api/productions/${state.prodId}/location-schedules`, {
-        location_name: locName, location_type: locType, date, status: 'P'
+        location_id: locId, location_name: locName, location_type: locType, date, status: 'P'
       });
       if (result) state.locationSchedules.push(result);
     } else {
@@ -389,7 +415,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         // P -> F -> W
         const newStatus = statusCycle[idx + 1];
         const result = await api('POST', `/api/productions/${state.prodId}/location-schedules`, {
-          location_name: locName, location_type: locType, date, status: newStatus
+          location_id: locId, location_name: locName, location_type: locType, date, status: newStatus
         });
         if (result) {
           const i = state.locationSchedules.findIndex(s => s.location_name === locName && s.date === date);
@@ -398,7 +424,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       } else {
         // W -> empty (delete)
         await api('POST', `/api/productions/${state.prodId}/location-schedules/delete`, {
-          location_name: locName, date
+          location_id: locId, location_name: locName, date
         });
         state.locationSchedules = state.locationSchedules.filter(s => !(s.location_name === locName && s.date === date));
       }
@@ -542,6 +568,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('nl-delete-btn').classList.add('hidden');
     $('nl-schedule-section').style.display = 'none';
     $('add-location-overlay').classList.remove('hidden');
+    _SL._snapshotModal('add-location-overlay');
   }
 
   function editLocationSite(locId) {
@@ -561,10 +588,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('nl-schedule-section').style.display = '';
     _renderLocationScheduleInModal(site);
     $('add-location-overlay').classList.remove('hidden');
+    _SL._snapshotModal('add-location-overlay');
   }
 
-  function closeAddLocationModal() {
-    $('add-location-overlay').classList.add('hidden');
+  function closeAddLocationModal(force) {
+    _SL._guardedClose('add-location-overlay', () => $('add-location-overlay').classList.add('hidden'), force);
   }
 
   async function saveLocationSite() {
@@ -597,7 +625,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       // Reload
       state.locationSites = await api('GET', `/api/productions/${state.prodId}/locations`);
       state.locationSchedules = await api('GET', `/api/productions/${state.prodId}/location-schedules`);
-      closeAddLocationModal();
+      closeAddLocationModal(true);
       renderLocations();
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -606,14 +634,22 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     const editId = $('nl-edit-id').value;
     if (!editId) return;
     const site = (state.locationSites || []).find(s => s.id === parseInt(editId));
-    if (!confirm(`Delete location "${site?.name}"? This will also delete all schedule data for this site.`)) return;
     try {
-      await api('DELETE', `/api/locations/${editId}`);
-      toast('Location deleted');
-      state.locationSites = await api('GET', `/api/productions/${state.prodId}/locations`);
-      state.locationSchedules = await api('GET', `/api/productions/${state.prodId}/location-schedules`);
-      closeAddLocationModal();
-      renderLocations();
+      const impact = await api('GET', `/api/locations/${editId}/impact`);
+      const parts = [];
+      if (impact.schedules > 0) parts.push(`${impact.schedules} schedule entry(ies)`);
+      if (impact.guard_schedules > 0) parts.push(`${impact.guard_schedules} guard schedule(s)`);
+      const cascade = parts.length > 0 ? `\nThis will also remove ${parts.join(' and ')}.` : '';
+      showConfirm(`Delete location "${site?.name}"?${cascade}`, async () => {
+        try {
+          await api('DELETE', `/api/locations/${editId}`);
+          toast('Location deleted');
+          state.locationSites = await api('GET', `/api/productions/${state.prodId}/locations`);
+          state.locationSchedules = await api('GET', `/api/productions/${state.prodId}/location-schedules`);
+          closeAddLocationModal(true);
+          renderLocations();
+        } catch(e) { toast('Error: ' + e.message, 'error'); }
+      });
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -661,7 +697,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     while (cur <= end) {
       const d = cur.toISOString().slice(0, 10);
       await api('POST', `/api/productions/${state.prodId}/location-schedules`, {
-        location_name: site.name, location_type: site.location_type, date: d, status
+        location_id: site.id, location_name: site.name, location_type: site.location_type, date: d, status
       });
       cur.setDate(cur.getDate() + 1);
     }
@@ -671,12 +707,12 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
 
   async function _locModalRemoveSchedule(locName, date) {
-    await api('POST', `/api/productions/${state.prodId}/location-schedules/delete`, {
-      location_name: locName, date
-    });
-    state.locationSchedules = state.locationSchedules.filter(s => !(s.location_name === locName && s.date === date));
     const editId = $('nl-edit-id').value;
     const site = (state.locationSites || []).find(s => s.id === parseInt(editId));
+    await api('POST', `/api/productions/${state.prodId}/location-schedules/delete`, {
+      location_id: site ? site.id : undefined, location_name: locName, date
+    });
+    state.locationSchedules = state.locationSchedules.filter(s => !(s.location_name === locName && s.date === date));
     if (site) _renderLocationScheduleInModal(site);
     renderLocations();
   }

@@ -35,7 +35,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       const deptNames = {
         locations: 'Locations', boats: 'Boats', picture_boats: 'Picture Boats',
         security_boats: 'Security Boats', transport: 'Transport',
-        fuel: 'Fuel', labour: 'Labour', guards: 'Guards (Camp)', fnb: 'FNB'
+        fuel: 'Fuel', labour: 'Labor', guards: 'Guards (Camp)', fnb: 'Catering'
       };
       const deptColors = {
         locations: '#22C55E', boats: '#3B82F6', picture_boats: '#8B5CF6',
@@ -299,6 +299,22 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
           </div>`
         : '';
 
+      // --- Daily Reports section ---
+      const today = new Date().toISOString().slice(0, 10);
+      const dailyReportHTML = `
+        <div class="dash-daily-reports" style="margin-top:1.2rem;padding:1rem;background:var(--bg-card);border-radius:8px;border:1px solid var(--border)">
+          <h3 style="color:var(--text-1);font-size:.85rem;margin-bottom:.6rem">Daily Production Report</h3>
+          <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+            <input type="date" id="daily-report-date" value="${today}"
+              style="padding:.35rem .5rem;border-radius:6px;border:1px solid var(--border);background:var(--bg-input);color:var(--text-1);font-size:.8rem" />
+            <button id="btn-daily-report-preview" class="btn btn-sm"
+              style="font-size:.75rem;padding:.35rem .7rem">Preview</button>
+            <button id="btn-daily-report-pdf" class="btn btn-sm btn-primary"
+              style="font-size:.75rem;padding:.35rem .7rem">Download PDF</button>
+          </div>
+          <div id="daily-report-preview" style="margin-top:.6rem;font-size:.8rem;color:var(--text-2)"></div>
+        </div>`;
+
       container.innerHTML = `
         ${kpiHTML}
         ${arenaHTML}
@@ -309,7 +325,47 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         <div class="dash-depts">
           <h3 style="color:var(--text-1);font-size:.85rem;margin-bottom:.5rem">Budget by Department</h3>
           ${barsHTML}
-        </div>`;
+        </div>
+        ${dailyReportHTML}`;
+
+      // Wire up daily report buttons
+      const dateInput = $('daily-report-date');
+      const previewBox = $('daily-report-preview');
+
+      const btnPreview = $('btn-daily-report-preview');
+      if (btnPreview) btnPreview.onclick = async () => {
+        const d = dateInput.value;
+        if (!d) return;
+        previewBox.innerHTML = '<span style="color:var(--text-3)">Loading...</span>';
+        try {
+          const info = await api('GET', `/api/productions/${state.prodId}/reports/daily/data?date=${d}`);
+          const r = info.resources;
+          const dayLabel = info.day_number ? `Day ${info.day_number}` : 'No shooting day';
+          const loc = info.location || 'N/A';
+          previewBox.innerHTML = `
+            <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center;margin-top:.4rem">
+              <span><strong>${dayLabel}</strong> - ${esc(loc)}</span>
+              <span>Boats: <strong>${r.boats}</strong></span>
+              <span>PB: <strong>${r.picture_boats}</strong></span>
+              <span>SB: <strong>${r.security_boats}</strong></span>
+              <span>Transport: <strong>${r.transport}</strong></span>
+              <span>Personnel: <strong>${r.personnel}</strong></span>
+              <span>Guards: <strong>${r.guards}</strong></span>
+              <span>Fuel: <strong>${r.fuel_entries}</strong></span>
+              <span style="color:var(--blue)">Total: <strong>${info.total_resources}</strong> resources</span>
+            </div>`;
+        } catch (err) {
+          previewBox.innerHTML = `<span style="color:var(--red)">${esc(err.message)}</span>`;
+        }
+      };
+
+      const btnPdf = $('btn-daily-report-pdf');
+      if (btnPdf) btnPdf.onclick = () => {
+        const d = dateInput.value;
+        if (!d) return;
+        authDownload(`/api/productions/${state.prodId}/reports/daily?date=${d}`);
+      };
+
     } catch (e) {
       container.innerHTML = `<div style="color:var(--red);padding:2rem">${esc(e.message)}</div>`;
     }

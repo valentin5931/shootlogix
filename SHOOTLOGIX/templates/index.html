@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ShootLogix — KLAS7 Panama</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 <div id="app">
@@ -26,29 +28,30 @@
 
   <!-- ── Top navigation ──────────────────────────────────────────────────── -->
   <nav id="topbar">
+    <button class="burger-btn" id="burger-btn" onclick="App.toggleMobileMenu()" aria-label="Menu">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+    </button>
     <div class="topbar-brand">Shoot<span>Logix</span></div>
     <div class="topbar-sep"></div>
-    <button class="tab-btn" data-tab="dashboard"          onclick="App.setTab('dashboard')">
-      <span class="dot" style="background:#22C55E"></span>DASHBOARD
+    <button class="tab-btn" data-tab="today"               onclick="App.setTab('today')">
+      <span class="dot" style="background:#F97316"></span>TODAY
     </button>
     <div class="topbar-sep"></div>
     <button class="tab-btn active" data-tab="pdt"           onclick="App.setTab('pdt')">
-      <span class="dot" style="background:#94A3B8"></span>PDT
+      <span class="dot" style="background:#94A3B8"></span><span data-tooltip="Plan De Travail (Shooting Schedule)">SCHEDULE</span>
     </button>
     <div class="topbar-sep"></div>
     <button class="tab-btn" data-tab="locations"            onclick="App.setTab('locations')">
       <span class="dot" style="background:#22C55E"></span>LOCATIONS
     </button>
     <div class="topbar-sep"></div>
-    <button class="tab-btn" data-tab="boats"                onclick="App.setTab('boats')">
-      <span class="dot" style="background:#3B82F6"></span>BOATS
+    <button class="tab-btn" data-tab="fleet"                 onclick="App.setTab('fleet')">
+      <span class="dot" style="background:#0EA5E9"></span>FLEET
     </button>
-    <button class="tab-btn" data-tab="picture-boats"        onclick="App.setTab('picture-boats')">
-      <span class="dot" style="background:#8B5CF6"></span>PICTURE BOATS
-    </button>
-    <button class="tab-btn" data-tab="security-boats"       onclick="App.setTab('security-boats')">
-      <span class="dot" style="background:#EF4444"></span>SECURITY BOATS
-    </button>
+    <!-- hidden: individual boat tabs, accessed via Fleet unified view -->
+    <button class="tab-btn" data-tab="boats" style="display:none">BOATS</button>
+    <button class="tab-btn" data-tab="picture-boats" style="display:none">PICTURE BOATS</button>
+    <button class="tab-btn" data-tab="security-boats" style="display:none">SECURITY BOATS</button>
     <button class="tab-btn" data-tab="transport"            onclick="App.setTab('transport')">
       <span class="dot" style="background:#22C55E"></span>TRANSPORT
     </button>
@@ -57,20 +60,33 @@
       <span class="dot" style="background:#F59E0B"></span>FUEL
     </button>
     <div class="topbar-sep"></div>
-    <button class="tab-btn" data-tab="labour"               onclick="App.setTab('labour')">
-      <span class="dot" style="background:#F59E0B"></span>LABOUR
+    <button class="tab-btn" data-tab="crew"                 onclick="App.setTab('crew')">
+      <span class="dot" style="background:#F59E0B"></span>CREW
     </button>
-    <button class="tab-btn" data-tab="guards"               onclick="App.setTab('guards')">
-      <span class="dot" style="background:#06B6D4"></span>GUARDS
-    </button>
+    <!-- hidden: individual crew tabs, accessed via Crew unified view -->
+    <button class="tab-btn" data-tab="labour" style="display:none">LABOUR</button>
+    <button class="tab-btn" data-tab="guards" style="display:none">GUARDS</button>
     <div class="topbar-sep"></div>
     <button class="tab-btn" data-tab="fnb"                  onclick="App.setTab('fnb')">
-      <span class="dot" style="background:#F97316"></span>FNB
+      <span class="dot" style="background:#F97316"></span><span data-tooltip="Food & Beverage">CATERING</span>
     </button>
     <div class="topbar-sep"></div>
     <button class="tab-btn" data-tab="budget"               onclick="App.setTab('budget')">
       <span class="dot" style="background:#22C55E"></span>BUDGET
     </button>
+    <button class="tab-btn" data-tab="checklist"            onclick="App.setTab('checklist')">
+      <span class="dot" style="background:#8B5CF6"></span>CHECKLIST
+    </button>
+    <div class="topbar-sep"></div>
+    <button class="tab-btn" data-tab="documents"           onclick="App.setTab('documents')">
+      <span class="dot" style="background:#8B5CF6"></span>DOCS
+    </button>
+    <div class="topbar-sep"></div>
+    <button class="tab-btn" data-tab="timeline"            onclick="App.setTab('timeline')">
+      <span class="dot" style="background:#06B6D4"></span>TIMELINE
+    </button>
+    <!-- hidden: dashboard tab, replaced by Today -->
+    <button class="tab-btn" data-tab="dashboard" style="display:none">DASHBOARD</button>
     <div style="flex:1"></div>
     <button class="tab-btn" id="activity-btn" onclick="App.toggleActivityPanel()" title="Activity history" style="font-size:1rem;padding:.3rem .5rem;position:relative">
       <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -85,22 +101,76 @@
     </button>
     <button class="tab-btn" onclick="App.logisticsExportXlsx()" title="Export all logistics data (XLSX)" style="font-size:.75rem;padding:.3rem .6rem;display:flex;align-items:center;gap:.25rem">
       <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      EXPORT
+      <span data-tooltip="Excel spreadsheet export">EXPORT</span>
     </button>
     <button class="tab-btn" onclick="App.toggleTheme()" title="Toggle light/dark mode" id="theme-toggle-btn" style="font-size:1rem;padding:.3rem .5rem">🌙</button>
     <button class="tab-btn" onclick="App.openShortcutsPanel()" title="Keyboard shortcuts (?)" style="font-size:.85rem;padding:.3rem .5rem;font-weight:700">?</button>
   </nav>
 
+  <!-- ── Mobile menu overlay (burger) ──────────────────────────────────── -->
+  <div id="mobile-menu" class="mobile-menu hidden">
+    <div class="mobile-menu-backdrop" onclick="App.toggleMobileMenu()"></div>
+    <div class="mobile-menu-panel">
+      <div class="mobile-menu-header">
+        <span class="topbar-brand">Shoot<span>Logix</span></span>
+        <button class="mobile-menu-close" onclick="App.toggleMobileMenu()" aria-label="Close">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="mobile-menu-items">
+        <button class="mobile-menu-item" data-tab="today" onclick="App.setTab('today');App.toggleMobileMenu()">
+          <span class="dot" style="background:#F97316"></span> Today
+        </button>
+        <button class="mobile-menu-item" data-tab="pdt" onclick="App.setTab('pdt');App.toggleMobileMenu()">
+          <span class="dot" style="background:#94A3B8"></span> Schedule
+        </button>
+        <button class="mobile-menu-item" data-tab="locations" onclick="App.setTab('locations');App.toggleMobileMenu()">
+          <span class="dot" style="background:#22C55E"></span> Locations
+        </button>
+        <button class="mobile-menu-item" data-tab="fleet" onclick="App.setTab('fleet');App.toggleMobileMenu()">
+          <span class="dot" style="background:#0EA5E9"></span> Fleet
+        </button>
+        <button class="mobile-menu-item" data-tab="transport" onclick="App.setTab('transport');App.toggleMobileMenu()">
+          <span class="dot" style="background:#22C55E"></span> Transport
+        </button>
+        <button class="mobile-menu-item" data-tab="fuel" onclick="App.setTab('fuel');App.toggleMobileMenu()">
+          <span class="dot" style="background:#F59E0B"></span> Fuel
+        </button>
+        <button class="mobile-menu-item" data-tab="crew" onclick="App.setTab('crew');App.toggleMobileMenu()">
+          <span class="dot" style="background:#F59E0B"></span> Crew
+        </button>
+        <button class="mobile-menu-item" data-tab="fnb" onclick="App.setTab('fnb');App.toggleMobileMenu()">
+          <span class="dot" style="background:#F97316"></span> Catering
+        </button>
+        <button class="mobile-menu-item" data-tab="budget" onclick="App.setTab('budget');App.toggleMobileMenu()">
+          <span class="dot" style="background:#22C55E"></span> Budget
+        </button>
+        <button class="mobile-menu-item" data-tab="documents" onclick="App.setTab('documents');App.toggleMobileMenu()">
+          <span class="dot" style="background:#8B5CF6"></span> Documents
+        </button>
+        <button class="mobile-menu-item" data-tab="timeline" onclick="App.setTab('timeline');App.toggleMobileMenu()">
+          <span class="dot" style="background:#06B6D4"></span> Timeline
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Main panels ─────────────────────────────────────────────────────── -->
   <div id="main-content">
+
+    <!-- TODAY ── -->
+    <div id="view-today" class="view-panel">
+      <div id="today-content"></div>
+    </div>
 
     <!-- PDT ── -->
     <div id="view-pdt" class="view-panel active">
       <div id="pdt-toolbar">
         <input type="file" id="pdt-file-input" accept=".pdf" style="display:none"
           onchange="App.handlePDTFileUpload(this)">
-        <button class="btn btn-primary btn-sm" onclick="App.triggerPDTUpload()" title="Upload a PDT PDF and merge with existing data">Upload PDT PDF</button>
+        <button class="btn btn-primary btn-sm" onclick="App.triggerPDTUpload()" title="Upload a PDT PDF and merge with existing data">Upload <span data-tooltip="Plan De Travail (Shooting Schedule)">PDT</span> PDF</button>
         <button class="btn btn-secondary btn-sm" onclick="App.addDay()">+ Add day</button>
+        <button class="btn btn-secondary btn-sm" onclick="App.autoFillTides()" title="Pre-fill tide data for all shooting days (Pearl Islands)">🌊 Auto-fill tides</button>
         <span id="pdt-count" style="font-size:.78rem;color:var(--text-3);margin-left:.5rem"></span>
         <div style="margin-left:auto;display:flex;align-items:center;gap:.5rem">
           <span id="pdt-status" style="font-size:.75rem;color:var(--text-3)"></span>
@@ -122,9 +192,9 @@
               <th>Rehearsal</th>
               <th>Host</th>
               <th>Time</th>
-              <th>Dep / Arr</th>
+              <th><span data-tooltip="Departure / Arrival times">Dep / Arr</span></th>
               <th>Tide</th>
-              <th>Ctts</th>
+              <th><span data-tooltip="Contestants on site">Ctts</span></th>
               <th>Status</th>
               <th style="width:36px"></th>
             </tr>
@@ -146,6 +216,15 @@
         </div>
         <div id="pdt-cal-grid" class="pdt-cal-grid"></div>
       </div>
+    </div>
+
+    <!-- FLEET (unified) ── -->
+    <div id="view-fleet" class="view-panel">
+      <div id="fleet-sub-nav"></div>
+      <div id="fleet-cards"></div>
+      <div id="fleet-schedule-container" style="display:none"></div>
+      <div id="fleet-budget-container" style="display:none"></div>
+      <div id="fleet-incidents-container" style="display:none"></div>
     </div>
 
     <!-- BOATS ── -->
@@ -319,6 +398,8 @@
     <div id="view-fuel" class="view-panel">
       <!-- Sub-tab navigation -->
       <div class="fuel-sub-nav">
+        <button id="fsn-overview"       class="fuel-sub-btn"        onclick="App.fuelSetTab('overview')">OVERVIEW</button>
+        <div class="fuel-sub-sep"></div>
         <button id="fsn-boats"          class="fuel-sub-btn active" onclick="App.fuelSetTab('boats')">BOATS</button>
         <button id="fsn-picture_boats"  class="fuel-sub-btn"        onclick="App.fuelSetTab('picture_boats')">PICTURE BOATS</button>
         <button id="fsn-security_boats" class="fuel-sub-btn"        onclick="App.fuelSetTab('security_boats')">SECURITY BOATS</button>
@@ -400,6 +481,16 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- CREW (unified Labour + Guards) ── -->
+    <div id="view-crew" class="view-panel">
+      <div class="crew-sub-nav" style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
+        <button class="filter-pill active" id="crew-subtab-labour" onclick="App.crewSetSubTab('labour')">Labor</button>
+        <button class="filter-pill" id="crew-subtab-guards" onclick="App.crewSetSubTab('guards')">Guards</button>
+      </div>
+      <div id="crew-labour-panel"></div>
+      <div id="crew-guards-panel" class="hidden"></div>
     </div>
 
     <!-- GUARDS ── -->
@@ -524,12 +615,34 @@
 
     <!-- DASHBOARD ── -->
     <div id="view-dashboard" class="view-panel">
+      <div id="dashboard-v2-content" style="padding:1rem"></div>
       <div id="dashboard-content" style="padding:1rem"></div>
     </div>
 
     <!-- BUDGET ── -->
     <div id="view-budget" class="view-panel">
       <div id="budget-content"></div>
+    </div>
+
+    <!-- CHECKLIST ── -->
+    <div id="view-checklist" class="view-panel">
+      <div class="panel-header" style="display:flex;align-items:center;gap:1rem;padding:1rem;flex-wrap:wrap">
+        <h2 style="margin:0">Daily Checklist</h2>
+        <input type="date" id="checklist-date" class="form-control" style="width:auto" onchange="App.loadChecklist()">
+        <button class="btn btn-primary btn-sm" onclick="App.generateChecklist()">Generate</button>
+        <span id="checklist-stats" style="margin-left:auto;font-size:.85rem;color:var(--text-muted)"></span>
+      </div>
+      <div id="checklist-content" style="padding:0 1rem 1rem"></div>
+    </div>
+
+    <!-- DOCUMENTS PANEL (P5.7) ── -->
+    <div id="view-documents" class="view-panel">
+      <div id="documents-content"></div>
+    </div>
+
+    <!-- TIMELINE (Gantt) ── -->
+    <div id="view-timeline" class="view-panel">
+      <div id="timeline-content"></div>
     </div>
 
     <!-- ADMIN PANEL ── -->
@@ -541,6 +654,8 @@
           <button class="admin-tab" data-atab="invitations" onclick="App.adminSetTab('invitations')">Members</button>
           <button class="admin-tab" data-atab="permissions" onclick="App.adminSetTab('permissions')">Permissions</button>
           <button class="admin-tab" data-atab="templates" onclick="App.adminSetTab('templates')">Templates</button>
+          <button class="admin-tab" data-atab="entity-permissions" onclick="App.adminSetTab('entity-permissions')">Entity Access</button>
+          <button class="admin-tab" data-atab="access-logs" onclick="App.adminSetTab('access-logs')">Access Logs</button>
         </div>
 
         <!-- Users sub-panel -->
@@ -581,7 +696,7 @@
         <!-- Permissions sub-panel (RBAC V2) -->
         <div id="admin-permissions" class="admin-sub">
           <div class="admin-toolbar">
-            <h3>User Permissions</h3>
+            <h3><span data-tooltip="Role-Based Access Control">User Permissions</span></h3>
           </div>
           <div class="form-row" style="margin-bottom:1rem;gap:1rem">
             <div class="form-group" style="flex:1">
@@ -603,6 +718,82 @@
             <button class="btn btn-primary btn-sm" onclick="App.adminShowSaveTemplate()">Save Current as Template</button>
           </div>
           <div id="admin-templates-list"></div>
+        </div>
+
+        <!-- Entity Permissions sub-panel (P6.15) -->
+        <div id="admin-entity-permissions" class="admin-sub">
+          <div class="admin-toolbar">
+            <h3>Entity-Level Access Control</h3>
+          </div>
+          <p style="color:var(--text-3);font-size:.8rem;margin-bottom:1rem">
+            Restrict a user to specific entities (boats, vehicles, locations...).
+            If no entity restrictions are set, the user keeps full access based on their role.
+          </p>
+          <div class="form-row" style="margin-bottom:1rem;gap:.5rem;flex-wrap:wrap">
+            <div class="form-group" style="flex:1;min-width:160px">
+              <label class="form-label">User</label>
+              <select id="admin-ep-user" class="form-control" onchange="App.adminEpLoadPerms()">
+                <option value="">-- Select user --</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:1;min-width:160px">
+              <label class="form-label">Entity Type</label>
+              <select id="admin-ep-type" class="form-control" onchange="App.adminEpLoadPerms()">
+                <option value="">All types</option>
+              </select>
+            </div>
+          </div>
+          <div id="admin-ep-list"></div>
+          <div id="admin-ep-add-form" class="hidden" style="margin-top:1rem;padding:.75rem;background:var(--bg-2);border-radius:8px">
+            <strong>Add Entity Permission</strong>
+            <div class="form-row" style="margin-top:.5rem;gap:.5rem;flex-wrap:wrap">
+              <div class="form-group" style="flex:1;min-width:120px">
+                <label class="form-label">Type</label>
+                <select id="admin-ep-add-type" class="form-control"></select>
+              </div>
+              <div class="form-group" style="flex:1;min-width:100px">
+                <label class="form-label">Entity ID</label>
+                <input type="number" id="admin-ep-add-id" class="form-control" placeholder="ID">
+              </div>
+              <div class="form-group" style="flex:1;min-width:100px">
+                <label class="form-label">Permission</label>
+                <select id="admin-ep-add-perm" class="form-control">
+                  <option value="read">Read</option>
+                  <option value="write">Write</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div class="form-group" style="align-self:flex-end">
+                <button class="btn btn-primary btn-sm" onclick="App.adminEpAdd()">Add</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Access Logs sub-panel (P6.14) -->
+        <div id="admin-access-logs" class="admin-sub">
+          <div class="admin-toolbar">
+            <h3>Access Logs</h3>
+            <button class="btn btn-sm" onclick="App.adminExportAccessLogs()">Export CSV</button>
+          </div>
+          <div class="form-row" style="margin-bottom:1rem;gap:.5rem;flex-wrap:wrap">
+            <div class="form-group" style="flex:1;min-width:140px">
+              <label class="form-label">User</label>
+              <select id="admin-logs-user" class="form-control" onchange="App.adminLoadAccessLogs()">
+                <option value="">All users</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:1;min-width:140px">
+              <label class="form-label">Date</label>
+              <input type="date" id="admin-logs-date" class="form-control" onchange="App.adminLoadAccessLogs()">
+            </div>
+            <div class="form-group" style="flex:1;min-width:140px">
+              <label class="form-label">Endpoint</label>
+              <input type="text" id="admin-logs-endpoint" class="form-control" placeholder="/api/..." oninput="App.adminLoadAccessLogs()">
+            </div>
+          </div>
+          <div id="admin-logs-list"></div>
+          <div id="admin-logs-pagination" style="margin-top:.5rem;display:flex;gap:.5rem;justify-content:center"></div>
         </div>
       </div>
     </div>
@@ -657,26 +848,26 @@
 
   <!-- ── Breadcrumb bar (contextual) ─────────────────────────────── -->
   <div id="breadcrumb-bar" class="breadcrumb-bar">
-    <span id="bc-module" class="bc-segment"></span>
-    <span class="bc-sep">/</span>
-    <span id="bc-view" class="bc-segment"></span>
-    <span class="bc-sep bc-entity-sep" style="display:none">/</span>
+    <span id="bc-module" class="bc-segment bc-clickable"></span>
+    <span class="bc-sep">›</span>
+    <span id="bc-view" class="bc-segment bc-clickable"></span>
+    <span class="bc-sep bc-entity-sep" style="display:none">›</span>
     <span id="bc-entity" class="bc-segment bc-entity" style="display:none"></span>
   </div>
 
   <!-- ── Bottom navigation bar (mobile) ──────────────────────────── -->
   <nav id="bottom-nav" class="bottom-nav">
-    <button class="bnav-btn" data-tab="dashboard" onclick="App.setTab('dashboard')">
-      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9"/><path d="M9 21V9h6v12"/></svg>
-      <span>Home</span>
+    <button class="bnav-btn" data-tab="today" onclick="App.setTab('today')">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span>Today</span>
     </button>
     <button class="bnav-btn" data-tab="pdt" onclick="App.setTab('pdt')">
       <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-      <span>PDT</span>
+      <span>Schedule</span>
     </button>
-    <button class="bnav-btn" data-tab="boats" onclick="App.setTab('boats')">
+    <button class="bnav-btn" data-tab="fleet" onclick="App.setTab('fleet')">
       <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 20c2-1 4-2 6-2s4 1 6 2 4 1 6 0"/><path d="M4 18l1-9h14l1 9"/><path d="M12 3v6"/></svg>
-      <span>Boats</span>
+      <span>Fleet</span>
     </button>
     <button class="bnav-btn" data-tab="budget" onclick="App.setTab('budget')">
       <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
@@ -697,26 +888,20 @@
         <button class="bnav-more-item" data-tab="locations" onclick="App.setTab('locations');App.toggleBottomNavMore()">
           <span class="dot" style="background:#22C55E"></span>Locations
         </button>
-        <button class="bnav-more-item" data-tab="picture-boats" onclick="App.setTab('picture-boats');App.toggleBottomNavMore()">
-          <span class="dot" style="background:#8B5CF6"></span>Pic. Boats
-        </button>
-        <button class="bnav-more-item" data-tab="security-boats" onclick="App.setTab('security-boats');App.toggleBottomNavMore()">
-          <span class="dot" style="background:#EF4444"></span>Sec. Boats
-        </button>
         <button class="bnav-more-item" data-tab="transport" onclick="App.setTab('transport');App.toggleBottomNavMore()">
           <span class="dot" style="background:#22C55E"></span>Transport
         </button>
         <button class="bnav-more-item" data-tab="fuel" onclick="App.setTab('fuel');App.toggleBottomNavMore()">
           <span class="dot" style="background:#F59E0B"></span>Fuel
         </button>
-        <button class="bnav-more-item" data-tab="labour" onclick="App.setTab('labour');App.toggleBottomNavMore()">
-          <span class="dot" style="background:#F59E0B"></span>Labour
-        </button>
-        <button class="bnav-more-item" data-tab="guards" onclick="App.setTab('guards');App.toggleBottomNavMore()">
-          <span class="dot" style="background:#06B6D4"></span>Guards
+        <button class="bnav-more-item" data-tab="crew" onclick="App.setTab('crew');App.toggleBottomNavMore()">
+          <span class="dot" style="background:#F59E0B"></span>Crew
         </button>
         <button class="bnav-more-item" data-tab="fnb" onclick="App.setTab('fnb');App.toggleBottomNavMore()">
-          <span class="dot" style="background:#F97316"></span>FNB
+          <span class="dot" style="background:#F97316"></span>Catering
+        </button>
+        <button class="bnav-more-item" data-tab="timeline" onclick="App.setTab('timeline');App.toggleBottomNavMore()">
+          <span class="dot" style="background:#06B6D4"></span>Timeline
         </button>
       </div>
     </div>
@@ -736,13 +921,13 @@
           <div class="shortcut-row"><kbd>Esc</kbd><span>Close modal / deselect</span></div>
           <div class="shortcut-row"><kbd>Enter</kbd><span>Submit modal form</span></div>
           <div class="shortcut-row"><kbd>Ctrl+Enter</kbd><span>Submit from textarea</span></div>
-          <div class="shortcut-row"><kbd>Ctrl+K</kbd><span>Open search</span></div>
+          <div class="shortcut-row"><kbd>Ctrl+K</kbd><span>Command palette</span></div>
           <div class="shortcut-row"><kbd>Ctrl+Z</kbd><span>Undo last action (boats)</span></div>
         </div>
         <div class="shortcuts-section">
           <div class="shortcuts-title">Navigation</div>
           <div class="shortcut-row"><kbd>1</kbd><span>Dashboard</span></div>
-          <div class="shortcut-row"><kbd>2</kbd><span>PDT</span></div>
+          <div class="shortcut-row"><kbd>2</kbd><span><span data-tooltip="Plan De Travail (Shooting Schedule)">PDT</span></span></div>
           <div class="shortcut-row"><kbd>3</kbd><span>Locations</span></div>
           <div class="shortcut-row"><kbd>4</kbd><span>Boats</span></div>
           <div class="shortcut-row"><kbd>5</kbd><span>Picture Boats</span></div>
@@ -763,8 +948,8 @@
     </div>
   </div>
 
-  <!-- ── FAB (Floating Action Button) — mobile contextual ──────────── -->
-  <button id="fab-btn" class="fab" style="display:none" onclick="App.fabAction()">
+  <!-- ── FAB (Floating Action Button) — contextual per module ──────── -->
+  <button id="fab-btn" class="fab" style="display:none" onclick="App.fabAction()" oncontextmenu="event.preventDefault();App._toggleFabMenu()">
     <span style="margin-top:-2px">+</span>
     <span class="fab-label" id="fab-label"></span>
   </button>
@@ -908,7 +1093,17 @@
     </div>
     <div class="form-group">
       <label class="form-label">Daily rate</label>
-      <div class="price-display" id="am-price-display">—</div>
+      <div class="price-display" id="am-price-display">--</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Price override ($/day)</label>
+      <input type="number" id="am-price-override" class="form-control" step="1" min="0" placeholder="Leave empty to use default rate"
+        oninput="App.onPriceOverrideChange()">
+      <div style="font-size:.6rem;color:var(--text-4);margin-top:.15rem">Overrides the entity's default daily rate for this assignment only</div>
+    </div>
+    <div class="form-group" id="am-override-reason-group" style="display:none">
+      <label class="form-label">Reason for override *</label>
+      <input type="text" id="am-override-reason" class="form-control" placeholder="e.g. Negotiated rate, special conditions...">
     </div>
     <div class="form-group">
       <label class="form-label">Notes</label>
@@ -921,6 +1116,13 @@
         <span id="am-billing-label">Monthly (7d/7)</span>
       </label>
       <div style="font-size:.6rem;color:var(--text-4);margin-top:.15rem">Unchecked = per working day (Mon-Sat) &middot; Checked = monthly rate (7d/7, includes Sundays)</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-weight:400" title="Exclude Panama public holidays from working days count">
+        <input type="checkbox" id="am-exclude-holidays">
+        <span>Exclude public holidays (Panama)</span>
+      </label>
+      <div style="font-size:.6rem;color:var(--text-4);margin-top:.15rem">Checked = subtract Semana Santa &amp; national holidays from billable days</div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeAssignModal()">Cancel</button>
@@ -938,8 +1140,11 @@
       <input type="text" id="nb-name" class="form-control" placeholder="Boat name">
     </div>
     <div class="form-group">
-      <label class="form-label">Rate/day ($)</label>
-      <input type="number" id="nb-price" class="form-control" placeholder="0">
+      <label class="form-label">Rate/day</label>
+      <div style="display:flex;gap:.5rem">
+        <input type="number" id="nb-price" class="form-control" placeholder="0" style="flex:1">
+        <select id="nb-currency" class="form-control" style="width:auto;min-width:80px"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="PAB">PAB</option></select>
+      </div>
     </div>
     <button type="button" class="modal-advanced-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.textContent=this.nextElementSibling.classList.contains('collapsed')?'Show details \u25BC':'Hide details \u25B2'">Show details &#9660;</button>
     <div class="modal-advanced collapsed">
@@ -955,7 +1160,7 @@
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Waves</label>
+          <label class="form-label">Sea Rating</label>
           <select id="nb-wave" class="form-control">
             <option value="Waves">Waves</option>
             <option value="Big Waves">Big Waves</option>
@@ -965,7 +1170,7 @@
         </div>
         <div class="form-group" style="display:flex;align-items:center;gap:.5rem;padding-top:1.2rem">
           <input type="checkbox" id="nb-night" style="width:16px;height:16px">
-          <label for="nb-night" style="font-size:.82rem;color:var(--text-1)">Night nav OK</label>
+          <label for="nb-night" style="font-size:.82rem;color:var(--text-1)">Night Navigation</label>
         </div>
       </div>
       <div class="form-group">
@@ -989,8 +1194,11 @@
       <input type="text" id="npb-name" class="form-control" placeholder="Boat name">
     </div>
     <div class="form-group">
-      <label class="form-label">Rate/day ($)</label>
-      <input type="number" id="npb-price" class="form-control" placeholder="0">
+      <label class="form-label">Rate/day</label>
+      <div style="display:flex;gap:.5rem">
+        <input type="number" id="npb-price" class="form-control" placeholder="0" style="flex:1">
+        <select id="npb-currency" class="form-control" style="width:auto;min-width:80px"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="PAB">PAB</option></select>
+      </div>
     </div>
     <button type="button" class="modal-advanced-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.textContent=this.nextElementSibling.classList.contains('collapsed')?'Show details \u25BC':'Hide details \u25B2'">Show details &#9660;</button>
     <div class="modal-advanced collapsed">
@@ -1006,7 +1214,7 @@
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Waves</label>
+          <label class="form-label">Sea Rating</label>
           <select id="npb-wave" class="form-control">
             <option value="Waves">Waves</option>
             <option value="Big Waves">Big Waves</option>
@@ -1016,7 +1224,7 @@
         </div>
         <div class="form-group" style="display:flex;align-items:center;gap:.5rem;padding-top:1.2rem">
           <input type="checkbox" id="npb-night" style="width:16px;height:16px">
-          <label for="npb-night" style="font-size:.82rem;color:var(--text-1)">Night nav OK</label>
+          <label for="npb-night" style="font-size:.82rem;color:var(--text-1)">Night Navigation</label>
         </div>
       </div>
       <div class="form-group">
@@ -1040,8 +1248,11 @@
       <input type="text" id="ntv-name" class="form-control" placeholder="Vehicle name">
     </div>
     <div class="form-group">
-      <label class="form-label">Rate/day ($)</label>
-      <input type="number" id="ntv-price" class="form-control" placeholder="0">
+      <label class="form-label">Rate/day</label>
+      <div style="display:flex;gap:.5rem">
+        <input type="number" id="ntv-price" class="form-control" placeholder="0" style="flex:1">
+        <select id="ntv-currency" class="form-control" style="width:auto;min-width:80px"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="PAB">PAB</option></select>
+      </div>
     </div>
     <button type="button" class="modal-advanced-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.textContent=this.nextElementSibling.classList.contains('collapsed')?'Show details \u25BC':'Hide details \u25B2'">Show details &#9660;</button>
     <div class="modal-advanced collapsed">
@@ -1093,11 +1304,14 @@
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label class="form-label">Rate/day ($)</label>
-        <input type="number" id="nw-price" class="form-control" placeholder="0">
+        <label class="form-label">Rate/day</label>
+        <div style="display:flex;gap:.5rem">
+          <input type="number" id="nw-price" class="form-control" placeholder="0" style="flex:1">
+          <select id="nw-currency" class="form-control" style="width:auto;min-width:80px"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="PAB">PAB</option></select>
+        </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Group</label>
+        <label class="form-label">Department</label>
         <select id="nw-group" class="form-control">
           <option value="GENERAL">GENERAL</option>
         </select>
@@ -1293,7 +1507,7 @@
     </div>
     <div class="form-row">
       <div class="form-group" style="flex:1">
-        <label class="form-label">Group</label>
+        <label class="form-label">Department</label>
         <input type="text" id="bh-group" class="form-control" placeholder="GENERAL" value="GENERAL">
       </div>
       <div class="form-group" style="flex:1">
@@ -1346,11 +1560,14 @@
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label class="form-label">Rate / day ($)</label>
-        <input type="number" id="gcw-price" class="form-control" placeholder="45" value="45" min="0" step="1">
+        <label class="form-label">Rate / day</label>
+        <div style="display:flex;gap:.5rem">
+          <input type="number" id="gcw-price" class="form-control" placeholder="45" value="45" min="0" step="1" style="flex:1">
+          <select id="gcw-currency" class="form-control" style="width:auto;min-width:80px"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="PAB">PAB</option></select>
+        </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Group</label>
+        <label class="form-label">Department</label>
         <select id="gcw-group" class="form-control"></select>
       </div>
     </div>
@@ -1385,8 +1602,11 @@
       <input type="text" id="nsb-name" class="form-control" placeholder="Boat name">
     </div>
     <div class="form-group">
-      <label class="form-label">Rate/day ($)</label>
-      <input type="number" id="nsb-price" class="form-control" placeholder="0">
+      <label class="form-label">Rate/day</label>
+      <div style="display:flex;gap:.5rem">
+        <input type="number" id="nsb-price" class="form-control" placeholder="0" style="flex:1">
+        <select id="nsb-currency" class="form-control" style="width:auto;min-width:80px"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="PAB">PAB</option></select>
+      </div>
     </div>
     <button type="button" class="modal-advanced-toggle" onclick="this.nextElementSibling.classList.toggle('collapsed');this.textContent=this.nextElementSibling.classList.contains('collapsed')?'Show details \u25BC':'Hide details \u25B2'">Show details &#9660;</button>
     <div class="modal-advanced collapsed">
@@ -1402,7 +1622,7 @@
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Waves</label>
+          <label class="form-label">Sea Rating</label>
           <select id="nsb-wave" class="form-control">
             <option value="Waves">Waves</option>
             <option value="Big Waves">Big Waves</option>
@@ -1440,7 +1660,7 @@
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label class="form-label">Group</label>
+        <label class="form-label">Department</label>
         <select id="nf-group" class="form-control">
           <option value="Games">Games</option>
           <option value="Reality">Reality</option>
@@ -1645,7 +1865,7 @@
             <td><input class="bd-input" id="bd-vendor" type="text" placeholder="Company name"></td>
           </tr>
           <tr>
-            <td>Waves</td>
+            <td>Sea Rating</td>
             <td><select class="bd-input" id="bd-waves">
               <option value="Waves">Waves</option>
               <option value="Big Waves">Big Waves</option>
@@ -1654,17 +1874,21 @@
             </select></td>
           </tr>
           <tr>
-            <td>Night OK</td>
+            <td>Night Navigation</td>
             <td style="padding:.35rem .4rem">
               <input type="checkbox" id="bd-night" style="width:15px;height:15px;cursor:pointer">
             </td>
           </tr>
           <tr>
-            <td>Rate est. $/day</td>
+            <td>Currency</td>
+            <td><select class="bd-input" id="bd-currency" style="width:100%;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);font-size:.8rem"><option value="USD">USD ($)</option><option value="EUR">EUR (&euro;)</option><option value="GBP">GBP (&pound;)</option><option value="PAB">PAB (B/.)</option></select></td>
+          </tr>
+          <tr>
+            <td>Rate est. /day</td>
             <td><input class="bd-input" id="bd-rate-est" type="number" min="0" step="1" placeholder="Daily rate estimate"></td>
           </tr>
           <tr>
-            <td>Rate actual $/day</td>
+            <td>Rate actual /day</td>
             <td><input class="bd-input" id="bd-rate-act" type="number" min="0" step="1" placeholder="Actual negotiated rate"></td>
           </tr>
           <tr>
@@ -1777,30 +2001,22 @@
 <div id="activity-overlay" class="activity-overlay hidden" onclick="if(event.target===this)App.closeActivityPanel()">
   <div class="activity-panel">
     <div class="activity-header">
-      <h3>Activity</h3>
+      <h3>Activity Timeline</h3>
       <button class="btn btn-icon btn-sm" onclick="App.closeActivityPanel()" title="Close">&times;</button>
     </div>
     <div class="activity-filters">
       <select id="activity-filter-module" onchange="App.loadActivity()">
         <option value="">All modules</option>
-        <option value="shooting_days">PDT</option>
-        <option value="boats">Boats</option>
-        <option value="boat_assignments">Boat Assignments</option>
-        <option value="picture_boats">Picture Boats</option>
-        <option value="picture_boat_assignments">PB Assignments</option>
-        <option value="security_boats">Security Boats</option>
-        <option value="security_boat_assignments">SB Assignments</option>
-        <option value="transport_vehicles">Transport</option>
-        <option value="transport_assignments">Transport Assignments</option>
-        <option value="fuel_entries">Fuel</option>
-        <option value="fuel_machinery">Fuel Machinery</option>
-        <option value="helpers">Labour</option>
-        <option value="helper_assignments">Labour Assignments</option>
-        <option value="guard_camp_workers">Guards</option>
-        <option value="guard_camp_assignments">Guard Assignments</option>
-        <option value="location_sites">Locations</option>
-        <option value="location_schedules">Location Schedule</option>
-        <option value="fnb_categories">FNB</option>
+        <option value="pdt">PDT (Schedule)</option>
+        <option value="fleet">Fleet (Boats)</option>
+        <option value="picture-boats">Picture Boats</option>
+        <option value="security-boats">Security Boats</option>
+        <option value="transport">Transport</option>
+        <option value="fuel">Fuel</option>
+        <option value="labour">Labour</option>
+        <option value="guards">Guards</option>
+        <option value="locations">Locations</option>
+        <option value="fnb">FNB (Food & Beverage)</option>
       </select>
       <select id="activity-filter-user" onchange="App.loadActivity()">
         <option value="">All users</option>
@@ -1847,6 +2063,12 @@
   <span>unsaved change(s)</span>
 </div>
 
+<script src="/static/js/i18n.js"></script>
+<script src="/static/js/errors.js"></script>
+<script src="/static/js/offline-queue.js"></script>
+<script src="/static/js/dashboard-v2.js"></script>
+<script src="/static/js/onboarding.js"></script>
+<script src="/static/js/timeline.js"></script>
 <script src="/static/app-monolith.js"></script>
 </body>
 </html>

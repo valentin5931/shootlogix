@@ -103,6 +103,22 @@ def validate_assignment(data):
         raise ValidationError(errors)
 
 
+def validate_assignment_dates(start_date, end_date, prod_start, prod_end):
+    """Validate that assignment dates are within the production date range.
+    start_date, end_date: assignment dates (ISO strings)
+    prod_start, prod_end: production dates (ISO strings)
+    All checks are skipped if any date is missing.
+    """
+    if not start_date or not end_date:
+        return
+    if start_date > end_date:
+        raise ValidationError({"end_date": "End date must be after start date"})
+    if prod_start and start_date < prod_start:
+        raise ValidationError({"start_date": "Start date is before production start"})
+    if prod_end and end_date > prod_end:
+        raise ValidationError({"end_date": "End date is after production end"})
+
+
 def validate_fuel_entry(data):
     """Validate a fuel entry."""
     errors = {}
@@ -182,6 +198,47 @@ def validate_assignment_overlap(table_name, entity_col, entity_id, start_date, e
             raise ValidationError({
                 "date_overlap": f"This entity is already assigned during {start_date} - {end_date} (conflicts with assignment(s): {', '.join(str(c['id']) for c in conflicts)})"
             })
+
+
+def validate_required_fields(data, fields):
+    """Check that all specified fields are present and non-empty in data dict.
+    fields: list of field names (strings).
+    Returns None on success, raises ValidationError with all missing fields."""
+    errors = {}
+    for f in fields:
+        val = data.get(f)
+        if val is None or (isinstance(val, str) and not val.strip()):
+            errors[f] = f"{f} is required"
+    if errors:
+        raise ValidationError(errors)
+
+
+def validate_numeric_fields(data, fields, allow_zero=True):
+    """Validate that specified fields, if present, are valid numbers.
+    Skips fields that are None or empty string (treated as optional).
+    Raises ValidationError if any field is not a valid number."""
+    errors = {}
+    for f in fields:
+        val = data.get(f)
+        if val is None or val == "":
+            continue
+        try:
+            num = float(val)
+            if allow_zero and num < 0:
+                errors[f] = f"{f} must be >= 0"
+            elif not allow_zero and num <= 0:
+                errors[f] = f"{f} must be > 0"
+        except (ValueError, TypeError):
+            errors[f] = f"{f} must be a number"
+    if errors:
+        raise ValidationError(errors)
+
+
+def validate_entity_name(data, field="name"):
+    """If 'name' (or specified field) is present in data, ensure it's not empty."""
+    val = data.get(field)
+    if val is not None and (not isinstance(val, str) or not val.strip()):
+        raise ValidationError({field: f"{field} cannot be empty"})
 
 
 def validate_guard_schedule(data):

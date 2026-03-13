@@ -67,13 +67,18 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     return boats;
   }
 
-  function renderBoatList() {
+  async function renderBoatList() {
     const boats = _filteredBoats();
     const assignedIds = new Set(state.assignments.filter(a => a.boat_id).map(a => a.boat_id));
     const container = $('boat-list');
+    const boatIds = boats.map(b => b.id);
+    if (boatIds.length) await App.loadCommentCounts('boats', boatIds);
 
     if (!boats.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No boats</div>';
+      container.innerHTML = SL.emptyState('boat',
+        'No boats registered yet',
+        'Add your first boat to start building assignments and schedules.',
+        'Add a boat', "App.showAddBoatModal()");
       return;
     }
 
@@ -120,26 +125,33 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
             onclick="event.stopPropagation();App.openBoatDetail(${b.id})">&#x270E;</button>
           <button class="boat-edit-btn" title="Duplicate boat" style="font-size:.65rem"
             onclick="event.stopPropagation();App.duplicateEntity('boats',${b.id})">&#x2398;</button>
+          ${App.commentBadgeHTML('boats', b.id)}
           <button class="card-delete-btn" title="Delete boat"
-            onclick="event.stopPropagation();App.confirmDeleteBoat(${b.id},'${esc(b.name).replace(/'/g,"\\'")}',${boatAsgns.length})">&#x1F5D1;</button>
+            onclick="event.stopPropagation();App.confirmDeleteBoat(${b.id},'${esc(b.name).replace(/'/g,"\\'")}')">&#x1F5D1;</button>
         </div>
       </div>`;
     }).join('');
   }
 
   // ── Delete boat from card ──────────────────────────────────
-  function confirmDeleteBoat(boatId, boatName, assignmentCount) {
-    const impact = assignmentCount > 0 ? `\n${assignmentCount} assignment(s) will also be deleted.` : '';
-    showConfirm(`Delete boat "${boatName}"?${impact}`, async () => {
-      try {
-        await api('DELETE', `/api/boats/${boatId}`);
-        state.boats = state.boats.filter(b => b.id !== boatId);
-        state.assignments = state.assignments.filter(a => a.boat_id !== boatId);
-        closeBoatDetail();
-        renderBoats();
-        toast('Boat deleted');
-      } catch (e) { toast('Error: ' + e.message, 'error'); }
-    });
+  async function confirmDeleteBoat(boatId, boatName) {
+    try {
+      const impact = await api('GET', `/api/boats/${boatId}/impact`);
+      const parts = [];
+      if (impact.assignments > 0) parts.push(`${impact.assignments} assignment(s)`);
+      if (impact.fuel_entries > 0) parts.push(`${impact.fuel_entries} fuel entry(ies)`);
+      const cascade = parts.length > 0 ? `\nThis will also remove ${parts.join(' and ')}.` : '';
+      showConfirm(`Delete boat "${boatName}"?${cascade}`, async () => {
+        try {
+          await api('DELETE', `/api/boats/${boatId}`);
+          state.boats = state.boats.filter(b => b.id !== boatId);
+          state.assignments = state.assignments.filter(a => a.boat_id !== boatId);
+          closeBoatDetail();
+          renderBoats();
+          toast('Boat deleted');
+        } catch (e) { toast('Error: ' + e.message, 'error'); }
+      });
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
   // ── Duplicate entity (generic) ────────────────────────────
@@ -344,7 +356,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         </div>`;
     });
 
-    container.innerHTML = html || '<div style="color:var(--text-4);text-align:center;padding:3rem">No functions. Click + Function to add one.</div>';
+    container.innerHTML = html || `<div style="color:var(--text-4);text-align:center;padding:3rem">${t('boats.no_functions')}</div>`;
   }
 
   function renderRoleCard(func, color) {
@@ -365,6 +377,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
               <span style="font-weight:600;color:var(--text-0);font-size:.82rem">${esc(boatName)}</span>
               ${asgn.captain ? `<span style="color:var(--text-3);font-size:.7rem">· ${esc(asgn.captain)}</span>` : ''}
               ${asgn.include_sunday === 0 ? '<span style="font-size:.6rem;background:var(--orange);color:#000;padding:0 .3rem;border-radius:3px;font-weight:700">NO SUN</span>' : ''}
+              ${asgn.exclude_holidays === 1 ? '<span style="font-size:.6rem;background:var(--red);color:#fff;padding:0 .3rem;border-radius:3px;font-weight:700">NO HOL</span>' : ''}
             </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:.2rem">
@@ -429,12 +442,17 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
   function onBoatDragEnd() {
     state.dragBoat = null;
-    document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+    document.querySelectorAll('.dragging').forEach(el => {
+      el.classList.remove('dragging');
+      el.classList.add('drag-landing');
+      el.addEventListener('animationend', () => el.classList.remove('drag-landing'), { once: true });
+    });
   }
 
   function onDragOver(event, funcId) {
     if (_dragFuncId) return;  // func reorder handled separately
     event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
     document.getElementById(`role-card-${funcId}`)?.classList.add('drag-over');
     document.getElementById(`drop-${funcId}`)?.classList.add('drag-over');
   }
@@ -569,7 +587,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('am-boat-id').value  = boat.id;
     // Store assignment ID for edit vs create
     $('am-func-id').dataset.assignmentId = existingAsgn?.id || '';
-    $('assign-modal-title').textContent = existingAsgn ? 'Edit assignment'
+    $('assign-modal-title').textContent = existingAsgn ? t('boats.edit_assignment')
       : _tabCtx === 'labour' ? 'Assign worker'
       : _tabCtx === 'guard_camp' ? 'Assign guard'
       : _tabCtx === 'transport' ? 'Assign vehicle'
@@ -578,7 +596,18 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('am-boat-name').textContent = boat.name + (boat.captain ? ` · ${boat.captain}` : '');
     $('am-notes').value = existingAsgn?.notes || '';
     $('am-price-display').textContent = rate > 0 ? `$${rate.toLocaleString()}/day` : 'Rate not set';
+    // P5.6: price override fields
+    const poInput = $('am-price-override');
+    const orInput = $('am-override-reason');
+    const orGroup = $('am-override-reason-group');
+    if (poInput) {
+      poInput.value = existingAsgn?.price_override || '';
+      poInput.dataset.originalValue = existingAsgn?.price_override || '';
+    }
+    if (orInput) orInput.value = existingAsgn?.override_reason || '';
+    if (orGroup) orGroup.style.display = (existingAsgn?.price_override) ? '' : 'none';
     $('am-include-sunday').checked = existingAsgn?.include_sunday !== 0;
+    $('am-exclude-holidays').checked = existingAsgn?.exclude_holidays === 1;
     _updateBillingLabel();
     $('am-include-sunday').onchange = _updateBillingLabel;
 
@@ -605,22 +634,49 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     if (el) el.textContent = $('am-include-sunday').checked ? 'Monthly (7d/7)' : 'Per working day (Mon-Sat)';
   }
 
+  // P5.6: show/hide override reason field based on price override value
+  function onPriceOverrideChange() {
+    const poInput = $('am-price-override');
+    const orGroup = $('am-override-reason-group');
+    if (!poInput || !orGroup) return;
+    const val = parseFloat(poInput.value);
+    const orig = parseFloat(poInput.dataset.originalValue);
+    // Show reason field if a non-zero override is set and it's different from original
+    const changed = val > 0 && (isNaN(orig) || val !== orig);
+    orGroup.style.display = (val > 0) ? '' : 'none';
+  }
+
   async function confirmAssignment() {
     const funcId       = parseInt($('am-func-id').value);
     const boatId       = parseInt($('am-boat-id').value);
     const assignmentId = $('am-func-id').dataset.assignmentId;
     const notes  = $('am-notes').value;
     const includeSunday = $('am-include-sunday').checked ? 1 : 0;
+    const excludeHolidays = $('am-exclude-holidays').checked ? 1 : 0;
+    // P5.6: price override + reason
+    const priceOverride = parseFloat($('am-price-override')?.value) || null;
+    const overrideReason = ($('am-override-reason')?.value || '').trim();
+    const origOverride = parseFloat($('am-price-override')?.dataset.originalValue);
+    if (priceOverride && priceOverride > 0 && (isNaN(origOverride) || priceOverride !== origOverride) && !overrideReason) {
+      toast('Please provide a reason for the price override', 'error');
+      $('am-override-reason')?.focus();
+      return;
+    }
 
     try {
+      // P5.6: build override fields object
+      const _ov = {};
+      if (priceOverride) { _ov.price_override = priceOverride; _ov.override_reason = overrideReason; }
+      else if ($('am-price-override')?.value === '' || $('am-price-override')?.value === '0') { _ov.price_override = null; _ov.override_reason = null; }
+
       if (_assignCtx === 'security') {
         if (assignmentId) {
           await api('PUT', `/api/security-boat-assignments/${assignmentId}`, {
-            security_boat_id: boatId, notes, include_sunday: includeSunday,
+            security_boat_id: boatId, notes, include_sunday: includeSunday, exclude_holidays: excludeHolidays, ..._ov,
           });
         } else {
           await api('POST', `/api/productions/${state.prodId}/security-boat-assignments`, {
-            boat_function_id: funcId, security_boat_id: boatId, notes, include_sunday: includeSunday,
+            boat_function_id: funcId, security_boat_id: boatId, notes, include_sunday: includeSunday, exclude_holidays: excludeHolidays, ..._ov,
           });
         }
         closeAssignModal();
@@ -632,11 +688,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       } else if (_assignCtx === 'picture') {
         if (assignmentId) {
           await api('PUT', `/api/picture-boat-assignments/${assignmentId}`, {
-            picture_boat_id: boatId, notes, include_sunday: includeSunday,
+            picture_boat_id: boatId, notes, include_sunday: includeSunday, exclude_holidays: excludeHolidays, ..._ov,
           });
         } else {
           await api('POST', `/api/productions/${state.prodId}/picture-boat-assignments`, {
-            boat_function_id: funcId, picture_boat_id: boatId, notes, include_sunday: includeSunday,
+            boat_function_id: funcId, picture_boat_id: boatId, notes, include_sunday: includeSunday, exclude_holidays: excludeHolidays, ..._ov,
           });
         }
         closeAssignModal();
@@ -647,10 +703,10 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         toast(assignmentId ? 'Assignment updated' : `${boat?.name || 'Boat'} assigned to ${func?.name || 'function'}`);
       } else if (_assignCtx === 'transport') {
         if (assignmentId) {
-          await api('PUT', `/api/transport-assignments/${assignmentId}`, { vehicle_id: boatId, notes, include_sunday: includeSunday });
+          await api('PUT', `/api/transport-assignments/${assignmentId}`, { vehicle_id: boatId, notes, include_sunday: includeSunday, exclude_holidays: excludeHolidays, ..._ov });
         } else {
           await api('POST', `/api/productions/${state.prodId}/transport-assignments`, {
-            boat_function_id: funcId, vehicle_id: boatId, notes, include_sunday: includeSunday,
+            boat_function_id: funcId, vehicle_id: boatId, notes, include_sunday: includeSunday, exclude_holidays: excludeHolidays, ..._ov,
           });
         }
         closeAssignModal();
@@ -661,10 +717,10 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         toast(assignmentId ? 'Assignment updated' : `${vehicle?.name || 'Vehicle'} assigned to ${func?.name || 'function'}`);
       } else if (_assignCtx === 'labour') {
         if (assignmentId) {
-          await api('PUT', `/api/helper-assignments/${assignmentId}`, { helper_id: boatId, notes, include_sunday: includeSunday });
+          await api('PUT', `/api/helper-assignments/${assignmentId}`, { helper_id: boatId, notes, include_sunday: includeSunday, exclude_holidays: excludeHolidays, ..._ov });
         } else {
           await api('POST', `/api/productions/${state.prodId}/helper-assignments`, {
-            boat_function_id: funcId, helper_id: boatId, notes, include_sunday: includeSunday,
+            boat_function_id: funcId, helper_id: boatId, notes, include_sunday: includeSunday, exclude_holidays: excludeHolidays, ..._ov,
           });
         }
         closeAssignModal();
@@ -675,10 +731,10 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         toast(assignmentId ? 'Assignment updated' : `${worker?.name || 'Worker'} assigned to ${lfunc?.name || 'function'}`);
       } else if (_assignCtx === 'guard_camp') {
         if (assignmentId) {
-          await api('PUT', `/api/guard-camp-assignments/${assignmentId}`, { helper_id: boatId, notes, include_sunday: includeSunday });
+          await api('PUT', `/api/guard-camp-assignments/${assignmentId}`, { helper_id: boatId, notes, include_sunday: includeSunday, exclude_holidays: excludeHolidays, ..._ov });
         } else {
           await api('POST', `/api/productions/${state.prodId}/guard-camp-assignments`, {
-            boat_function_id: funcId, helper_id: boatId, notes, include_sunday: includeSunday,
+            boat_function_id: funcId, helper_id: boatId, notes, include_sunday: includeSunday, exclude_holidays: excludeHolidays, ..._ov,
           });
         }
         closeAssignModal();
@@ -690,11 +746,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       } else {
         if (assignmentId) {
           await api('PUT', `/api/assignments/${assignmentId}`, {
-            boat_id: boatId, notes, include_sunday: includeSunday,
+            boat_id: boatId, notes, include_sunday: includeSunday, exclude_holidays: excludeHolidays, ..._ov,
           });
         } else {
           await api('POST', `/api/productions/${state.prodId}/assignments`, {
-            boat_function_id: funcId, boat_id: boatId, notes, include_sunday: includeSunday,
+            boat_function_id: funcId, boat_id: boatId, notes, include_sunday: includeSunday, exclude_holidays: excludeHolidays, ..._ov,
           });
         }
         closeAssignModal();
@@ -784,10 +840,13 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('nb-wave').value    = 'Waves';
     $('nb-night').checked = false;
     $('add-boat-overlay').classList.remove('hidden');
+    _SL._snapshotModal('add-boat-overlay');
     setTimeout(() => $('nb-name').focus(), 80);
   }
 
-  function closeAddBoatModal() { $('add-boat-overlay').classList.add('hidden'); }
+  function closeAddBoatModal(force) {
+    _SL._guardedClose('add-boat-overlay', () => $('add-boat-overlay').classList.add('hidden'), force);
+  }
 
   async function createBoat() {
     const name = $('nb-name').value.trim();
@@ -796,6 +855,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       const boat = await api('POST', `/api/productions/${state.prodId}/boats`, {
         name,
         daily_rate_estimate: parseFloat($('nb-price').value) || 0,
+        currency:   $('nb-currency')?.value || 'USD',
         capacity:   $('nb-capacity').value.trim() || null,
         captain:    $('nb-captain').value.trim() || null,
         wave_rating: $('nb-wave').value,
@@ -804,7 +864,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         group_name: 'Custom',
       });
       state.boats.push(boat);
-      closeAddBoatModal();
+      closeAddBoatModal(true);
       renderBoatList();
       toast(`Boat "${boat.name}" created`);
     } catch (e) {
@@ -818,10 +878,13 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('npb-wave').value    = 'Waves';
     $('npb-night').checked = false;
     $('add-picture-boat-overlay').classList.remove('hidden');
+    _SL._snapshotModal('add-picture-boat-overlay');
     setTimeout(() => $('npb-name').focus(), 80);
   }
 
-  function closeAddPictureBoatModal() { $('add-picture-boat-overlay').classList.add('hidden'); }
+  function closeAddPictureBoatModal(force) {
+    _SL._guardedClose('add-picture-boat-overlay', () => $('add-picture-boat-overlay').classList.add('hidden'), force);
+  }
 
   async function createPictureBoat() {
     const name = $('npb-name').value.trim();
@@ -830,6 +893,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       const pb = await api('POST', `/api/productions/${state.prodId}/picture-boats`, {
         name,
         daily_rate_estimate: parseFloat($('npb-price').value) || 0,
+        currency:    $('npb-currency')?.value || 'USD',
         capacity:    $('npb-capacity').value.trim() || null,
         captain:     $('npb-captain').value.trim()  || null,
         wave_rating: $('npb-wave').value,
@@ -838,7 +902,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         group_name:  'Custom',
       });
       state.pictureBoats.push(pb);
-      closeAddPictureBoatModal();
+      closeAddPictureBoatModal(true);
       renderPbBoatList();
       toast(`Picture boat "${pb.name}" created`);
     } catch (e) {
@@ -879,6 +943,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('bd-night').checked  = !!pb.night_ok;
     $('bd-rate-est').value = pb.daily_rate_estimate || '';
     $('bd-rate-act').value = pb.daily_rate_actual   || '';
+    if ($('bd-currency')) $('bd-currency').value = pb.currency || 'USD';
     $('bd-notes').value    = pb.notes || '';
 
     // Hide category row — not relevant for picture boats
@@ -902,24 +967,32 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   function _detailBoatIdForBtn() { return _detailBoatId; }
 
   async function deletePictureBoat(pbId) {
-    showConfirm('Delete this picture boat? All assignments will be lost.', async () => {
-      try {
-        await api('DELETE', `/api/picture-boats/${pbId}`);
-        state.pictureBoats       = state.pictureBoats.filter(b => b.id !== pbId);
-        state.pictureAssignments = state.pictureAssignments.filter(a => a.picture_boat_id !== pbId);
-        closeBoatDetail();
-        renderPictureBoats();
-        toast('Picture boat deleted');
-      } catch (e) { toast('Error: ' + e.message, 'error'); }
-    });
+    try {
+      const pb = state.pictureBoats.find(b => b.id === pbId);
+      const impact = await api('GET', `/api/picture-boats/${pbId}/impact`);
+      const parts = [];
+      if (impact.assignments > 0) parts.push(`${impact.assignments} assignment(s)`);
+      if (impact.fuel_entries > 0) parts.push(`${impact.fuel_entries} fuel entry(ies)`);
+      const cascade = parts.length > 0 ? `\nThis will also remove ${parts.join(' and ')}.` : '';
+      showConfirm(`Delete picture boat "${pb?.name || '?'}"?${cascade}`, async () => {
+        try {
+          await api('DELETE', `/api/picture-boats/${pbId}`);
+          state.pictureBoats       = state.pictureBoats.filter(b => b.id !== pbId);
+          state.pictureAssignments = state.pictureAssignments.filter(a => a.picture_boat_id !== pbId);
+          closeBoatDetail();
+          renderPictureBoats();
+          toast('Picture boat deleted');
+        } catch (e) { toast('Error: ' + e.message, 'error'); }
+      });
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
   // ── Add function ───────────────────────────────────────────
   function showAddFunctionModal() {
     ['nf-name','nf-specs','nf-start','nf-end'].forEach(id => $(id).value = '');
     $('nf-edit-id').value = '';
-    $('nf-modal-title').textContent = 'New function';
-    $('nf-confirm-btn').textContent = 'Create function';
+    $('nf-modal-title').textContent = t('boats.new_function');
+    $('nf-confirm-btn').textContent = t('common.create');
     $('nf-group').innerHTML = state.boatGroups.map(g => `<option value="${g.name}">${g.name}</option>`).join('');
     $('nf-group').value = state.boatGroups[0]?.name || '';
     $('nf-color').value = state.boatGroups[0]?.color || '#3B82F6';
@@ -929,14 +1002,15 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     };
     $('add-func-overlay').dataset.ctx = 'boats';
     $('add-func-overlay').classList.remove('hidden');
+    _SL._snapshotModal('add-func-overlay');
     setTimeout(() => $('nf-name').focus(), 80);
   }
 
   function pbShowAddFunctionModal() {
     ['nf-name','nf-specs','nf-start','nf-end'].forEach(id => $(id).value = '');
     $('nf-edit-id').value = '';
-    $('nf-modal-title').textContent = 'New function';
-    $('nf-confirm-btn').textContent = 'Create function';
+    $('nf-modal-title').textContent = t('boats.new_function');
+    $('nf-confirm-btn').textContent = t('common.create');
     $('nf-group').innerHTML = state.pbGroups.map(g => `<option value="${g.name}">${g.name}</option>`).join('');
     $('nf-group').value = state.pbGroups[0]?.name || '';
     $('nf-color').value = state.pbGroups[0]?.color || '#6b7280';
@@ -946,12 +1020,15 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     };
     $('add-func-overlay').dataset.ctx = 'picture';
     $('add-func-overlay').classList.remove('hidden');
+    _SL._snapshotModal('add-func-overlay');
     setTimeout(() => $('nf-name').focus(), 80);
   }
 
-  function closeAddFunctionModal() {
-    $('add-func-overlay').classList.add('hidden');
-    $('nf-group').onchange = null;
+  function closeAddFunctionModal(force) {
+    _SL._guardedClose('add-func-overlay', () => {
+      $('add-func-overlay').classList.add('hidden');
+      $('nf-group').onchange = null;
+    }, force);
   }
 
   // ── Edit function: open modal in edit mode ──────────────────
@@ -978,8 +1055,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       : state.boatGroups;
 
     $('nf-edit-id').value = funcId;
-    $('nf-modal-title').textContent = 'Edit function';
-    $('nf-confirm-btn').textContent = 'Save changes';
+    $('nf-modal-title').textContent = t('boats.edit_function');
+    $('nf-confirm-btn').textContent = t('common.save');
     $('nf-name').value = func.name || '';
     $('nf-specs').value = func.specs || '';
     $('nf-start').value = func.default_start || '';
@@ -993,6 +1070,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     };
     $('add-func-overlay').dataset.ctx = ctx;
     $('add-func-overlay').classList.remove('hidden');
+    _SL._snapshotModal('add-func-overlay');
     setTimeout(() => $('nf-name').focus(), 80);
   }
 
@@ -1022,7 +1100,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         const arr = state[funcArrays[ctx] || 'functions'];
         const idx = arr.findIndex(f => f.id === parseInt(editId));
         if (idx !== -1) Object.assign(arr[idx], updated);
-        closeAddFunctionModal();
+        closeAddFunctionModal(true);
         _rerenderCtx(ctx);
         toast(`Function "${updated.name}" updated`);
       } else {
@@ -1036,7 +1114,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         else if (ctx === 'labour') state.labourFunctions.push(func);
         else if (ctx === 'guard_camp') state.gcFunctions.push(func);
         else state.functions.push(func);
-        closeAddFunctionModal();
+        closeAddFunctionModal(true);
         _rerenderCtx(ctx);
         toast(`Function "${func.name}" created`);
       }
@@ -1229,12 +1307,14 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
         if (!filledAsgn) {
           cells += `<td class="schedule-cell ${weClass}" data-func="${func.id}" data-date="${dk}" data-asgn=""
             onmousedown="App._onScheduleMouseDown(event,${func.id},null,'${dk}')"
-            onmouseover="App._onScheduleMouseOver(event,${func.id},null,'${dk}')"></td>`;
+            onmouseover="App._onScheduleMouseOver(event,${func.id},null,'${dk}')"
+            oncontextmenu="App.onScheduleCellContext(event,${func.id},null,'${dk}')"></td>`;
         } else {
           const bg = _scheduleCellBg(filledStatus, color, isWE);
           cells += `<td class="schedule-cell ${weClass}" data-func="${func.id}" data-date="${dk}" data-asgn="${filledAsgn.id}" style="background:${bg}"
             onmousedown="App._onScheduleMouseDown(event,${func.id},${filledAsgn.id},'${dk}')"
-            onmouseover="App._onScheduleMouseOver(event,${func.id},${filledAsgn.id},'${dk}')"></td>`;
+            onmouseover="App._onScheduleMouseOver(event,${func.id},${filledAsgn.id},'${dk}')"
+            oncontextmenu="App.onScheduleCellContext(event,${func.id},${filledAsgn.id},'${dk}')"></td>`;
         }
       });
 
@@ -1715,6 +1795,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('bd-night').checked  = !!boat.night_ok;
     $('bd-rate-est').value = boat.daily_rate_estimate || '';
     $('bd-rate-act').value = boat.daily_rate_actual   || '';
+    if ($('bd-currency')) $('bd-currency').value = boat.currency || 'USD';
     $('bd-notes').value    = boat.notes || '';
 
     // Assignments list (read-only)
@@ -1744,6 +1825,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       night_ok:            $('bd-night').checked ? 1 : 0,
       daily_rate_estimate: parseFloat($('bd-rate-est').value) || 0,
       daily_rate_actual:   parseFloat($('bd-rate-act').value) || null,
+      currency:            $('bd-currency')?.value || 'USD',
       notes:               $('bd-notes').value.trim() || null,
     };
     if (!data.name) { toast('Name is required', 'error'); return; }
@@ -1765,6 +1847,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
           contact:             $('bd-vendor').value.trim()  || null,
           daily_rate_estimate: parseFloat($('bd-rate-est').value) || 0,
           daily_rate_actual:   parseFloat($('bd-rate-act').value) || null,
+          currency:            $('bd-currency')?.value || 'USD',
           notes:               $('bd-notes').value.trim() || null,
         };
         const updated = await api('PUT', `/api/helpers/${_detailBoatId}`, wdata);
@@ -1781,6 +1864,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
           contact:             $('bd-vendor').value.trim()  || null,
           daily_rate_estimate: parseFloat($('bd-rate-est').value) || 0,
           daily_rate_actual:   parseFloat($('bd-rate-act').value) || null,
+          currency:            $('bd-currency')?.value || 'USD',
           notes:               $('bd-notes').value.trim() || null,
         };
         const updated = await api('PUT', `/api/guard-camp-workers/${_detailBoatId}`, gcdata);
@@ -1798,6 +1882,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
           vendor:              $('bd-vendor').value.trim()  || null,
           daily_rate_estimate: parseFloat($('bd-rate-est').value) || 0,
           daily_rate_actual:   parseFloat($('bd-rate-act').value) || null,
+          currency:            $('bd-currency')?.value || 'USD',
           notes:               $('bd-notes').value.trim() || null,
         };
         const updated = await api('PUT', `/api/transport-vehicles/${_detailBoatId}`, tdata);
@@ -2163,6 +2248,124 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
 
 
 
+  // ── Context menu on schedule cells (P3.8) ────────────────
+  let _longPressTimer = null;
+
+  function onScheduleCellContext(event, funcId, assignmentId, date) {
+    event.preventDefault();
+    event.stopPropagation();
+    _showCellContextMenu(event, funcId, assignmentId, date);
+  }
+
+  function _showCellContextMenu(event, funcId, assignmentId, date) {
+    closeSchedulePopover();
+    _closeCellContextMenu();
+
+    const func = state.functions.find(f => f.id === funcId);
+    const asgn = assignmentId ? state.assignments.find(a => a.id === assignmentId) : null;
+    const boatName = asgn ? (asgn.boat_name_override || asgn.boat_name || '') : '';
+    const isLocked = !!state.lockedDays[date];
+
+    let items = '';
+    if (asgn) {
+      items += `<button onclick="App.editAssignmentById(${assignmentId});App._closeCellContextMenu()">&#x270E; Edit assignment</button>`;
+      items += `<button onclick="App._showCellDetail(${funcId},${assignmentId},'${date}')">&#x1F50D; View details</button>`;
+      items += `<button class="danger" onclick="App._contextDeleteAssignment(${assignmentId})">&#x1F5D1; Delete</button>`;
+    } else {
+      items += `<button onclick="App.assignFromDate(${funcId},'${date}');App._closeCellContextMenu()">+ Assign boat</button>`;
+    }
+
+    const menu = document.createElement('div');
+    menu.id = 'cell-context-menu';
+    menu.className = 'cell-context-menu';
+    menu.innerHTML = `
+      <div class="ccm-header">${esc(func?.name || '')} &middot; ${fmtDateLong(date)}</div>
+      ${boatName ? `<div class="ccm-sub">${esc(boatName)}</div>` : ''}
+      ${isLocked ? '<div class="ccm-locked">&#x1F512; Day locked</div>' : ''}
+      <div class="ccm-actions">${items}</div>`;
+
+    document.body.appendChild(menu);
+
+    // Position near cursor
+    const x = Math.min(event.clientX, window.innerWidth - 200);
+    const y = Math.min(event.clientY, window.innerHeight - 180);
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+
+    // Close on outside click
+    setTimeout(() => {
+      document.addEventListener('click', _closeCellContextMenu, { once: true });
+    }, 10);
+  }
+
+  function _closeCellContextMenu() {
+    const m = document.getElementById('cell-context-menu');
+    if (m) m.remove();
+  }
+
+  function _showCellDetail(funcId, assignmentId, date) {
+    _closeCellContextMenu();
+    const asgn = state.assignments.find(a => a.id === assignmentId);
+    if (!asgn) return;
+    const func = state.functions.find(f => f.id === funcId);
+    const boat = state.boats.find(b => b.id === asgn.boat_id);
+    const wd = computeWd(asgn);
+    const rate = boat?.daily_rate_estimate || 0;
+
+    const el = $('schedule-popover');
+    $('sch-pop-content').innerHTML = `
+      <div class="sch-pop-header">
+        <strong>${esc(func?.name || '')}</strong>
+        <span style="color:var(--text-4);font-size:.65rem;margin-left:.4rem">${esc(func?.function_group || '')}</span>
+      </div>
+      <div style="font-size:.75rem;color:var(--text-1);margin-bottom:.3rem">&#x26F5; ${esc(boat?.name || asgn.boat_name_override || '?')}</div>
+      <div style="font-size:.7rem;color:var(--text-3);margin-bottom:.2rem">${fmtDate(asgn.start_date)} &rarr; ${fmtDate(asgn.end_date)}</div>
+      <div style="font-size:.7rem;color:var(--text-3);margin-bottom:.3rem">${wd} working day(s) &middot; ${fmtMoney(Math.round(wd * rate))}</div>
+      ${asgn.notes ? `<div style="font-size:.68rem;color:var(--text-4);font-style:italic;border-top:1px solid var(--border);padding-top:.3rem;margin-top:.2rem">${esc(asgn.notes)}</div>` : ''}
+      <div class="sch-pop-actions" style="margin-top:.4rem">
+        <button onclick="App.editAssignmentById(${assignmentId});App.closeSchedulePopover()">&#x270E; Edit</button>
+        <button class="danger" onclick="App.removeAssignmentById(${assignmentId})">&#x1F5D1; Delete</button>
+      </div>`;
+
+    const rect = document.querySelector(`td[data-func="${funcId}"][data-date="${date}"]`)?.getBoundingClientRect();
+    if (rect) {
+      el.style.left = (rect.right + 4) + 'px';
+      el.style.top = rect.top + 'px';
+    }
+    el.classList.remove('hidden');
+  }
+
+  async function _contextDeleteAssignment(assignmentId) {
+    _closeCellContextMenu();
+    showConfirm('Delete this assignment?', async () => {
+      await removeAssignmentById(assignmentId);
+    });
+  }
+
+  // Long-press for mobile (touchstart/touchend on schedule cells)
+  document.addEventListener('touchstart', e => {
+    const cell = e.target.closest('td.schedule-cell[data-func][data-date]');
+    if (!cell) return;
+    const funcId = parseInt(cell.dataset.func);
+    const assignmentId = parseInt(cell.dataset.asgn) || null;
+    const date = cell.dataset.date;
+    _longPressTimer = setTimeout(() => {
+      _longPressTimer = null;
+      e.preventDefault();
+      const touch = e.touches[0];
+      _showCellContextMenu({ clientX: touch.clientX, clientY: touch.clientY, preventDefault() {}, stopPropagation() {} }, funcId, assignmentId, date);
+    }, 500);
+  }, { passive: false });
+
+  document.addEventListener('touchend', () => {
+    if (_longPressTimer) { clearTimeout(_longPressTimer); _longPressTimer = null; }
+  });
+
+  document.addEventListener('touchmove', () => {
+    if (_longPressTimer) { clearTimeout(_longPressTimer); _longPressTimer = null; }
+  });
+
+
 // Register module functions on App
 Object.assign(window.App, {
   _addToMultiSelect,
@@ -2170,6 +2373,8 @@ Object.assign(window.App, {
   _assignmentsForFunc,
   _clearDayOverride,
   _clearMultiSelect,
+  _closeCellContextMenu,
+  _contextDeleteAssignment,
   _detailBoatIdForBtn,
   _doCellCycle,
   _fillDay,
@@ -2183,6 +2388,7 @@ Object.assign(window.App, {
   _scheduleCellBg,
   _selectRange,
   _setDetailLabels,
+  _showCellDetail,
   _showMultiSelectBar,
   _updateBillingLabel,
   assignFromDate,
@@ -2223,9 +2429,11 @@ Object.assign(window.App, {
   multiSelectClear,
   multiSelectFill,
   onBoatClick,
+  onPriceOverrideChange,
   onBoatDragEnd,
   onBoatDragStart,
   onDateCellClick,
+  onScheduleCellContext,
   onDragLeave,
   onDragOver,
   onDrop,

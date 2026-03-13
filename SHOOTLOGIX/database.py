@@ -71,7 +71,42 @@ _NAME_FIELDS = {
 }
 
 # Fields to skip in update diffs (noisy/internal)
-_SKIP_DIFF_FIELDS = {"id", "created_at", "updated_at", "production_id"}
+_SKIP_DIFF_FIELDS = {"id", "created_at", "updated_at", "production_id", "deleted_at"}
+
+# Human-readable field labels for diffs
+_FIELD_LABELS = {
+    "name": "name", "daily_rate": "daily rate", "date": "date",
+    "start_date": "start date", "end_date": "end date",
+    "day_overrides": "day overrides", "quantity": "quantity",
+    "notes": "notes", "status": "status", "boat_id": "boat",
+    "vehicle_id": "vehicle", "helper_id": "helper",
+    "boat_name_override": "boat name", "vehicle_name_override": "vehicle name",
+    "helper_name_override": "helper name", "worker_name_override": "worker name",
+    "fuel_type": "fuel type", "litres": "litres", "price_per_litre": "price/litre",
+    "total_cost": "total cost", "capacity": "capacity", "unit": "unit",
+    "source_type": "source", "day_number": "day #",
+    "description": "description", "location": "location",
+    "time_start": "start time", "time_end": "end time",
+    "category": "category", "supplier": "supplier",
+    "role": "role", "hourly_rate": "hourly rate",
+    "shift_start": "shift start", "shift_end": "shift end",
+}
+
+# Module grouping: table_name -> module slug
+_TABLE_TO_MODULE = {
+    "shooting_days": "pdt",
+    "boats": "fleet", "boat_assignments": "fleet", "boat_functions": "fleet",
+    "picture_boats": "picture-boats", "picture_boat_assignments": "picture-boats",
+    "security_boats": "security-boats", "security_boat_assignments": "security-boats",
+    "transport_vehicles": "transport", "transport_assignments": "transport",
+    "helpers": "labour", "helper_assignments": "labour",
+    "guard_camp_workers": "guards", "guard_camp_assignments": "guards",
+    "guard_location_schedules": "guards", "guard_posts": "guards",
+    "fuel_entries": "fuel", "fuel_machinery": "fuel",
+    "location_sites": "locations", "location_schedules": "locations",
+    "fnb_categories": "fnb", "fnb_items": "fnb",
+    "fnb_entries": "fnb", "fnb_tracking": "fnb",
+}
 
 
 def _extract_entity_name(table_name, data):
@@ -112,7 +147,8 @@ def _generate_human_description(table_name, action, old_data, new_data, nickname
                 old_val = od.get(k)
                 new_val = nd.get(k)
                 if str(old_val) != str(new_val):
-                    changes.append(f"{k}: {old_val} → {new_val}")
+                    field_label = _FIELD_LABELS.get(k, k.replace("_", " "))
+                    changes.append(f"{field_label}: {old_val} → {new_val}")
             if changes:
                 detail = ", ".join(changes[:3])
                 if len(changes) > 3:
@@ -176,7 +212,7 @@ def _log_history(conn, table_name, record_id, action, old_data=None, new_data=No
             table_name, action, old_d, new_d, user_nickname
         )
 
-    conn.execute(
+    cur = conn.execute(
         """INSERT INTO history
            (table_name, record_id, action, old_data, new_data,
             user_id, user_nickname, human_description, production_id)
@@ -184,6 +220,7 @@ def _log_history(conn, table_name, record_id, action, old_data=None, new_data=No
         (table_name, record_id, action, old_json, new_json,
          user_id, user_nickname, human_description, production_id)
     )
+    return cur.lastrowid
 
 
 def _run_ddl(conn, sql_script):
@@ -391,7 +428,7 @@ CREATE TABLE IF NOT EXISTS picture_boat_assignments (
         date            TEXT NOT NULL,
         liters          REAL DEFAULT 0,
         fuel_type       TEXT DEFAULT 'DIESEL',
-        UNIQUE(source_type, assignment_id, date)
+        note            TEXT DEFAULT NULL
     );
 
     CREATE TABLE IF NOT EXISTS fuel_machinery (
@@ -855,6 +892,20 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 -- ═══════════════════════════════════════════════
+-- ASSIGNMENT DAY OVERRIDES (P2.2)
+-- ═══════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS assignment_day_overrides (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assignment_type TEXT NOT NULL,
+    assignment_id   INTEGER NOT NULL,
+    date            TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ado_type_id_date
+    ON assignment_day_overrides(assignment_type, assignment_id, date);
+
+-- ═══════════════════════════════════════════════
 -- INDEXES FOR PERFORMANCE
 -- ═══════════════════════════════════════════════
 CREATE INDEX IF NOT EXISTS idx_boat_assignments_boat ON boat_assignments(boat_id);
@@ -866,6 +917,7 @@ CREATE INDEX IF NOT EXISTS idx_security_boat_assignments_func ON security_boat_a
 CREATE INDEX IF NOT EXISTS idx_transport_assignments_vehicle ON transport_assignments(vehicle_id);
 CREATE INDEX IF NOT EXISTS idx_fuel_entries_assignment ON fuel_entries(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_fuel_entries_date ON fuel_entries(date);
+CREATE INDEX IF NOT EXISTS idx_fuel_entries_source_date ON fuel_entries(source_type, assignment_id, date);
 CREATE INDEX IF NOT EXISTS idx_fuel_logs_boat ON fuel_logs(boat_id);
 CREATE INDEX IF NOT EXISTS idx_shooting_days_prod ON shooting_days(production_id);
 CREATE INDEX IF NOT EXISTS idx_shooting_days_date ON shooting_days(date);
@@ -895,6 +947,73 @@ CREATE INDEX IF NOT EXISTS idx_price_change_log_created ON price_change_log(crea
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_prod ON notifications(production_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(user_id, is_read);
+
+-- Daily checklists (auto-generated from assignments)
+CREATE TABLE IF NOT EXISTS daily_checklists (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    production_id INTEGER NOT NULL,
+    date          TEXT NOT NULL,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(production_id, date)
+);
+
+CREATE TABLE IF NOT EXISTS checklist_items (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    checklist_id  INTEGER NOT NULL REFERENCES daily_checklists(id) ON DELETE CASCADE,
+    item_text     TEXT NOT NULL,
+    category      TEXT DEFAULT 'general',
+    checked       INTEGER DEFAULT 0,
+    checked_by    INTEGER,
+    checked_at    TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_checklists_prod_date ON daily_checklists(production_id, date);
+CREATE INDEX IF NOT EXISTS idx_checklist_items_checklist ON checklist_items(checklist_id);
+
+-- ═══════════════════════════════════════════════
+-- PHYSICAL VESSELS (P2.3 — cross-module)
+-- ═══════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS physical_vessels (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    production_id        INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+    registration_number  TEXT,
+    vessel_name          TEXT NOT NULL,
+    vessel_type          TEXT,
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pv_reg_prod ON physical_vessels(production_id, registration_number)
+    WHERE registration_number IS NOT NULL;
+
+-- ═══════════════════════════════════════════════
+-- EXCHANGE RATES (P6.4 — multi-currency)
+-- ═══════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS exchange_rates (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    date            TEXT NOT NULL,
+    from_currency   TEXT NOT NULL,
+    to_currency     TEXT NOT NULL,
+    rate            REAL NOT NULL,
+    UNIQUE(date, from_currency, to_currency)
+);
+CREATE INDEX IF NOT EXISTS idx_exchange_rates_date ON exchange_rates(date);
+
+-- ═══════════════════════════════════════════════
+-- INCIDENTS (P6.7 — fleet incident tracking)
+-- ═══════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS incidents (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    production_id   INTEGER NOT NULL,
+    entity_type     TEXT NOT NULL,
+    entity_id       INTEGER NOT NULL,
+    incident_type   TEXT NOT NULL CHECK(incident_type IN ('engine_failure','accident','delay','weather','other')),
+    date            TEXT NOT NULL,
+    description     TEXT,
+    status          TEXT DEFAULT 'open' CHECK(status IN ('open','resolved')),
+    schedule_impact TEXT,
+    resolved_at     TIMESTAMP,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_incidents_prod ON incidents(production_id, status);
         """)
 
     print("Database initialized — ShootLogix schema v1")
@@ -1016,6 +1135,11 @@ def _migrate_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id)")
             print("Migration: added history indexes (production_id, user_id)")
 
+        # P2.6: history.undone_at — track undone entries persistently
+        if 'undone_at' not in h_cols:
+            conn.execute("ALTER TABLE history ADD COLUMN undone_at TEXT")
+            print("Migration: added history.undone_at")
+
         # AXE 9.1: Migrate comments table — add new columns to existing schema
         c_cols = get_table_columns(conn, 'comments')
         if c_cols:  # table exists
@@ -1057,6 +1181,39 @@ def _migrate_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_prod ON notifications(production_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(user_id, is_read)")
 
+        # P2.1: Add location_id FK to location_schedules and guard_location_schedules
+        ls_cols = get_table_columns(conn, 'location_schedules')
+        if 'location_id' not in ls_cols:
+            conn.execute(
+                "ALTER TABLE location_schedules ADD COLUMN location_id INTEGER REFERENCES locations(id) ON UPDATE CASCADE"
+            )
+            # Backfill location_id from location_name
+            conn.execute("""
+                UPDATE location_schedules SET location_id = (
+                    SELECT l.id FROM locations l
+                    WHERE l.production_id = location_schedules.production_id
+                      AND l.name = location_schedules.location_name
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_loc_sched_loc_id ON location_schedules(location_id)")
+            print("Migration P2.1: added location_schedules.location_id (backfilled from location_name)")
+
+        gls_cols = get_table_columns(conn, 'guard_location_schedules')
+        if 'location_id' not in gls_cols:
+            conn.execute(
+                "ALTER TABLE guard_location_schedules ADD COLUMN location_id INTEGER REFERENCES locations(id) ON UPDATE CASCADE"
+            )
+            # Backfill location_id from location_name
+            conn.execute("""
+                UPDATE guard_location_schedules SET location_id = (
+                    SELECT l.id FROM locations l
+                    WHERE l.production_id = guard_location_schedules.production_id
+                      AND l.name = guard_location_schedules.location_name
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_guard_loc_sched_loc_id ON guard_location_schedules(location_id)")
+            print("Migration P2.1: added guard_location_schedules.location_id (backfilled from location_name)")
+
         # AXE 10.1: Production templates table
         conn.execute("""CREATE TABLE IF NOT EXISTS production_templates (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1067,6 +1224,299 @@ def _migrate_db():
             creator_nickname TEXT,
             created_at      TEXT DEFAULT (datetime('now'))
         )""")
+
+        # P2.2: Migrate day_overrides JSON to assignment_day_overrides table
+        r = conn.execute("SELECT value FROM settings WHERE key='p2_2_day_overrides_migrated'").fetchone()
+        if not r:
+            _migrate_day_overrides_to_table(conn)
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('p2_2_day_overrides_migrated', '1')")
+
+        # P2.3: Add physical_vessel_id FK to boats, picture_boats, security_boats
+        for tbl in ('boats', 'picture_boats', 'security_boats'):
+            cols = get_table_columns(conn, tbl)
+            if 'physical_vessel_id' not in cols:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN physical_vessel_id INTEGER REFERENCES physical_vessels(id) ON DELETE SET NULL")
+                print(f"Migration P2.3: added {tbl}.physical_vessel_id")
+
+        # P2.7: Add version column for optimistic locking
+        _VERSION_TABLES = [
+            'boats', 'picture_boats', 'security_boats', 'transport_vehicles',
+            'helpers', 'guard_camp_workers', 'locations',
+        ]
+        for tbl in _VERSION_TABLES:
+            cols = get_table_columns(conn, tbl)
+            if 'version' not in cols:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN version INTEGER DEFAULT 1")
+                print(f"Migration P2.7: added {tbl}.version")
+
+        # P5.6: Add override_reason column to all assignment tables
+        _OVERRIDE_REASON_TABLES = [
+            'boat_assignments', 'picture_boat_assignments',
+            'security_boat_assignments', 'transport_assignments',
+            'helper_assignments', 'guard_camp_assignments',
+        ]
+        for tbl in _OVERRIDE_REASON_TABLES:
+            try:
+                cols = get_table_columns(conn, tbl)
+                if 'override_reason' not in cols:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN override_reason TEXT")
+                    print(f"Migration P5.6: added {tbl}.override_reason")
+            except Exception:
+                pass
+
+        # P5.6: Add override_reason column to price_change_log
+        pcl_cols = get_table_columns(conn, 'price_change_log')
+        if pcl_cols and 'override_reason' not in pcl_cols:
+            conn.execute("ALTER TABLE price_change_log ADD COLUMN override_reason TEXT")
+            print("Migration P5.6: added price_change_log.override_reason")
+
+        # P5.7: Document versioning — add status column + document_versions table
+        doc_cols = get_table_columns(conn, 'documents')
+        if doc_cols and 'status' not in doc_cols:
+            conn.execute("ALTER TABLE documents ADD COLUMN status TEXT DEFAULT 'draft'")
+            print("Migration P5.7: added documents.status")
+        if doc_cols and 'current_version' not in doc_cols:
+            conn.execute("ALTER TABLE documents ADD COLUMN current_version INTEGER DEFAULT 1")
+            print("Migration P5.7: added documents.current_version")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS document_versions (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            document_id     INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            version_number  INTEGER NOT NULL,
+            file_path       TEXT,
+            uploaded_at     TEXT DEFAULT (datetime('now')),
+            uploaded_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            upload_nickname TEXT
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_doc_versions_doc ON document_versions(document_id)")
+
+        # P2.4: Add deleted_at column to all main entity tables for soft delete
+        _SOFT_DELETE_TABLES = [
+            'boats', 'picture_boats', 'security_boats', 'transport_vehicles',
+            'helpers', 'guard_camp_workers', 'locations', 'boat_functions',
+            'physical_vessels', 'fuel_machinery', 'guard_posts',
+            'fnb_categories', 'fnb_items',
+        ]
+        for tbl in _SOFT_DELETE_TABLES:
+            cols = get_table_columns(conn, tbl)
+            if 'deleted_at' not in cols:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN deleted_at TIMESTAMP DEFAULT NULL")
+                print(f"Migration P2.4: added {tbl}.deleted_at")
+
+        # P5.10: Holidays table
+        conn.execute("""CREATE TABLE IF NOT EXISTS holidays (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            date    TEXT NOT NULL,
+            name    TEXT NOT NULL,
+            country TEXT DEFAULT 'PA'
+        )""")
+        # Seed Panama holidays for March-April 2026 (Semana Santa + national)
+        existing = conn.execute("SELECT COUNT(*) as c FROM holidays").fetchone()["c"]
+        if existing == 0:
+            _panama_holidays = [
+                # Semana Santa 2026 (Easter Sunday = April 5, 2026)
+                ("2026-04-02", "Jueves Santo", "PA"),
+                ("2026-04-03", "Viernes Santo", "PA"),
+                ("2026-04-04", "Sabado Santo", "PA"),
+                # Other Panama national holidays in the shooting period
+                ("2026-05-01", "Dia del Trabajo", "PA"),
+            ]
+            conn.executemany(
+                "INSERT INTO holidays (date, name, country) VALUES (?, ?, ?)",
+                _panama_holidays
+            )
+            print("Migration P5.10: created holidays table + seeded Panama Semana Santa 2026")
+
+        # P5.10: exclude_holidays on all assignment tables
+        _EXCLUDE_HOLIDAYS_TABLES = [
+            'boat_assignments', 'picture_boat_assignments',
+            'security_boat_assignments', 'transport_assignments',
+            'helper_assignments', 'guard_camp_assignments',
+        ]
+        for tbl in _EXCLUDE_HOLIDAYS_TABLES:
+            try:
+                cols = get_table_columns(conn, tbl)
+                if 'exclude_holidays' not in cols:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN exclude_holidays INTEGER DEFAULT 0")
+                    print(f"Migration P5.10: added {tbl}.exclude_holidays")
+            except Exception:
+                pass
+
+        # P6.4: currency column on entity tables with daily_rate
+        _CURRENCY_TABLES = [
+            'boats', 'picture_boats', 'security_boats', 'transport_vehicles',
+            'helpers', 'guard_camp_workers', 'guards',
+        ]
+        for tbl in _CURRENCY_TABLES:
+            try:
+                cols = get_table_columns(conn, tbl)
+                if 'currency' not in cols:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN currency TEXT DEFAULT 'USD'")
+                    print(f"Migration P6.4: added {tbl}.currency")
+            except Exception:
+                pass
+
+        # P6.4: currency on budget_lines
+        bl_cols = get_table_columns(conn, 'budget_lines')
+        if bl_cols and 'currency' not in bl_cols:
+            conn.execute("ALTER TABLE budget_lines ADD COLUMN currency TEXT DEFAULT 'USD'")
+            print("Migration P6.4: added budget_lines.currency")
+
+        # P6.11: fuel multi-entries per day — remove UNIQUE constraint + add note column
+        r611 = conn.execute("SELECT value FROM settings WHERE key='p6_11_fuel_multi_entry'").fetchone()
+        if not r611:
+            # Check if fuel_entries table exists
+            fe_cols = get_table_columns(conn, 'fuel_entries')
+            if fe_cols:
+                # Backup then recreate without UNIQUE constraint
+                conn.execute("CREATE TABLE IF NOT EXISTS fuel_entries_backup AS SELECT * FROM fuel_entries")
+                conn.execute("""CREATE TABLE IF NOT EXISTS fuel_entries_new (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    production_id   INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+                    source_type     TEXT NOT NULL,
+                    assignment_id   INTEGER NOT NULL,
+                    date            TEXT NOT NULL,
+                    liters          REAL DEFAULT 0,
+                    fuel_type       TEXT DEFAULT 'DIESEL',
+                    note            TEXT DEFAULT NULL
+                )""")
+                conn.execute("INSERT INTO fuel_entries_new (id, production_id, source_type, assignment_id, date, liters, fuel_type) SELECT id, production_id, source_type, assignment_id, date, liters, fuel_type FROM fuel_entries")
+                conn.execute("DROP TABLE fuel_entries")
+                conn.execute("ALTER TABLE fuel_entries_new RENAME TO fuel_entries")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_fuel_entries_assignment ON fuel_entries(assignment_id)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_fuel_entries_date ON fuel_entries(date)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_fuel_entries_source_date ON fuel_entries(source_type, assignment_id, date)")
+                conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('p6_11_fuel_multi_entry', '1')")
+                print("Migration P6.11: fuel_entries — removed UNIQUE constraint, added note column")
+            else:
+                # Table doesn't exist yet, schema will create it correctly
+                conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('p6_11_fuel_multi_entry', '1')")
+        else:
+            # Migration already done, just ensure note column exists
+            fe_cols = get_table_columns(conn, 'fuel_entries')
+            if fe_cols and 'note' not in fe_cols:
+                conn.execute("ALTER TABLE fuel_entries ADD COLUMN note TEXT DEFAULT NULL")
+                print("Migration P6.11: added fuel_entries.note")
+
+        # P6.12: Add locked_by to fuel_locked_prices
+        flp_cols = get_table_columns(conn, 'fuel_locked_prices')
+        if flp_cols and 'locked_by' not in flp_cols:
+            conn.execute("ALTER TABLE fuel_locked_prices ADD COLUMN locked_by TEXT")
+            print("Migration P6.12: added fuel_locked_prices.locked_by")
+
+        # P6.14: Access logs for audit
+        conn.execute("""CREATE TABLE IF NOT EXISTS access_logs (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER,
+            endpoint    TEXT NOT NULL,
+            method      TEXT NOT NULL,
+            status_code INTEGER,
+            ip_address  TEXT,
+            user_agent  TEXT,
+            timestamp   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""")
+        # Index for efficient filtering
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_access_logs_user_id ON access_logs(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_access_logs_timestamp ON access_logs(timestamp)")
+
+
+def _migrate_day_overrides_to_table(conn):
+    """Parse existing day_overrides JSON from all assignment tables and insert into assignment_day_overrides."""
+    _TABLES_TO_MIGRATE = [
+        ("boat_assignments", "boats"),
+        ("picture_boat_assignments", "picture_boats"),
+        ("security_boat_assignments", "security_boats"),
+        ("transport_assignments", "transport"),
+        ("helper_assignments", "labour"),
+        ("guard_camp_assignments", "guards"),
+    ]
+    total = 0
+    for table_name, assignment_type in _TABLES_TO_MIGRATE:
+        try:
+            rows = conn.execute(f"SELECT id, day_overrides FROM {table_name}").fetchall()
+        except Exception:
+            continue
+        for row in rows:
+            raw = row["day_overrides"] if row["day_overrides"] else "{}"
+            try:
+                overrides = json.loads(raw)
+            except Exception:
+                continue
+            if not overrides:
+                continue
+            for date_str, status in overrides.items():
+                if not status:
+                    continue
+                try:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO assignment_day_overrides
+                           (assignment_type, assignment_id, date, status)
+                           VALUES (?, ?, ?, ?)""",
+                        (assignment_type, row["id"], date_str, str(status))
+                    )
+                    total += 1
+                except Exception:
+                    pass
+    print(f"Migration P2.2: migrated {total} day_overrides rows to assignment_day_overrides table")
+
+
+# ─── Day Overrides helpers (P2.2) ─────────────────────────────────────────────
+
+def get_day_overrides(conn, assignment_type, assignment_id):
+    """Read overrides from the relational table, return as dict {date: status}."""
+    rows = conn.execute(
+        "SELECT date, status FROM assignment_day_overrides WHERE assignment_type=? AND assignment_id=?",
+        (assignment_type, assignment_id)
+    ).fetchall()
+    return {r["date"]: r["status"] for r in rows}
+
+
+def get_day_overrides_json(conn, assignment_type, assignment_id):
+    """Read overrides and return as JSON string (for backward compat with frontend)."""
+    return json.dumps(get_day_overrides(conn, assignment_type, assignment_id))
+
+
+def save_day_overrides(conn, assignment_type, assignment_id, overrides_json):
+    """Parse a JSON string of overrides and sync to the relational table.
+    Replaces all existing overrides for this assignment."""
+    try:
+        overrides = json.loads(overrides_json or "{}")
+    except Exception:
+        overrides = {}
+    # Delete existing
+    conn.execute(
+        "DELETE FROM assignment_day_overrides WHERE assignment_type=? AND assignment_id=?",
+        (assignment_type, assignment_id)
+    )
+    # Insert new
+    for date_str, status in overrides.items():
+        if not status:
+            continue
+        conn.execute(
+            """INSERT INTO assignment_day_overrides
+               (assignment_type, assignment_id, date, status)
+               VALUES (?, ?, ?, ?)""",
+            (assignment_type, assignment_id, date_str, str(status))
+        )
+
+
+def delete_day_overrides(conn, assignment_type, assignment_id):
+    """Remove all overrides for a given assignment (used on delete)."""
+    conn.execute(
+        "DELETE FROM assignment_day_overrides WHERE assignment_type=? AND assignment_id=?",
+        (assignment_type, assignment_id)
+    )
+
+
+# Map assignment table names to assignment_type values
+_TABLE_TO_ATYPE = {
+    "boat_assignments": "boats",
+    "picture_boat_assignments": "picture_boats",
+    "security_boat_assignments": "security_boats",
+    "transport_assignments": "transport",
+    "helper_assignments": "labour",
+    "guard_camp_assignments": "guards",
+}
 
 
 # ─── Working days ─────────────────────────────────────────────────────────────
@@ -1098,7 +1548,7 @@ def calendar_days(start_str, end_str):
         return 0
 
 
-def active_working_days(start_str, end_str, day_overrides_json, include_sunday=True):
+def active_working_days(start_str, end_str, day_overrides_json, include_sunday=True, exclude_holidays=False, holiday_dates=None):
     """Count actual active days by iterating each day in the date range.
 
     A day is active if:
@@ -1106,6 +1556,7 @@ def active_working_days(start_str, end_str, day_overrides_json, include_sunday=T
     - OR it is outside [start, end] but explicitly overridden to a non-empty status
 
     If include_sunday is False, Sundays are skipped (unless explicitly overridden to active).
+    If exclude_holidays is True, dates in holiday_dates set are skipped (unless explicitly overridden to active).
     """
     if not start_str or not end_str:
         return 0
@@ -1121,6 +1572,8 @@ def active_working_days(start_str, end_str, day_overrides_json, include_sunday=T
     except Exception:
         return 0
 
+    _holidays = holiday_dates or set()
+
     # Count days within the range that are not excluded
     count = 0
     current = start
@@ -1133,6 +1586,10 @@ def active_working_days(start_str, end_str, day_overrides_json, include_sunday=T
         else:
             # Skip Sundays if not included
             if not include_sunday and current.weekday() == 6:
+                current += one_day
+                continue
+            # Skip holidays if excluded
+            if exclude_holidays and dk in _holidays:
                 current += one_day
                 continue
             # Default: day within range is active
@@ -1150,17 +1607,32 @@ def active_working_days(start_str, end_str, day_overrides_json, include_sunday=T
     return count
 
 
+def _get_holiday_dates():
+    """Load all holiday dates from the database as a set of date strings."""
+    try:
+        with get_db() as conn:
+            rows = conn.execute("SELECT date FROM holidays").fetchall()
+            return {r["date"] for r in rows}
+    except Exception:
+        return set()
+
+
 def compute_working_days(d):
     """Compute working days for an assignment dict.
 
     Uses include_sunday flag: if 0/False, Sundays are excluded from the count.
+    Uses exclude_holidays flag: if 1/True, Panama holidays are subtracted.
     Always uses active_working_days (day-by-day count respecting day_overrides).
     """
     include_sun = d.get("include_sunday", 1)
+    excl_holidays = d.get("exclude_holidays", 0)
+    holiday_dates = _get_holiday_dates() if excl_holidays else None
     return active_working_days(
         d.get("start_date"), d.get("end_date"),
         d.get("day_overrides", "{}"),
-        include_sunday=bool(include_sun)
+        include_sunday=bool(include_sun),
+        exclude_holidays=bool(excl_holidays),
+        holiday_dates=holiday_dates
     )
 
 
@@ -1351,19 +1823,20 @@ def delete_events_for_day(day_id):
 
 # ─── Boats ────────────────────────────────────────────────────────────────────
 
-def get_boats(prod_id):
+def get_boats(prod_id, include_deleted=False):
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM boats WHERE production_id=? ORDER BY sort_order, boat_nr, name",
-            (prod_id,)
-        ).fetchall()
+        sql = "SELECT * FROM boats WHERE production_id=?"
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        sql += " ORDER BY sort_order, boat_nr, name"
+        rows = conn.execute(sql, (prod_id,)).fetchall()
         return [dict(r) for r in rows]
 
 
 def create_boat(data):
     cols = ["production_id", "boat_nr", "name", "category", "capacity",
             "night_ok", "wave_rating", "captain", "vendor", "group_name", "notes",
-            "daily_rate_estimate", "daily_rate_actual", "image_path"]
+            "daily_rate_estimate", "daily_rate_actual", "image_path", "currency"]
     fields = {k: data[k] for k in cols if k in data}
     placeholders = ", ".join("?" * len(fields))
     col_names = ", ".join(fields.keys())
@@ -1378,36 +1851,43 @@ def create_boat(data):
 def update_boat(boat_id, data):
     allowed = ["boat_nr", "name", "category", "capacity", "night_ok",
                "wave_rating", "captain", "vendor", "group_name", "notes",
-               "daily_rate_estimate", "daily_rate_actual", "image_path", "sort_order"]
+               "daily_rate_estimate", "daily_rate_actual", "image_path", "sort_order", "currency"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
-        return
+        return True
     sets = ", ".join(f"{k}=?" for k in fields)
+    sets += ", version = version + 1"
     vals = list(fields.values()) + [boat_id]
+    version = data.get('version')
+    where = "WHERE id=?"
+    if version is not None:
+        where += " AND version=?"
+        vals.append(version)
     with get_db() as conn:
-        conn.execute(f"UPDATE boats SET {sets} WHERE id=?", vals)
+        cur = conn.execute(f"UPDATE boats SET {sets} {where}", vals)
+        if version is not None and cur.rowcount == 0:
+            return False
+    return True
 
 
 def delete_boat(boat_id):
     with get_db() as conn:
-        conn.execute("DELETE FROM boat_assignments WHERE boat_id=?", (boat_id,))
-        conn.execute("DELETE FROM boats WHERE id=?", (boat_id,))
+        conn.execute("UPDATE boats SET deleted_at = datetime('now') WHERE id=?", (boat_id,))
 
 
 # ─── Boat functions (ex-roles) ────────────────────────────────────────────────
 
-def get_boat_functions(prod_id, context=None):
+def get_boat_functions(prod_id, context=None, include_deleted=False):
     with get_db() as conn:
+        sql = "SELECT * FROM boat_functions WHERE production_id=?"
+        params = [prod_id]
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
         if context:
-            rows = conn.execute(
-                "SELECT * FROM boat_functions WHERE production_id=? AND context=? ORDER BY sort_order, id",
-                (prod_id, context)
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM boat_functions WHERE production_id=? ORDER BY sort_order, id",
-                (prod_id,)
-            ).fetchall()
+            sql += " AND context=?"
+            params.append(context)
+        sql += " ORDER BY sort_order, id"
+        rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -1439,13 +1919,13 @@ def update_boat_function(func_id, data):
 
 def delete_boat_function(func_id):
     with get_db() as conn:
-        conn.execute("DELETE FROM boat_assignments WHERE boat_function_id=?", (func_id,))
-        conn.execute("DELETE FROM picture_boat_assignments WHERE boat_function_id=?", (func_id,))
-        conn.execute("DELETE FROM boat_functions WHERE id=?", (func_id,))
+        conn.execute("UPDATE boat_functions SET deleted_at = datetime('now') WHERE id=?", (func_id,))
 
 
 def delete_boat_assignment_by_function(func_id):
     with get_db() as conn:
+        for row in conn.execute("SELECT id FROM boat_assignments WHERE boat_function_id=?", (func_id,)).fetchall():
+            delete_day_overrides(conn, "boats", row["id"])
         conn.execute("DELETE FROM boat_assignments WHERE boat_function_id=?", (func_id,))
 
 
@@ -1470,6 +1950,7 @@ def get_boat_assignments(prod_id, context=None):
                    b.daily_rate_estimate AS boat_daily_rate_estimate,
                    b.daily_rate_actual   AS boat_daily_rate_actual,
                    b.vendor,
+                   b.currency AS entity_currency,
                    bf.name  AS function_name,
                    bf.function_group,
                    bf.color
@@ -1483,6 +1964,7 @@ def get_boat_assignments(prod_id, context=None):
         result = []
         for r in rows:
             d = dict(r)
+            d["day_overrides"] = get_day_overrides_json(conn, "boats", d["id"])
             rate_est = d.get("price_override") or d.get("boat_daily_rate_estimate") or 0
             rate_act = d.get("boat_daily_rate_actual") or 0
             wd = compute_working_days(d)
@@ -1502,27 +1984,29 @@ def create_boat_assignment(data):
         cur = conn.execute(
             """INSERT INTO boat_assignments
                (boat_function_id, boat_id, boat_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday, exclude_holidays)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("boat_id"), data.get("boat_name_override"),
              start_date, end_date,
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
              data.get("pricing_type", "standard"),
-             data.get("include_sunday", 1))
+             data.get("include_sunday", 1),
+             data.get("exclude_holidays", 0))
         )
         new_id = cur.lastrowid
         new = conn.execute("SELECT * FROM boat_assignments WHERE id=?", (new_id,)).fetchone()
         _log_history(conn, 'boat_assignments', new_id, 'create', new_data=new)
+        save_day_overrides(conn, "boats", new_id, data.get("day_overrides", "{}"))
         return new_id
 
 
 def update_boat_assignment(assignment_id, data):
     """Update an existing assignment (dates, status, notes, boat, price)."""
-    allowed = ["start_date", "end_date", "price_override", "notes",
+    allowed = ["start_date", "end_date", "price_override", "override_reason", "notes",
                "assignment_status", "day_overrides", "boat_id", "boat_name_override",
-               "pricing_type", "include_sunday"]
+               "pricing_type", "include_sunday", "exclude_holidays"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1543,6 +2027,8 @@ def update_boat_assignment(assignment_id, data):
         new = conn.execute("SELECT * FROM boat_assignments WHERE id=?", (assignment_id,)).fetchone()
         if old:
             _log_history(conn, 'boat_assignments', assignment_id, 'update', old, new)
+        if "day_overrides" in data:
+            save_day_overrides(conn, "boats", assignment_id, data["day_overrides"])
 
 
 def delete_boat_assignment(assignment_id):
@@ -1551,23 +2037,25 @@ def delete_boat_assignment(assignment_id):
         if old:
             _log_history(conn, 'boat_assignments', assignment_id, 'delete', old)
         conn.execute("DELETE FROM boat_assignments WHERE id=?", (assignment_id,))
+        delete_day_overrides(conn, "boats", assignment_id)
 
 
 # ─── Picture Boats ────────────────────────────────────────────────────────────
 
-def get_picture_boats(prod_id):
+def get_picture_boats(prod_id, include_deleted=False):
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM picture_boats WHERE production_id=? ORDER BY sort_order, boat_nr, name",
-            (prod_id,)
-        ).fetchall()
+        sql = "SELECT * FROM picture_boats WHERE production_id=?"
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        sql += " ORDER BY sort_order, boat_nr, name"
+        rows = conn.execute(sql, (prod_id,)).fetchall()
         return [dict(r) for r in rows]
 
 
 def create_picture_boat(data):
     cols = ["production_id", "boat_nr", "name", "capacity", "night_ok",
             "wave_rating", "captain", "vendor", "group_name", "notes",
-            "daily_rate_estimate", "daily_rate_actual", "image_path"]
+            "daily_rate_estimate", "daily_rate_actual", "image_path", "currency"]
     fields = {k: data[k] for k in cols if k in data}
     placeholders = ", ".join("?" * len(fields))
     col_names = ", ".join(fields.keys())
@@ -1582,20 +2070,28 @@ def create_picture_boat(data):
 def update_picture_boat(pb_id, data):
     allowed = ["boat_nr", "name", "capacity", "night_ok", "wave_rating",
                "captain", "vendor", "group_name", "notes",
-               "daily_rate_estimate", "daily_rate_actual", "image_path", "sort_order"]
+               "daily_rate_estimate", "daily_rate_actual", "image_path", "sort_order", "currency"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
-        return
+        return True
     sets = ", ".join(f"{k}=?" for k in fields)
+    sets += ", version = version + 1"
     vals = list(fields.values()) + [pb_id]
+    version = data.get('version')
+    where = "WHERE id=?"
+    if version is not None:
+        where += " AND version=?"
+        vals.append(version)
     with get_db() as conn:
-        conn.execute(f"UPDATE picture_boats SET {sets} WHERE id=?", vals)
+        cur = conn.execute(f"UPDATE picture_boats SET {sets} {where}", vals)
+        if version is not None and cur.rowcount == 0:
+            return False
+    return True
 
 
 def delete_picture_boat(pb_id):
     with get_db() as conn:
-        conn.execute("DELETE FROM picture_boat_assignments WHERE picture_boat_id=?", (pb_id,))
-        conn.execute("DELETE FROM picture_boats WHERE id=?", (pb_id,))
+        conn.execute("UPDATE picture_boats SET deleted_at = datetime('now') WHERE id=?", (pb_id,))
 
 
 # ─── Picture Boat Assignments ─────────────────────────────────────────────────
@@ -1614,6 +2110,7 @@ def get_picture_boat_assignments(prod_id):
                    pb.daily_rate_estimate AS boat_daily_rate_estimate,
                    pb.daily_rate_actual   AS boat_daily_rate_actual,
                    pb.vendor,
+                   pb.currency AS entity_currency,
                    bf.name  AS function_name,
                    bf.function_group,
                    bf.color
@@ -1627,6 +2124,7 @@ def get_picture_boat_assignments(prod_id):
         result = []
         for r in rows:
             d = dict(r)
+            d["day_overrides"] = get_day_overrides_json(conn, "picture_boats", d["id"])
             rate_est = d.get("price_override") or d.get("boat_daily_rate_estimate") or 0
             rate_act = d.get("boat_daily_rate_actual") or 0
             wd = compute_working_days(d)
@@ -1659,26 +2157,28 @@ def create_picture_boat_assignment(data):
         cur = conn.execute(
             """INSERT INTO picture_boat_assignments
                (boat_function_id, picture_boat_id, boat_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday, exclude_holidays)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("picture_boat_id"), data.get("boat_name_override"),
              start_date, end_date,
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
              data.get("pricing_type", "standard"),
-             data.get("include_sunday", 1))
+             data.get("include_sunday", 1),
+             data.get("exclude_holidays", 0))
         )
         new_id = cur.lastrowid
         new = conn.execute("SELECT * FROM picture_boat_assignments WHERE id=?", (new_id,)).fetchone()
         _log_history(conn, 'picture_boat_assignments', new_id, 'create', new_data=new)
+        save_day_overrides(conn, "picture_boats", new_id, data.get("day_overrides", "{}"))
         return new_id
 
 
 def update_picture_boat_assignment(assignment_id, data):
-    allowed = ["start_date", "end_date", "price_override", "notes",
+    allowed = ["start_date", "end_date", "price_override", "override_reason", "notes",
                "assignment_status", "day_overrides", "picture_boat_id", "boat_name_override",
-               "pricing_type", "include_sunday"]
+               "pricing_type", "include_sunday", "exclude_holidays"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1697,6 +2197,8 @@ def update_picture_boat_assignment(assignment_id, data):
         new = conn.execute("SELECT * FROM picture_boat_assignments WHERE id=?", (assignment_id,)).fetchone()
         if old:
             _log_history(conn, 'picture_boat_assignments', assignment_id, 'update', old, new)
+        if "day_overrides" in data:
+            save_day_overrides(conn, "picture_boats", assignment_id, data["day_overrides"])
 
 
 def delete_picture_boat_assignment(assignment_id):
@@ -1705,28 +2207,32 @@ def delete_picture_boat_assignment(assignment_id):
         if old:
             _log_history(conn, 'picture_boat_assignments', assignment_id, 'delete', old)
         conn.execute("DELETE FROM picture_boat_assignments WHERE id=?", (assignment_id,))
+        delete_day_overrides(conn, "picture_boats", assignment_id)
 
 
 def delete_picture_boat_assignment_by_function(func_id):
     with get_db() as conn:
+        for row in conn.execute("SELECT id FROM picture_boat_assignments WHERE boat_function_id=?", (func_id,)).fetchall():
+            delete_day_overrides(conn, "picture_boats", row["id"])
         conn.execute("DELETE FROM picture_boat_assignments WHERE boat_function_id=?", (func_id,))
 
 
 
 # ─── Transport Vehicles ───────────────────────────────────────────────────────
 
-def get_transport_vehicles(prod_id):
+def get_transport_vehicles(prod_id, include_deleted=False):
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM transport_vehicles WHERE production_id=? ORDER BY sort_order, vehicle_nr, name",
-            (prod_id,)
-        ).fetchall()
+        sql = "SELECT * FROM transport_vehicles WHERE production_id=?"
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        sql += " ORDER BY sort_order, vehicle_nr, name"
+        rows = conn.execute(sql, (prod_id,)).fetchall()
         return [dict(r) for r in rows]
 
 
 def create_transport_vehicle(data):
     cols = ["production_id", "vehicle_nr", "name", "type", "driver",
-            "vendor", "group_name", "notes", "daily_rate_estimate", "daily_rate_actual", "image_path"]
+            "vendor", "group_name", "notes", "daily_rate_estimate", "daily_rate_actual", "image_path", "currency"]
     fields = {k: data[k] for k in cols if k in data}
     placeholders = ", ".join("?" * len(fields))
     col_names = ", ".join(fields.keys())
@@ -1740,20 +2246,28 @@ def create_transport_vehicle(data):
 
 def update_transport_vehicle(vehicle_id, data):
     allowed = ["vehicle_nr", "name", "type", "driver", "vendor", "group_name",
-               "notes", "daily_rate_estimate", "daily_rate_actual", "image_path", "sort_order"]
+               "notes", "daily_rate_estimate", "daily_rate_actual", "image_path", "sort_order", "currency"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
-        return
+        return True
     sets = ", ".join(f"{k}=?" for k in fields)
+    sets += ", version = version + 1"
     vals = list(fields.values()) + [vehicle_id]
+    version = data.get('version')
+    where = "WHERE id=?"
+    if version is not None:
+        where += " AND version=?"
+        vals.append(version)
     with get_db() as conn:
-        conn.execute(f"UPDATE transport_vehicles SET {sets} WHERE id=?", vals)
+        cur = conn.execute(f"UPDATE transport_vehicles SET {sets} {where}", vals)
+        if version is not None and cur.rowcount == 0:
+            return False
+    return True
 
 
 def delete_transport_vehicle(vehicle_id):
     with get_db() as conn:
-        conn.execute("DELETE FROM transport_assignments WHERE vehicle_id=?", (vehicle_id,))
-        conn.execute("DELETE FROM transport_vehicles WHERE id=?", (vehicle_id,))
+        conn.execute("UPDATE transport_vehicles SET deleted_at = datetime('now') WHERE id=?", (vehicle_id,))
 
 
 def get_transport_assignments(prod_id):
@@ -1768,6 +2282,7 @@ def get_transport_assignments(prod_id):
                    tv.daily_rate_estimate AS vehicle_daily_rate_estimate,
                    tv.daily_rate_actual   AS vehicle_daily_rate_actual,
                    tv.vendor,
+                   tv.currency AS entity_currency,
                    bf.name  AS function_name,
                    bf.function_group,
                    bf.color
@@ -1781,6 +2296,7 @@ def get_transport_assignments(prod_id):
         result = []
         for r in rows:
             d = dict(r)
+            d["day_overrides"] = get_day_overrides_json(conn, "transport", d["id"])
             rate_est = d.get("price_override") or d.get("vehicle_daily_rate_estimate") or 0
             rate_act = d.get("vehicle_daily_rate_actual") or 0
             wd = compute_working_days(d)
@@ -1798,26 +2314,28 @@ def create_transport_assignment(data):
         cur = conn.execute(
             """INSERT INTO transport_assignments
                (boat_function_id, vehicle_id, vehicle_name_override, start_date, end_date,
-                price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                price_override, notes, assignment_status, day_overrides, pricing_type, include_sunday, exclude_holidays)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (func_id, data.get("vehicle_id"), data.get("vehicle_name_override"),
              start_date, end_date,
              data.get("price_override"), data.get("notes"),
              data.get("assignment_status", "confirmed"),
              data.get("day_overrides", "{}"),
              data.get("pricing_type", "standard"),
-             data.get("include_sunday", 1))
+             data.get("include_sunday", 1),
+             data.get("exclude_holidays", 0))
         )
         new_id = cur.lastrowid
         new = conn.execute("SELECT * FROM transport_assignments WHERE id=?", (new_id,)).fetchone()
         _log_history(conn, 'transport_assignments', new_id, 'create', new_data=new)
+        save_day_overrides(conn, "transport", new_id, data.get("day_overrides", "{}"))
         return new_id
 
 
 def update_transport_assignment(assignment_id, data):
-    allowed = ["start_date", "end_date", "price_override", "notes",
+    allowed = ["start_date", "end_date", "price_override", "override_reason", "notes",
                "assignment_status", "day_overrides", "vehicle_id", "vehicle_name_override",
-               "pricing_type", "include_sunday"]
+               "pricing_type", "include_sunday", "exclude_holidays"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return
@@ -1836,6 +2354,8 @@ def update_transport_assignment(assignment_id, data):
         new = conn.execute("SELECT * FROM transport_assignments WHERE id=?", (assignment_id,)).fetchone()
         if old:
             _log_history(conn, 'transport_assignments', assignment_id, 'update', old, new)
+        if "day_overrides" in data:
+            save_day_overrides(conn, "transport", assignment_id, data["day_overrides"])
 
 
 def delete_transport_assignment(assignment_id):
@@ -1844,10 +2364,13 @@ def delete_transport_assignment(assignment_id):
         if old:
             _log_history(conn, 'transport_assignments', assignment_id, 'delete', old)
         conn.execute("DELETE FROM transport_assignments WHERE id=?", (assignment_id,))
+        delete_day_overrides(conn, "transport", assignment_id)
 
 
 def delete_transport_assignment_by_function(func_id):
     with get_db() as conn:
+        for row in conn.execute("SELECT id FROM transport_assignments WHERE boat_function_id=?", (func_id,)).fetchall():
+            delete_day_overrides(conn, "transport", row["id"])
         conn.execute("DELETE FROM transport_assignments WHERE boat_function_id=?", (func_id,))
 
 
@@ -1869,25 +2392,31 @@ def get_fuel_entries(prod_id, source_type=None):
 
 
 def upsert_fuel_entry(data):
-    cols = ['production_id', 'source_type', 'assignment_id', 'date', 'liters', 'fuel_type']
+    cols = ['production_id', 'source_type', 'assignment_id', 'date', 'liters', 'fuel_type', 'note']
     vals = [data.get(c) for c in cols]
+    entry_id = data.get('id')
     with get_db() as conn:
-        old = conn.execute(
-            "SELECT * FROM fuel_entries WHERE source_type=? AND assignment_id=? AND date=?",
-            (data.get('source_type'), data.get('assignment_id'), data.get('date'))
-        ).fetchone()
-        conn.execute(
-            f"INSERT OR REPLACE INTO fuel_entries ({', '.join(cols)}) VALUES ({', '.join(['?']*len(cols))})",
-            vals
-        )
-        row = conn.execute(
-            "SELECT * FROM fuel_entries WHERE source_type=? AND assignment_id=? AND date=?",
-            (data['source_type'], data['assignment_id'], data['date'])
-        ).fetchone()
-        if row:
-            action = 'update' if old else 'create'
-            _log_history(conn, 'fuel_entries', row['id'], action, old, row)
-        return dict(row) if row else None
+        if entry_id:
+            # Update existing entry by id
+            old = conn.execute("SELECT * FROM fuel_entries WHERE id=?", (entry_id,)).fetchone()
+            conn.execute(
+                "UPDATE fuel_entries SET production_id=?, source_type=?, assignment_id=?, date=?, liters=?, fuel_type=?, note=? WHERE id=?",
+                vals + [entry_id]
+            )
+            row = conn.execute("SELECT * FROM fuel_entries WHERE id=?", (entry_id,)).fetchone()
+            if row:
+                _log_history(conn, 'fuel_entries', row['id'], 'update', old, row)
+            return dict(row) if row else None
+        else:
+            # Insert new entry (no more unique constraint)
+            conn.execute(
+                f"INSERT INTO fuel_entries ({', '.join(cols)}) VALUES ({', '.join(['?']*len(cols))})",
+                vals
+            )
+            row = conn.execute("SELECT * FROM fuel_entries WHERE id=last_insert_rowid()").fetchone()
+            if row:
+                _log_history(conn, 'fuel_entries', row['id'], 'create', None, row)
+            return dict(row) if row else None
 
 
 def delete_fuel_entry(entry_id):
@@ -1906,12 +2435,13 @@ def delete_fuel_entries_for_assignment(source_type, assignment_id):
         )
 
 
-def get_fuel_machinery(prod_id):
+def get_fuel_machinery(prod_id, include_deleted=False):
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM fuel_machinery WHERE production_id=? ORDER BY name",
-            (prod_id,)
-        ).fetchall()
+        sql = "SELECT * FROM fuel_machinery WHERE production_id=?"
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        sql += " ORDER BY name"
+        rows = conn.execute(sql, (prod_id,)).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -1952,24 +2482,32 @@ def delete_fuel_machinery(machinery_id):
         old = conn.execute("SELECT * FROM fuel_machinery WHERE id=?", (machinery_id,)).fetchone()
         if old:
             _log_history(conn, 'fuel_machinery', machinery_id, 'delete', old)
-        conn.execute("DELETE FROM fuel_machinery WHERE id=?", (machinery_id,))
+        conn.execute("UPDATE fuel_machinery SET deleted_at = datetime('now') WHERE id=?", (machinery_id,))
 
 
 # ─── Fuel locked prices ─────────────────────────────────────────────────────
 
 def get_fuel_locked_prices():
-    """Return all locked day price snapshots as {date: {diesel_price, petrol_price}}."""
+    """Return all locked day price snapshots as {date: {diesel_price, petrol_price, locked_at, locked_by}}."""
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM fuel_locked_prices ORDER BY date").fetchall()
-        return {r["date"]: {"diesel_price": r["diesel_price"], "petrol_price": r["petrol_price"]} for r in rows}
+        result = {}
+        for r in rows:
+            entry = {"diesel_price": r["diesel_price"], "petrol_price": r["petrol_price"]}
+            if "locked_at" in r.keys():
+                entry["locked_at"] = r["locked_at"]
+            if "locked_by" in r.keys():
+                entry["locked_by"] = r["locked_by"]
+            result[r["date"]] = entry
+        return result
 
 
-def set_fuel_locked_price(date, diesel_price, petrol_price):
+def set_fuel_locked_price(date, diesel_price, petrol_price, locked_by=None):
     """Lock a day with the current fuel prices."""
     with get_db() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO fuel_locked_prices (date, diesel_price, petrol_price) VALUES (?,?,?)",
-            (date, diesel_price, petrol_price)
+            "INSERT OR REPLACE INTO fuel_locked_prices (date, diesel_price, petrol_price, locked_by) VALUES (?,?,?,?)",
+            (date, diesel_price, petrol_price, locked_by)
         )
 
 
@@ -1981,17 +2519,19 @@ def delete_fuel_locked_price(date):
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
-def get_helpers(prod_id):
+def get_helpers(prod_id, include_deleted=False):
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM helpers WHERE production_id=? ORDER BY sort_order, name", (prod_id,)
-        ).fetchall()
+        sql = "SELECT * FROM helpers WHERE production_id=?"
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        sql += " ORDER BY sort_order, name"
+        rows = conn.execute(sql, (prod_id,)).fetchall()
         return [dict(r) for r in rows]
 
 
 def create_helper(data):
     cols = ["production_id", "name", "role", "contact", "group_name",
-            "daily_rate_estimate", "daily_rate_actual", "notes", "image_path"]
+            "daily_rate_estimate", "daily_rate_actual", "notes", "image_path", "currency"]
     fields = {k: data[k] for k in cols if k in data}
     placeholders = ", ".join("?" * len(fields))
     col_names = ", ".join(fields.keys())
@@ -2005,20 +2545,28 @@ def create_helper(data):
 
 def update_helper(helper_id, data):
     allowed = ["name", "role", "contact", "group_name",
-               "daily_rate_estimate", "daily_rate_actual", "notes", "image_path", "sort_order"]
+               "daily_rate_estimate", "daily_rate_actual", "notes", "image_path", "sort_order", "currency"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
-        return
+        return True
     sets = ", ".join(f"{k}=?" for k in fields)
+    sets += ", version = version + 1"
     vals = list(fields.values()) + [helper_id]
+    version = data.get('version')
+    where = "WHERE id=?"
+    if version is not None:
+        where += " AND version=?"
+        vals.append(version)
     with get_db() as conn:
-        conn.execute(f"UPDATE helpers SET {sets} WHERE id=?", vals)
+        cur = conn.execute(f"UPDATE helpers SET {sets} {where}", vals)
+        if version is not None and cur.rowcount == 0:
+            return False
+    return True
 
 
 def delete_helper(helper_id):
     with get_db() as conn:
-        conn.execute("DELETE FROM helper_assignments WHERE helper_id=?", (helper_id,))
-        conn.execute("DELETE FROM helpers WHERE id=?", (helper_id,))
+        conn.execute("UPDATE helpers SET deleted_at = datetime('now') WHERE id=?", (helper_id,))
 
 
 def get_helper_assignments(prod_id):
@@ -2031,6 +2579,7 @@ def get_helper_assignments(prod_id):
                    h.group_name AS helper_group,
                    h.daily_rate_estimate AS helper_daily_rate_estimate,
                    h.daily_rate_actual   AS helper_daily_rate_actual,
+                   h.currency AS entity_currency,
                    bf.name  AS function_name,
                    bf.function_group,
                    bf.color
@@ -2044,6 +2593,7 @@ def get_helper_assignments(prod_id):
         result = []
         for r in rows:
             d = dict(r)
+            d["day_overrides"] = get_day_overrides_json(conn, "labour", d["id"])
             rate_est = d.get("price_override") or d.get("helper_daily_rate_estimate") or 0
             rate_act = d.get("helper_daily_rate_actual") or 0
             wd = compute_working_days(d)
@@ -2074,11 +2624,12 @@ def create_helper_assignment(data):
         new_id = cur.lastrowid
         new = conn.execute("SELECT * FROM helper_assignments WHERE id=?", (new_id,)).fetchone()
         _log_history(conn, 'helper_assignments', new_id, 'create', new_data=new)
+        save_day_overrides(conn, "labour", new_id, data.get("day_overrides", "{}"))
         return new_id
 
 
 def update_helper_assignment(assignment_id, data):
-    allowed = ["start_date", "end_date", "price_override", "notes",
+    allowed = ["start_date", "end_date", "price_override", "override_reason", "notes",
                "assignment_status", "day_overrides", "helper_id", "helper_name_override",
                "pricing_type", "include_sunday"]
     fields = {k: v for k, v in data.items() if k in allowed}
@@ -2099,6 +2650,8 @@ def update_helper_assignment(assignment_id, data):
         new = conn.execute("SELECT * FROM helper_assignments WHERE id=?", (assignment_id,)).fetchone()
         if old:
             _log_history(conn, 'helper_assignments', assignment_id, 'update', old, new)
+        if "day_overrides" in data:
+            save_day_overrides(conn, "labour", assignment_id, data["day_overrides"])
 
 
 def delete_helper_assignment(assignment_id):
@@ -2107,10 +2660,13 @@ def delete_helper_assignment(assignment_id):
         if old:
             _log_history(conn, 'helper_assignments', assignment_id, 'delete', old)
         conn.execute("DELETE FROM helper_assignments WHERE id=?", (assignment_id,))
+        delete_day_overrides(conn, "labour", assignment_id)
 
 
 def delete_helper_assignment_by_function(func_id):
     with get_db() as conn:
+        for row in conn.execute("SELECT id FROM helper_assignments WHERE boat_function_id=?", (func_id,)).fetchall():
+            delete_day_overrides(conn, "labour", row["id"])
         conn.execute("DELETE FROM helper_assignments WHERE boat_function_id=?", (func_id,))
 
 
@@ -2131,17 +2687,19 @@ def get_helper_schedules(prod_id):
 
 # ─── Guard Camp Workers ──────────────────────────────────────────────────────
 
-def get_guard_camp_workers(prod_id):
+def get_guard_camp_workers(prod_id, include_deleted=False):
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM guard_camp_workers WHERE production_id=? ORDER BY sort_order, name", (prod_id,)
-        ).fetchall()
+        sql = "SELECT * FROM guard_camp_workers WHERE production_id=?"
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        sql += " ORDER BY sort_order, name"
+        rows = conn.execute(sql, (prod_id,)).fetchall()
         return [dict(r) for r in rows]
 
 
 def create_guard_camp_worker(data):
     cols = ["production_id", "name", "role", "contact", "group_name",
-            "daily_rate_estimate", "daily_rate_actual", "notes", "image_path"]
+            "daily_rate_estimate", "daily_rate_actual", "notes", "image_path", "currency"]
     fields = {k: data[k] for k in cols if k in data}
     placeholders = ", ".join("?" * len(fields))
     col_names = ", ".join(fields.keys())
@@ -2155,7 +2713,7 @@ def create_guard_camp_worker(data):
 
 def update_guard_camp_worker(worker_id, data):
     allowed = ["name", "role", "contact", "group_name",
-               "daily_rate_estimate", "daily_rate_actual", "notes", "image_path", "sort_order"]
+               "daily_rate_estimate", "daily_rate_actual", "notes", "image_path", "sort_order", "currency"]
     sets = []
     vals = []
     for k in allowed:
@@ -2163,16 +2721,24 @@ def update_guard_camp_worker(worker_id, data):
             sets.append(f"{k}=?")
             vals.append(data[k])
     if not sets:
-        return
+        return True
+    sets.append("version = version + 1")
     vals.append(worker_id)
+    version = data.get('version')
+    where = "WHERE id=?"
+    if version is not None:
+        where += " AND version=?"
+        vals.append(version)
     with get_db() as conn:
-        conn.execute(f"UPDATE guard_camp_workers SET {', '.join(sets)} WHERE id=?", vals)
+        cur = conn.execute(f"UPDATE guard_camp_workers SET {', '.join(sets)} {where}", vals)
+        if version is not None and cur.rowcount == 0:
+            return False
+    return True
 
 
 def delete_guard_camp_worker(worker_id):
     with get_db() as conn:
-        conn.execute("DELETE FROM guard_camp_assignments WHERE helper_id=?", (worker_id,))
-        conn.execute("DELETE FROM guard_camp_workers WHERE id=?", (worker_id,))
+        conn.execute("UPDATE guard_camp_workers SET deleted_at = datetime('now') WHERE id=?", (worker_id,))
 
 
 def get_guard_camp_assignments(prod_id):
@@ -2185,6 +2751,7 @@ def get_guard_camp_assignments(prod_id):
                    gcw.group_name AS helper_group,
                    gcw.daily_rate_estimate AS helper_daily_rate_estimate,
                    gcw.daily_rate_actual   AS helper_daily_rate_actual,
+                   gcw.currency AS entity_currency,
                    bf.name  AS function_name,
                    bf.function_group,
                    bf.color
@@ -2197,6 +2764,7 @@ def get_guard_camp_assignments(prod_id):
         result = []
         for r in rows:
             d = dict(r)
+            d["day_overrides"] = get_day_overrides_json(conn, "guards", d["id"])
             # Compute working_days based on pricing_type
             if d.get("start_date") and d.get("end_date"):
                 wd = compute_working_days(d)
@@ -2230,12 +2798,13 @@ def create_guard_camp_assignment(data):
         new_id = cur.lastrowid
         new = conn.execute("SELECT * FROM guard_camp_assignments WHERE id=?", (new_id,)).fetchone()
         _log_history(conn, 'guard_camp_assignments', new_id, 'create', new_data=new)
+        save_day_overrides(conn, "guards", new_id, data.get("day_overrides", "{}"))
         return new_id
 
 
 def update_guard_camp_assignment(assignment_id, data):
     allowed = ["boat_function_id", "helper_id", "helper_name_override",
-               "start_date", "end_date", "price_override", "notes",
+               "start_date", "end_date", "price_override", "override_reason", "notes",
                "assignment_status", "day_overrides", "pricing_type", "include_sunday"]
     set_parts = []
     vals = []
@@ -2253,6 +2822,8 @@ def update_guard_camp_assignment(assignment_id, data):
         new = conn.execute("SELECT * FROM guard_camp_assignments WHERE id=?", (assignment_id,)).fetchone()
         if old:
             _log_history(conn, 'guard_camp_assignments', assignment_id, 'update', old, new)
+        if "day_overrides" in data:
+            save_day_overrides(conn, "guards", assignment_id, data["day_overrides"])
 
 
 def delete_guard_camp_assignment(assignment_id):
@@ -2261,28 +2832,32 @@ def delete_guard_camp_assignment(assignment_id):
         if old:
             _log_history(conn, 'guard_camp_assignments', assignment_id, 'delete', old)
         conn.execute("DELETE FROM guard_camp_assignments WHERE id=?", (assignment_id,))
+        delete_day_overrides(conn, "guards", assignment_id)
 
 
 def delete_guard_camp_assignment_by_function(func_id):
     with get_db() as conn:
+        for row in conn.execute("SELECT id FROM guard_camp_assignments WHERE boat_function_id=?", (func_id,)).fetchall():
+            delete_day_overrides(conn, "guards", row["id"])
         conn.execute("DELETE FROM guard_camp_assignments WHERE boat_function_id=?", (func_id,))
 
 
 # ─── Security Boats ──────────────────────────────────────────────────────────
 
-def get_security_boats(prod_id):
+def get_security_boats(prod_id, include_deleted=False):
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM security_boats WHERE production_id=? ORDER BY sort_order, boat_nr, name",
-            (prod_id,)
-        ).fetchall()
+        sql = "SELECT * FROM security_boats WHERE production_id=?"
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        sql += " ORDER BY sort_order, boat_nr, name"
+        rows = conn.execute(sql, (prod_id,)).fetchall()
         return [dict(r) for r in rows]
 
 
 def create_security_boat(data):
     cols = ["production_id", "boat_nr", "name", "capacity", "night_ok",
             "wave_rating", "captain", "vendor", "group_name", "notes",
-            "daily_rate_estimate", "daily_rate_actual", "image_path"]
+            "daily_rate_estimate", "daily_rate_actual", "image_path", "currency"]
     fields = {k: data[k] for k in cols if k in data}
     placeholders = ", ".join("?" * len(fields))
     col_names = ", ".join(fields.keys())
@@ -2297,20 +2872,28 @@ def create_security_boat(data):
 def update_security_boat(sb_id, data):
     allowed = ["boat_nr", "name", "capacity", "night_ok", "wave_rating",
                "captain", "vendor", "group_name", "notes",
-               "daily_rate_estimate", "daily_rate_actual", "image_path", "sort_order"]
+               "daily_rate_estimate", "daily_rate_actual", "image_path", "sort_order", "currency"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
-        return
+        return True
     sets = ", ".join(f"{k}=?" for k in fields)
+    sets += ", version = version + 1"
     vals = list(fields.values()) + [sb_id]
+    version = data.get('version')
+    where = "WHERE id=?"
+    if version is not None:
+        where += " AND version=?"
+        vals.append(version)
     with get_db() as conn:
-        conn.execute(f"UPDATE security_boats SET {sets} WHERE id=?", vals)
+        cur = conn.execute(f"UPDATE security_boats SET {sets} {where}", vals)
+        if version is not None and cur.rowcount == 0:
+            return False
+    return True
 
 
 def delete_security_boat(sb_id):
     with get_db() as conn:
-        conn.execute("DELETE FROM security_boat_assignments WHERE security_boat_id=?", (sb_id,))
-        conn.execute("DELETE FROM security_boats WHERE id=?", (sb_id,))
+        conn.execute("UPDATE security_boats SET deleted_at = datetime('now') WHERE id=?", (sb_id,))
 
 
 def get_security_boat_assignments(prod_id):
@@ -2326,6 +2909,7 @@ def get_security_boat_assignments(prod_id):
                    sb.daily_rate_estimate AS boat_daily_rate_estimate,
                    sb.daily_rate_actual   AS boat_daily_rate_actual,
                    sb.vendor,
+                   sb.currency AS entity_currency,
                    bf.name  AS function_name,
                    bf.function_group,
                    bf.color
@@ -2339,6 +2923,7 @@ def get_security_boat_assignments(prod_id):
         result = []
         for r in rows:
             d = dict(r)
+            d["day_overrides"] = get_day_overrides_json(conn, "security_boats", d["id"])
             rate_est = d.get("price_override") or d.get("boat_daily_rate_estimate") or 0
             rate_act = d.get("boat_daily_rate_actual") or 0
             wd = compute_working_days(d)
@@ -2369,11 +2954,12 @@ def create_security_boat_assignment(data):
         new_id = cur.lastrowid
         new = conn.execute("SELECT * FROM security_boat_assignments WHERE id=?", (new_id,)).fetchone()
         _log_history(conn, 'security_boat_assignments', new_id, 'create', new_data=new)
+        save_day_overrides(conn, "security_boats", new_id, data.get("day_overrides", "{}"))
         return new_id
 
 
 def update_security_boat_assignment(assignment_id, data):
-    allowed = ["start_date", "end_date", "price_override", "notes",
+    allowed = ["start_date", "end_date", "price_override", "override_reason", "notes",
                "assignment_status", "day_overrides", "security_boat_id", "boat_name_override",
                "pricing_type", "include_sunday"]
     fields = {k: v for k, v in data.items() if k in allowed}
@@ -2394,6 +2980,8 @@ def update_security_boat_assignment(assignment_id, data):
         new = conn.execute("SELECT * FROM security_boat_assignments WHERE id=?", (assignment_id,)).fetchone()
         if old:
             _log_history(conn, 'security_boat_assignments', assignment_id, 'update', old, new)
+        if "day_overrides" in data:
+            save_day_overrides(conn, "security_boats", assignment_id, data["day_overrides"])
 
 
 def delete_security_boat_assignment(assignment_id):
@@ -2402,10 +2990,13 @@ def delete_security_boat_assignment(assignment_id):
         if old:
             _log_history(conn, 'security_boat_assignments', assignment_id, 'delete', old)
         conn.execute("DELETE FROM security_boat_assignments WHERE id=?", (assignment_id,))
+        delete_day_overrides(conn, "security_boats", assignment_id)
 
 
 def delete_security_boat_assignment_by_function(func_id):
     with get_db() as conn:
+        for row in conn.execute("SELECT id FROM security_boat_assignments WHERE boat_function_id=?", (func_id,)).fetchall():
+            delete_day_overrides(conn, "security_boats", row["id"])
         conn.execute("DELETE FROM security_boat_assignments WHERE boat_function_id=?", (func_id,))
 
 
@@ -2492,10 +3083,37 @@ def get_guard_schedules(prod_id):
 
 # ─── Location Schedules ──────────────────────────────────────────────────────
 
+def _resolve_location_id(conn, prod_id, data):
+    """Resolve location_id from data. If location_id is present, use it.
+    Otherwise resolve from location_name. Also sets location_name from location_id if needed."""
+    loc_id = data.get('location_id')
+    loc_name = data.get('location_name')
+    if loc_id:
+        # Ensure location_name is set for backward compat
+        if not loc_name:
+            row = conn.execute("SELECT name FROM locations WHERE id=?", (loc_id,)).fetchone()
+            if row:
+                data['location_name'] = row['name']
+        return loc_id
+    if loc_name:
+        row = conn.execute(
+            "SELECT id FROM locations WHERE production_id=? AND name=?",
+            (prod_id, loc_name)
+        ).fetchone()
+        if row:
+            data['location_id'] = row['id']
+            return row['id']
+    return None
+
+
 def get_location_schedules(prod_id):
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM location_schedules WHERE production_id=? ORDER BY location_name, date",
+            """SELECT ls.*, COALESCE(l.name, ls.location_name) AS location_name
+               FROM location_schedules ls
+               LEFT JOIN locations l ON ls.location_id = l.id
+               WHERE ls.production_id=?
+               ORDER BY location_name, date""",
             (prod_id,)
         ).fetchall()
         return [dict(r) for r in rows]
@@ -2504,17 +3122,18 @@ def get_location_schedules(prod_id):
 def upsert_location_schedule(data):
     """Create or update a location schedule cell (P/F/W)."""
     with get_db() as conn:
+        _resolve_location_id(conn, data['production_id'], data)
         conn.execute(
             """INSERT OR REPLACE INTO location_schedules
-               (production_id, location_name, location_type, date, status, locked, notes)
+               (production_id, location_name, location_type, date, status, locked, notes, location_id)
                VALUES (?,?,?,?,?,
                  COALESCE((SELECT locked FROM location_schedules
                            WHERE production_id=? AND location_name=? AND date=?), 0),
-                 ?)""",
+                 ?, ?)""",
             (data['production_id'], data['location_name'], data['location_type'],
              data['date'], data['status'],
              data['production_id'], data['location_name'], data['date'],
-             data.get('notes'))
+             data.get('notes'), data.get('location_id'))
         )
         row = conn.execute(
             "SELECT * FROM location_schedules WHERE production_id=? AND location_name=? AND date=?",
@@ -2523,12 +3142,18 @@ def upsert_location_schedule(data):
         return dict(row) if row else None
 
 
-def delete_location_schedule(prod_id, location_name, date):
+def delete_location_schedule(prod_id, location_name, date, location_id=None):
     with get_db() as conn:
-        conn.execute(
-            "DELETE FROM location_schedules WHERE production_id=? AND location_name=? AND date=?",
-            (prod_id, location_name, date)
-        )
+        if location_id:
+            conn.execute(
+                "DELETE FROM location_schedules WHERE production_id=? AND location_id=? AND date=?",
+                (prod_id, location_id, date)
+            )
+        else:
+            conn.execute(
+                "DELETE FROM location_schedules WHERE production_id=? AND location_name=? AND date=?",
+                (prod_id, location_name, date)
+            )
 
 
 def delete_location_schedule_by_id(schedule_id):
@@ -2553,46 +3178,47 @@ def auto_fill_locations_from_pdt(prod_id):
 
     # Load location sites from DB dynamically
     db_sites = get_location_sites(prod_id)
-    # Build lookup: uppercase name -> (original_name, location_type)
+    # Build lookup: uppercase name -> (original_name, location_type, id)
     site_lookup = {}
     for s in db_sites:
-        site_lookup[s['name'].upper()] = (s['name'], s.get('location_type', 'game'))
+        site_lookup[s['name'].upper()] = (s['name'], s.get('location_type', 'game'), s['id'])
     # Add common aliases
     if any(s['name'] == 'ARENA (SABOGA)' for s in db_sites):
-        site_lookup['ARENA'] = ('ARENA (SABOGA)', 'game')
-        site_lookup['SABOGA'] = ('ARENA (SABOGA)', 'game')
+        arena_site = next(s for s in db_sites if s['name'] == 'ARENA (SABOGA)')
+        site_lookup['ARENA'] = ('ARENA (SABOGA)', 'game', arena_site['id'])
+        site_lookup['SABOGA'] = ('ARENA (SABOGA)', 'game', arena_site['id'])
 
     created = 0
     with get_db() as conn:
         for day in days:
-            locations_found = set()  # set of (original_name, location_type)
+            locations_found = set()  # set of (original_name, location_type, location_id)
             # Check main location
             if day.get('location'):
                 loc_upper = day['location'].strip().upper()
-                for uname, (orig, ltype) in site_lookup.items():
+                for uname, (orig, ltype, lid) in site_lookup.items():
                     if uname in loc_upper or loc_upper in uname:
-                        locations_found.add((orig, ltype))
+                        locations_found.add((orig, ltype, lid))
             # Check events
             for ev in day.get('events', []):
                 if ev.get('location'):
                     ev_loc = ev['location'].strip().upper()
-                    for uname, (orig, ltype) in site_lookup.items():
+                    for uname, (orig, ltype, lid) in site_lookup.items():
                         if uname in ev_loc or ev_loc in uname:
-                            locations_found.add((orig, ltype))
+                            locations_found.add((orig, ltype, lid))
                 # Also map ARENA from arena event type
                 if ev.get('event_type') == 'arena' and 'ARENA (SABOGA)' in site_lookup:
                     locations_found.add(site_lookup['ARENA (SABOGA)'])
                 elif ev.get('event_type') == 'arena':
                     # fallback
-                    locations_found.add(('ARENA (SABOGA)', 'game'))
+                    locations_found.add(('ARENA (SABOGA)', 'game', None))
 
-            for loc_name, loc_type in locations_found:
+            for loc_name, loc_type, loc_id in locations_found:
                 try:
                     conn.execute(
                         """INSERT OR IGNORE INTO location_schedules
-                           (production_id, location_name, location_type, date, status)
-                           VALUES (?,?,?,?,?)""",
-                        (prod_id, loc_name, loc_type, day['date'], 'F')
+                           (production_id, location_name, location_type, date, status, location_id)
+                           VALUES (?,?,?,?,?,?)""",
+                        (prod_id, loc_name, loc_type, day['date'], 'F', loc_id)
                     )
                     created += 1
                 except Exception:
@@ -2641,49 +3267,53 @@ def sync_pdt_day_to_locations(prod_id, day_date, locations_from_pdt):
         db_sites = [dict(r) for r in conn.execute(
             "SELECT * FROM locations WHERE production_id=?", (prod_id,)
         ).fetchall()]
-        # Build normalized lookup: normalized_name -> (canonical_name, location_type)
+        # Build normalized lookup: normalized_name -> (canonical_name, location_type, id)
         site_lookup = {}
         site_lookup_upper = {}  # Keep uppercase for backward compat
         for s in db_sites:
             norm = _normalize_location_name(s['name'])
-            site_lookup[norm] = (s['name'], s.get('location_type', 'game'))
-            site_lookup_upper[s['name'].upper()] = (s['name'], s.get('location_type', 'game'))
+            site_lookup[norm] = (s['name'], s.get('location_type', 'game'), s['id'])
+            site_lookup_upper[s['name'].upper()] = (s['name'], s.get('location_type', 'game'), s['id'])
 
-        # Resolve each PDT location to a canonical site name, auto-creating if needed
-        resolved_names = set()
+        # Resolve each PDT location to a canonical site name + id, auto-creating if needed
+        # resolved: set of (canonical_name, location_id)
+        resolved = set()
         for raw_name in loc_names:
             raw_norm = _normalize_location_name(raw_name)
             raw_upper = raw_name.upper()
 
             # Try normalized match first
             if raw_norm in site_lookup:
-                resolved_names.add(site_lookup[raw_norm][0])
+                resolved.add((site_lookup[raw_norm][0], site_lookup[raw_norm][2]))
                 sync_log['matched'].append(raw_name)
                 continue
             # Fallback: uppercase exact match
             if raw_upper in site_lookup_upper:
-                resolved_names.add(site_lookup_upper[raw_upper][0])
+                resolved.add((site_lookup_upper[raw_upper][0], site_lookup_upper[raw_upper][2]))
                 sync_log['matched'].append(raw_name)
                 continue
             # Try substring match on normalized names
             matched = False
-            for norm_name, (orig, ltype) in site_lookup.items():
+            for norm_name, (orig, ltype, lid) in site_lookup.items():
                 if norm_name in raw_norm or raw_norm in norm_name:
-                    resolved_names.add(orig)
+                    resolved.add((orig, lid))
                     sync_log['matched'].append(f"{raw_name} -> {orig}")
                     matched = True
                     break
             if not matched:
                 # Auto-create a new location site
-                conn.execute(
+                cursor = conn.execute(
                     "INSERT INTO locations (production_id, name, location_type) VALUES (?,?,?)",
                     (prod_id, raw_name, 'game')
                 )
+                new_id = cursor.lastrowid
                 norm = _normalize_location_name(raw_name)
-                site_lookup[norm] = (raw_name, 'game')
-                site_lookup_upper[raw_upper] = (raw_name, 'game')
-                resolved_names.add(raw_name)
+                site_lookup[norm] = (raw_name, 'game', new_id)
+                site_lookup_upper[raw_upper] = (raw_name, 'game', new_id)
+                resolved.add((raw_name, new_id))
                 sync_log['created'].append(raw_name)
+        resolved_names = set(r[0] for r in resolved)
+        resolved_id_by_name = {r[0]: r[1] for r in resolved}
 
         # Get existing F entries on this date (to know what to remove)
         existing_f = conn.execute(
@@ -2697,6 +3327,7 @@ def sync_pdt_day_to_locations(prod_id, day_date, locations_from_pdt):
 
         # Upsert F for each resolved location (skip if locked)
         for loc_name in resolved_names:
+            loc_id = resolved_id_by_name.get(loc_name)
             # Check if cell is locked
             locked_row = conn.execute(
                 "SELECT locked FROM location_schedules WHERE production_id=? AND location_name=? AND date=?",
@@ -2706,20 +3337,22 @@ def sync_pdt_day_to_locations(prod_id, day_date, locations_from_pdt):
                 continue
             # Find location_type
             loc_type = 'game'
-            upper = loc_name.upper()
-            if upper in site_lookup:
-                loc_type = site_lookup[upper][1]
+            norm = _normalize_location_name(loc_name)
+            if norm in site_lookup:
+                loc_type = site_lookup[norm][1]
             conn.execute(
                 """INSERT OR REPLACE INTO location_schedules
-                   (production_id, location_name, location_type, date, status, locked, notes)
+                   (production_id, location_name, location_type, date, status, locked, notes, location_id)
                    VALUES (?,?,?,?,'F',
                      COALESCE((SELECT locked FROM location_schedules
                                WHERE production_id=? AND location_name=? AND date=?), 0),
                      (SELECT notes FROM location_schedules
-                      WHERE production_id=? AND location_name=? AND date=?))""",
+                      WHERE production_id=? AND location_name=? AND date=?),
+                     ?)""",
                 (prod_id, loc_name, loc_type, day_date,
                  prod_id, loc_name, day_date,
-                 prod_id, loc_name, day_date)
+                 prod_id, loc_name, day_date,
+                 loc_id)
             )
 
         # Remove F entries that are no longer in the PDT for this date
@@ -2790,7 +3423,11 @@ def remove_pdt_film_days_for_date(prod_id, day_date):
 def get_guard_location_schedules(prod_id):
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM guard_location_schedules WHERE production_id=? ORDER BY location_name, date",
+            """SELECT gls.*, COALESCE(l.name, gls.location_name) AS location_name
+               FROM guard_location_schedules gls
+               LEFT JOIN locations l ON gls.location_id = l.id
+               WHERE gls.production_id=?
+               ORDER BY location_name, date""",
             (prod_id,)
         ).fetchall()
         return [dict(r) for r in rows]
@@ -2798,16 +3435,19 @@ def get_guard_location_schedules(prod_id):
 
 def upsert_guard_location_schedule(data):
     with get_db() as conn:
+        _resolve_location_id(conn, data['production_id'], data)
         conn.execute(
             """INSERT OR REPLACE INTO guard_location_schedules
                (production_id, location_name, date, status, nb_guards,
-                locked)
+                locked, location_id)
                VALUES (?,?,?,?,?,
                  COALESCE((SELECT locked FROM guard_location_schedules
-                           WHERE production_id=? AND location_name=? AND date=?), 0))""",
+                           WHERE production_id=? AND location_name=? AND date=?), 0),
+                 ?)""",
             (data['production_id'], data['location_name'], data['date'],
              data['status'], data.get('nb_guards', 1),
-             data['production_id'], data['location_name'], data['date'])
+             data['production_id'], data['location_name'], data['date'],
+             data.get('location_id'))
         )
         row = conn.execute(
             "SELECT * FROM guard_location_schedules WHERE production_id=? AND location_name=? AND date=?",
@@ -2816,12 +3456,18 @@ def upsert_guard_location_schedule(data):
         return dict(row) if row else None
 
 
-def delete_guard_location_schedule(prod_id, location_name, date):
+def delete_guard_location_schedule(prod_id, location_name, date, location_id=None):
     with get_db() as conn:
-        conn.execute(
-            "DELETE FROM guard_location_schedules WHERE production_id=? AND location_name=? AND date=?",
-            (prod_id, location_name, date)
-        )
+        if location_id:
+            conn.execute(
+                "DELETE FROM guard_location_schedules WHERE production_id=? AND location_id=? AND date=?",
+                (prod_id, location_id, date)
+            )
+        else:
+            conn.execute(
+                "DELETE FROM guard_location_schedules WHERE production_id=? AND location_name=? AND date=?",
+                (prod_id, location_name, date)
+            )
 
 
 def lock_guard_location_schedules(prod_id, dates, locked):
@@ -2874,10 +3520,10 @@ def sync_guard_location_from_locations(prod_id):
                     default_guards = 4 if loc_type == 'tribal_camp' else 2
                 conn.execute(
                     """INSERT OR IGNORE INTO guard_location_schedules
-                       (production_id, location_name, date, status, nb_guards, locked)
-                       VALUES (?,?,?,?,?,0)""",
+                       (production_id, location_name, date, status, nb_guards, locked, location_id)
+                       VALUES (?,?,?,?,?,0,?)""",
                     (prod_id, ls['location_name'], ls['date'],
-                     status, default_guards)
+                     status, default_guards, ls.get('location_id'))
                 )
 
         # Remove entries where the location no longer has activity
@@ -2891,29 +3537,41 @@ def sync_guard_location_from_locations(prod_id):
     return get_guard_location_schedules(prod_id)
 
 
-def update_guard_location_nb_guards(prod_id, location_name, date, nb_guards):
+def update_guard_location_nb_guards(prod_id, location_name, date, nb_guards, location_id=None):
     """Update the nb_guards value for a specific guard_location_schedule entry."""
     with get_db() as conn:
-        conn.execute(
-            """UPDATE guard_location_schedules SET nb_guards=?
-               WHERE production_id=? AND location_name=? AND date=?""",
-            (nb_guards, prod_id, location_name, date)
-        )
-        row = conn.execute(
-            "SELECT * FROM guard_location_schedules WHERE production_id=? AND location_name=? AND date=?",
-            (prod_id, location_name, date)
-        ).fetchone()
+        if location_id:
+            conn.execute(
+                """UPDATE guard_location_schedules SET nb_guards=?
+                   WHERE production_id=? AND location_id=? AND date=?""",
+                (nb_guards, prod_id, location_id, date)
+            )
+            row = conn.execute(
+                "SELECT * FROM guard_location_schedules WHERE production_id=? AND location_id=? AND date=?",
+                (prod_id, location_id, date)
+            ).fetchone()
+        else:
+            conn.execute(
+                """UPDATE guard_location_schedules SET nb_guards=?
+                   WHERE production_id=? AND location_name=? AND date=?""",
+                (nb_guards, prod_id, location_name, date)
+            )
+            row = conn.execute(
+                "SELECT * FROM guard_location_schedules WHERE production_id=? AND location_name=? AND date=?",
+                (prod_id, location_name, date)
+            ).fetchone()
         return dict(row) if row else None
 
 
 # ─── Location Sites CRUD ────────────────────────────────────────────────────
 
-def get_location_sites(prod_id):
+def get_location_sites(prod_id, include_deleted=False):
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM locations WHERE production_id=? ORDER BY location_type, name",
-            (prod_id,)
-        ).fetchall()
+        sql = "SELECT * FROM locations WHERE production_id=?"
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        sql += " ORDER BY location_type, name"
+        rows = conn.execute(sql, (prod_id,)).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -2937,40 +3595,38 @@ def update_location_site(loc_id, data):
                "price_p", "price_f", "price_w", "global_deal"]
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
-        return
+        return True
     sets = ", ".join(f"{k}=?" for k in fields)
+    sets += ", version = version + 1"
     vals = list(fields.values()) + [loc_id]
+    version = data.get('version')
+    where = "WHERE id=?"
+    if version is not None:
+        where += " AND version=?"
+        vals.append(version)
     with get_db() as conn:
-        conn.execute(f"UPDATE locations SET {sets} WHERE id=?", vals)
-        # Also update location_schedules if name changed
-        if 'name' in data:
-            old = conn.execute("SELECT name FROM locations WHERE id=?", (loc_id,)).fetchone()
-            # name already updated above, but we need old name to cascade
-            # Actually the update already happened, so this is trickier.
-            # We handle cascade in the API layer instead.
+        cur = conn.execute(f"UPDATE locations SET {sets} {where}", vals)
+        if version is not None and cur.rowcount == 0:
+            return False
         row = conn.execute("SELECT * FROM locations WHERE id=?", (loc_id,)).fetchone()
         return dict(row) if row else None
 
 
 def delete_location_site(loc_id):
     with get_db() as conn:
-        # Get name to cascade delete schedules
-        loc = conn.execute("SELECT * FROM locations WHERE id=?", (loc_id,)).fetchone()
-        if loc:
-            loc = dict(loc)
-            conn.execute(
-                "DELETE FROM location_schedules WHERE production_id=? AND location_name=?",
-                (loc['production_id'], loc['name'])
-            )
-        conn.execute("DELETE FROM shooting_day_locations WHERE location_id=?", (loc_id,))
-        conn.execute("DELETE FROM locations WHERE id=?", (loc_id,))
+        conn.execute("UPDATE locations SET deleted_at = datetime('now') WHERE id=?", (loc_id,))
 
 
 def rename_location_in_schedules(prod_id, old_name, new_name):
-    """Update location_name in location_schedules when a location is renamed."""
+    """Update location_name in location_schedules and guard_location_schedules when a location is renamed.
+    With location_id this is less critical, but keeps location_name in sync for the UNIQUE constraint."""
     with get_db() as conn:
         conn.execute(
             "UPDATE location_schedules SET location_name=? WHERE production_id=? AND location_name=?",
+            (new_name, prod_id, old_name)
+        )
+        conn.execute(
+            "UPDATE guard_location_schedules SET location_name=? WHERE production_id=? AND location_name=?",
             (new_name, prod_id, old_name)
         )
 
@@ -2978,12 +3634,13 @@ def rename_location_in_schedules(prod_id, old_name, new_name):
 
 # ─── Guard Posts CRUD ────────────────────────────────────────────────────────
 
-def get_guard_posts(prod_id):
+def get_guard_posts(prod_id, include_deleted=False):
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM guard_posts WHERE production_id=? ORDER BY name",
-            (prod_id,)
-        ).fetchall()
+        sql = "SELECT * FROM guard_posts WHERE production_id=?"
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        sql += " ORDER BY name"
+        rows = conn.execute(sql, (prod_id,)).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -3016,15 +3673,7 @@ def update_guard_post(post_id, data):
 
 def delete_guard_post(post_id):
     with get_db() as conn:
-        # Get name to cascade delete schedules
-        post = conn.execute("SELECT * FROM guard_posts WHERE id=?", (post_id,)).fetchone()
-        if post:
-            post = dict(post)
-            conn.execute(
-                "DELETE FROM guard_location_schedules WHERE production_id=? AND location_name=?",
-                (post['production_id'], post['name'])
-            )
-        conn.execute("DELETE FROM guard_posts WHERE id=?", (post_id,))
+        conn.execute("UPDATE guard_posts SET deleted_at = datetime('now') WHERE id=?", (post_id,))
 
 
 def rename_guard_post_in_schedules(prod_id, old_name, new_name):
@@ -3090,12 +3739,13 @@ def get_fnb_summary(prod_id):
 
 # ─── FNB v2 (dynamic categories / items / entries) ──────────────────────────
 
-def get_fnb_categories(prod_id):
+def get_fnb_categories(prod_id, include_deleted=False):
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM fnb_categories WHERE production_id=? ORDER BY sort_order, name",
-            (prod_id,)
-        ).fetchall()
+        sql = "SELECT * FROM fnb_categories WHERE production_id=?"
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        sql += " ORDER BY sort_order, name"
+        rows = conn.execute(sql, (prod_id,)).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -3127,22 +3777,21 @@ def update_fnb_category(cat_id, data):
 
 def delete_fnb_category(cat_id):
     with get_db() as conn:
-        # Cascade: delete entries for items in this category, then items, then category
-        conn.execute("DELETE FROM fnb_entries WHERE item_id IN (SELECT id FROM fnb_items WHERE category_id=?)", (cat_id,))
-        conn.execute("DELETE FROM fnb_items WHERE category_id=?", (cat_id,))
-        conn.execute("DELETE FROM fnb_categories WHERE id=?", (cat_id,))
+        # Soft-delete cascade: mark items in this category as deleted too
+        conn.execute("UPDATE fnb_items SET deleted_at = datetime('now') WHERE category_id=? AND deleted_at IS NULL", (cat_id,))
+        conn.execute("UPDATE fnb_categories SET deleted_at = datetime('now') WHERE id=?", (cat_id,))
 
 
-def get_fnb_items(prod_id):
+def get_fnb_items(prod_id, include_deleted=False):
     with get_db() as conn:
-        rows = conn.execute(
-            """SELECT fi.*, fc.name AS category_name, fc.color AS category_color
+        sql = """SELECT fi.*, fc.name AS category_name, fc.color AS category_color
                FROM fnb_items fi
                JOIN fnb_categories fc ON fi.category_id = fc.id
-               WHERE fi.production_id=?
-               ORDER BY fc.sort_order, fc.name, fi.sort_order, fi.name""",
-            (prod_id,)
-        ).fetchall()
+               WHERE fi.production_id=?"""
+        if not include_deleted:
+            sql += " AND fi.deleted_at IS NULL AND fc.deleted_at IS NULL"
+        sql += " ORDER BY fc.sort_order, fc.name, fi.sort_order, fi.name"
+        rows = conn.execute(sql, (prod_id,)).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -3184,8 +3833,7 @@ def update_fnb_item(item_id, data):
 
 def delete_fnb_item(item_id):
     with get_db() as conn:
-        conn.execute("DELETE FROM fnb_entries WHERE item_id=?", (item_id,))
-        conn.execute("DELETE FROM fnb_items WHERE id=?", (item_id,))
+        conn.execute("UPDATE fnb_items SET deleted_at = datetime('now') WHERE id=?", (item_id,))
 
 
 def get_fnb_entries(prod_id, entry_type=None):
@@ -3268,8 +3916,67 @@ def get_fnb_budget_data(prod_id):
 
 # ─── Budget ───────────────────────────────────────────────────────────────────
 
-def get_budget(prod_id):
-    """Aggregate all department costs into a unified budget view."""
+def get_exchange_rates():
+    """Return all exchange rates, newest first."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM exchange_rates ORDER BY date DESC, from_currency, to_currency"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def upsert_exchange_rate(date, from_currency, to_currency, rate):
+    """Insert or update an exchange rate for a given date and pair."""
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO exchange_rates (date, from_currency, to_currency, rate)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(date, from_currency, to_currency) DO UPDATE SET rate = excluded.rate
+        """, (date, from_currency.upper(), to_currency.upper(), rate))
+        return {"date": date, "from_currency": from_currency.upper(),
+                "to_currency": to_currency.upper(), "rate": rate}
+
+
+def get_latest_rate(from_currency, to_currency, as_of_date=None):
+    """Get the most recent exchange rate for a currency pair, optionally up to a date."""
+    if from_currency == to_currency:
+        return 1.0
+    with get_db() as conn:
+        if as_of_date:
+            row = conn.execute("""
+                SELECT rate FROM exchange_rates
+                WHERE from_currency = ? AND to_currency = ? AND date <= ?
+                ORDER BY date DESC LIMIT 1
+            """, (from_currency.upper(), to_currency.upper(), as_of_date)).fetchone()
+        else:
+            row = conn.execute("""
+                SELECT rate FROM exchange_rates
+                WHERE from_currency = ? AND to_currency = ?
+                ORDER BY date DESC LIMIT 1
+            """, (from_currency.upper(), to_currency.upper())).fetchone()
+        if row:
+            return row["rate"]
+        # Try inverse
+        if as_of_date:
+            row = conn.execute("""
+                SELECT rate FROM exchange_rates
+                WHERE from_currency = ? AND to_currency = ? AND date <= ?
+                ORDER BY date DESC LIMIT 1
+            """, (to_currency.upper(), from_currency.upper(), as_of_date)).fetchone()
+        else:
+            row = conn.execute("""
+                SELECT rate FROM exchange_rates
+                WHERE from_currency = ? AND to_currency = ?
+                ORDER BY date DESC LIMIT 1
+            """, (to_currency.upper(), from_currency.upper())).fetchone()
+        if row and row["rate"] != 0:
+            return 1.0 / row["rate"]
+        return None
+
+
+def get_budget(prod_id, ref_currency='USD'):
+    """Aggregate all department costs into a unified budget view.
+    ref_currency: reference currency for totals (default USD)."""
     assignments = get_boat_assignments(prod_id, context='boats')
     depts = {d["name"]: d["id"] for d in get_departments(prod_id)}
 
@@ -3277,16 +3984,29 @@ def get_budget(prod_id):
     grand_total_est = 0
     grand_total_act = 0
 
+    def _convert(amount, from_cur, to_cur):
+        """Convert amount from from_cur to to_cur using latest rate."""
+        if not amount or from_cur == to_cur:
+            return amount
+        rate = get_latest_rate(from_cur, to_cur)
+        if rate is None:
+            return amount  # no rate available, keep as-is
+        return round(amount * rate, 2)
+
     def _add_rows(dept_name, items, name_key='function_name', entity_key='boat_name', rate_est_key='boat_daily_rate_estimate'):
         nonlocal grand_total_est, grand_total_act
         for a in items:
             if not a.get("working_days"):
                 continue
+            cur = a.get("entity_currency") or 'USD'
             est = a.get("amount_estimate", 0) or 0
             act = a.get("amount_actual")
-            grand_total_est += est
-            if act:
-                grand_total_act += act
+            est_ref = _convert(est, cur, ref_currency)
+            act_ref = _convert(act, cur, ref_currency) if act else None
+            rate_used = get_latest_rate(cur, ref_currency) if cur != ref_currency else None
+            grand_total_est += est_ref
+            if act_ref:
+                grand_total_act += act_ref
             rows.append({
                 "department": dept_name,
                 "name": a.get(name_key, ""),
@@ -3297,7 +4017,11 @@ def get_budget(prod_id):
                 "working_days": a["working_days"],
                 "unit_price_estimate": (a.get("price_override") or a.get(rate_est_key) or 0),
                 "amount_estimate": est,
+                "amount_estimate_ref": est_ref,
                 "amount_actual": act,
+                "amount_actual_ref": act_ref,
+                "currency": cur,
+                "rate_to_ref": rate_used,
                 "source": "auto",
             })
 
@@ -3328,9 +4052,11 @@ def get_budget(prod_id):
         p_total = cat_info['purchase_total']
         c_total = cat_info['consumption_total']
         if p_total > 0 or c_total > 0:
-            grand_total_est += p_total
+            p_ref = _convert(p_total, 'USD', ref_currency)
+            grand_total_est += p_ref
             if c_total > 0:
-                grand_total_act += c_total
+                grand_total_act += _convert(c_total, 'USD', ref_currency)
+            c_ref = _convert(c_total, 'USD', ref_currency) if c_total > 0 else None
             rows.append({
                 "department": "FNB",
                 "name": cat_info['name'],
@@ -3341,7 +4067,11 @@ def get_budget(prod_id):
                 "working_days": 1,
                 "unit_price_estimate": p_total,
                 "amount_estimate": p_total,
+                "amount_estimate_ref": p_ref,
                 "amount_actual": c_total if c_total > 0 else None,
+                "amount_actual_ref": c_ref,
+                "currency": "USD",
+                "rate_to_ref": get_latest_rate('USD', ref_currency) if ref_currency != 'USD' else None,
                 "source": "auto",
             })
 
@@ -3353,7 +4083,8 @@ def get_budget(prod_id):
         {"name": "HEAVY MACHINERY FUEL", "amount_estimate": 3000},
     ]
     for f in fuel_data:
-        grand_total_est += f["amount_estimate"]
+        f_ref = _convert(f["amount_estimate"], 'USD', ref_currency)
+        grand_total_est += f_ref
         rows.append({
             "department": "FUEL",
             "name": f["name"],
@@ -3364,7 +4095,11 @@ def get_budget(prod_id):
             "working_days": 1,
             "unit_price_estimate": f["amount_estimate"],
             "amount_estimate": f["amount_estimate"],
+            "amount_estimate_ref": f_ref,
             "amount_actual": None,
+            "amount_actual_ref": None,
+            "currency": "USD",
+            "rate_to_ref": get_latest_rate('USD', ref_currency) if ref_currency != 'USD' else None,
             "source": "auto",
         })
 
@@ -3397,7 +4132,8 @@ def get_budget(prod_id):
                      counts['F'] * pricing['price_f'] +
                      counts['W'] * pricing['price_w'])
         if total > 0:
-            grand_total_est += total
+            total_ref = _convert(total, 'USD', ref_currency)
+            grand_total_est += total_ref
             days_str = []
             if counts['P']: days_str.append(f"{counts['P']}P")
             if counts['F']: days_str.append(f"{counts['F']}F")
@@ -3412,7 +4148,11 @@ def get_budget(prod_id):
                 "working_days": counts['P'] + counts['F'] + counts['W'],
                 "unit_price_estimate": pricing['global_deal'] if (pricing['global_deal'] and pricing['global_deal'] > 0) else total / max(counts['P'] + counts['F'] + counts['W'], 1),
                 "amount_estimate": total,
+                "amount_estimate_ref": total_ref,
                 "amount_actual": None,
+                "amount_actual_ref": None,
+                "currency": "USD",
+                "rate_to_ref": get_latest_rate('USD', ref_currency) if ref_currency != 'USD' else None,
                 "source": "auto",
             })
 
@@ -3430,7 +4170,8 @@ def get_budget(prod_id):
 
     if loc_guard_by_loc:
         for loc, info in loc_guard_by_loc.items():
-            grand_total_est += info['cost']
+            cost_ref = _convert(info['cost'], 'USD', ref_currency)
+            grand_total_est += cost_ref
             rows.append({
                 "department": "GUARDS",
                 "name": f"LOCATION - {loc}",
@@ -3441,7 +4182,11 @@ def get_budget(prod_id):
                 "working_days": info['total_guard_days'],
                 "unit_price_estimate": 45,
                 "amount_estimate": info['cost'],
+                "amount_estimate_ref": cost_ref,
                 "amount_actual": None,
+                "amount_actual_ref": None,
+                "currency": "USD",
+                "rate_to_ref": get_latest_rate('USD', ref_currency) if ref_currency != 'USD' else None,
                 "source": "auto",
             })
 
@@ -3460,20 +4205,29 @@ def get_budget(prod_id):
         """, (prod_id,)).fetchall()
         for r in manual:
             d = dict(r)
-            grand_total_est += d.get("amount_estimate") or 0
-            if d.get("amount_actual"):
-                grand_total_act += d["amount_actual"]
+            cur = d.get("currency") or "USD"
+            est = d.get("amount_estimate") or 0
+            act = d.get("amount_actual")
+            est_ref = _convert(est, cur, ref_currency)
+            act_ref = _convert(act, cur, ref_currency) if act else None
+            d["currency"] = cur
+            d["amount_estimate_ref"] = est_ref
+            d["amount_actual_ref"] = act_ref
+            d["rate_to_ref"] = get_latest_rate(cur, ref_currency) if cur != ref_currency else None
+            grand_total_est += est_ref
+            if act_ref:
+                grand_total_act += act_ref
             rows.append(d)
 
-    # Summary by department
+    # Summary by department (use ref amounts for totals)
     by_dept = {}
     for r in rows:
         dept = r.get("dept_name") or r.get("department", "BOATS")
         by_dept.setdefault(dept, {"total_estimate": 0, "total_actual": 0, "lines": []})
-        by_dept[dept]["total_estimate"] += r.get("amount_estimate") or 0
+        by_dept[dept]["total_estimate"] += r.get("amount_estimate_ref") or r.get("amount_estimate") or 0
         by_dept[dept]["lines"].append(r)
-        if r.get("amount_actual"):
-            by_dept[dept]["total_actual"] += r["amount_actual"]
+        if r.get("amount_actual_ref") or r.get("amount_actual"):
+            by_dept[dept]["total_actual"] += r.get("amount_actual_ref") or r.get("amount_actual") or 0
 
     return {
         "rows": rows,
@@ -3482,6 +4236,7 @@ def get_budget(prod_id):
         "grand_total_actual":   round(grand_total_act, 2),
         "fnb_purchase_total":   fnb_budget['grand_purchase'],
         "fnb_consumption_total": fnb_budget['grand_consumption'],
+        "ref_currency": ref_currency,
     }
 
 
@@ -3747,6 +4502,124 @@ def get_history(prod_id, limit=50, entity_type=None, entity_id=None,
         return [dict(r) for r in rows]
 
 
+def get_activity_feed(prod_id, limit=100, module=None, user_id=None,
+                      date=None, date_from=None, date_to=None):
+    """Return enriched activity feed grouped by date for timeline display.
+
+    Parameters:
+        module: module slug (fleet, pdt, transport, etc.) - maps to table names
+        user_id: filter by user
+        date: single date filter (YYYY-MM-DD)
+        date_from/date_to: date range filter
+    """
+    # Reverse map: module slug -> list of table_names
+    module_tables = {}
+    for tbl, mod in _TABLE_TO_MODULE.items():
+        module_tables.setdefault(mod, []).append(tbl)
+
+    with get_db() as conn:
+        query = """SELECT id, table_name, record_id, action, old_data, new_data,
+                          user_id, user_nickname, human_description, production_id,
+                          created_at, undone_at
+                   FROM history"""
+        params = []
+        conditions = []
+
+        if prod_id:
+            conditions.append("(production_id = ? OR production_id IS NULL)")
+            params.append(prod_id)
+
+        if module and module in module_tables:
+            placeholders = ",".join("?" for _ in module_tables[module])
+            conditions.append(f"table_name IN ({placeholders})")
+            params.extend(module_tables[module])
+
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(int(user_id))
+
+        if date:
+            conditions.append("date(created_at) = ?")
+            params.append(date)
+        else:
+            if date_from:
+                conditions.append("created_at >= ?")
+                params.append(date_from)
+            if date_to:
+                conditions.append("created_at <= ?")
+                params.append(date_to + " 23:59:59" if len(date_to) == 10 else date_to)
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+
+        rows = conn.execute(query, params).fetchall()
+
+        # Enrich entries and group by date
+        entries = []
+        for r in rows:
+            r = dict(r)
+            mod = _TABLE_TO_MODULE.get(r["table_name"], r["table_name"])
+            label = _TABLE_LABELS.get(r["table_name"], r["table_name"])
+            created = r.get("created_at") or ""
+            date_key = created[:10] if len(created) >= 10 else "unknown"
+
+            # Parse change details from old/new data for update actions
+            changes = []
+            if r["action"] == "update" and r.get("old_data") and r.get("new_data"):
+                try:
+                    od = json.loads(r["old_data"])
+                    nd = json.loads(r["new_data"])
+                    for k in nd:
+                        if k in _SKIP_DIFF_FIELDS:
+                            continue
+                        ov = od.get(k)
+                        nv = nd.get(k)
+                        if str(ov) != str(nv):
+                            fl = _FIELD_LABELS.get(k, k.replace("_", " "))
+                            changes.append({"field": fl, "old": ov, "new": nv})
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            entries.append({
+                "id": r["id"],
+                "action": r["action"],
+                "module": mod,
+                "entity_type": label,
+                "table_name": r["table_name"],
+                "record_id": r["record_id"],
+                "description": r.get("human_description") or f"{r['action']} {label}",
+                "changes": changes,
+                "user": r.get("user_nickname") or "System",
+                "user_id": r.get("user_id"),
+                "timestamp": created,
+                "date": date_key,
+                "undone": r.get("undone_at") is not None,
+            })
+
+        # Group by date
+        grouped = {}
+        for e in entries:
+            grouped.setdefault(e["date"], []).append(e)
+
+        # Available modules for filter dropdown
+        available_modules = sorted(set(
+            _TABLE_TO_MODULE.get(r["table_name"], r["table_name"])
+            for r in (dict(row) for row in conn.execute(
+                "SELECT DISTINCT table_name FROM history WHERE production_id = ?",
+                (prod_id,)
+            ).fetchall())
+        ))
+
+        return {
+            "entries": entries,
+            "grouped": grouped,
+            "total": len(entries),
+            "modules": available_modules,
+        }
+
+
 def undo_history_entry(history_id):
     """Generic undo: restore old_data for a given history entry."""
     with get_db() as conn:
@@ -3754,6 +4627,11 @@ def undo_history_entry(history_id):
         if not entry:
             return {"message": "History entry not found"}
         entry = dict(entry)
+
+        # Already undone?
+        if entry.get("undone_at"):
+            return {"message": "Already undone"}
+
         table = entry["table_name"]
         record_id = entry["record_id"]
         action = entry["action"]
@@ -3780,6 +4658,10 @@ def undo_history_entry(history_id):
             vals = [old_data[k] for k in cols]
             vals.append(record_id)
             conn.execute(f"UPDATE {table} SET {set_clause} WHERE id=?", vals)
+            # Sync day_overrides to relational table
+            atype = _TABLE_TO_ATYPE.get(table)
+            if atype and "day_overrides" in old_data:
+                save_day_overrides(conn, atype, record_id, old_data["day_overrides"])
         elif action == "delete" and old_data:
             # Undo delete = re-insert
             cols = list(old_data.keys())
@@ -3787,9 +4669,21 @@ def undo_history_entry(history_id):
             col_names = ", ".join(cols)
             vals = [old_data[k] for k in cols]
             conn.execute(f"INSERT OR REPLACE INTO {table} ({col_names}) VALUES ({placeholders})", vals)
+            # Sync day_overrides to relational table
+            atype = _TABLE_TO_ATYPE.get(table)
+            if atype and "day_overrides" in old_data:
+                save_day_overrides(conn, atype, record_id, old_data["day_overrides"])
 
-        # Remove the history entry
-        conn.execute("DELETE FROM history WHERE id=?", (history_id,))
+        # Mark original entry as undone (persistent)
+        conn.execute("UPDATE history SET undone_at = datetime('now') WHERE id=?", (history_id,))
+
+        # Log the undo as a new history entry
+        _log_history(conn, table, record_id, "undo",
+                     old_data=json.loads(entry["new_data"]) if entry["new_data"] else None,
+                     new_data=json.loads(entry["old_data"]) if entry["old_data"] else None,
+                     human_description=f"Undo: {entry.get('human_description', action)}",
+                     production_id=entry.get("production_id"))
+
         return {"message": "Undo successful", "action": action, "table": table, "restored": old_data}
 
 
@@ -3808,6 +4702,7 @@ def undo_last_boat_assignment(prod_id):
         record_id = last["record_id"]
 
         # Remove current assignment
+        delete_day_overrides(conn, "boats", record_id)
         conn.execute("DELETE FROM boat_assignments WHERE id=?", (record_id,))
 
         if old and last["action"] in ("update", "delete"):
@@ -3822,6 +4717,7 @@ def undo_last_boat_assignment(prod_id):
                  old.get("assignment_status", "confirmed"),
                  old.get("day_overrides", "{}"))
             )
+            save_day_overrides(conn, "boats", old.get("id"), old.get("day_overrides", "{}"))
 
         conn.execute("DELETE FROM history WHERE id=?", (last["id"],))
         return {"message": "Undo successful", "restored": old}
@@ -3952,7 +4848,7 @@ def delete_budget_snapshot(snapshot_id):
 
 def log_price_change(prod_id, entity_type, entity_id, entity_name,
                      field_changed, old_value, new_value,
-                     user_id=None, user_nickname=None):
+                     user_id=None, user_nickname=None, override_reason=None):
     """Record a price/rate modification."""
     if old_value == new_value:
         return
@@ -3960,10 +4856,10 @@ def log_price_change(prod_id, entity_type, entity_id, entity_name,
         conn.execute(
             """INSERT INTO price_change_log
                (production_id, entity_type, entity_id, entity_name,
-                field_changed, old_value, new_value, user_id, user_nickname)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                field_changed, old_value, new_value, user_id, user_nickname, override_reason)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (prod_id, entity_type, entity_id, entity_name,
-             field_changed, old_value, new_value, user_id, user_nickname)
+             field_changed, old_value, new_value, user_id, user_nickname, override_reason)
         )
 
 
@@ -4080,9 +4976,10 @@ def cascade_preview(prod_id, day_id, old_date, new_date):
                 f"WHERE bf.production_id = ?",
                 (prod_id,)
             ).fetchall()
+            atype = _TABLE_TO_ATYPE.get(table, table)
             for row in rows:
                 rd = dict(row)
-                overrides = json.loads(rd.get("day_overrides") or "{}")
+                overrides = get_day_overrides(conn, atype, rd["id"])
                 in_overrides = old_date in overrides
                 start_match = rd.get("start_date") == old_date
                 end_match = rd.get("end_date") == old_date
@@ -4161,6 +5058,7 @@ def cascade_apply(prod_id, day_id, old_date, new_date):
     with get_db() as conn:
         # 1. Update assignment day_overrides
         for table, entity_col, entity_table, name_col, label in _ASSIGNMENT_TABLES:
+            atype = _TABLE_TO_ATYPE.get(table, table)
             rows = conn.execute(
                 f"SELECT a.id, a.day_overrides, a.start_date, a.end_date "
                 f"FROM {table} a "
@@ -4169,7 +5067,7 @@ def cascade_apply(prod_id, day_id, old_date, new_date):
                 (prod_id,)
             ).fetchall()
             for row in rows:
-                overrides = json.loads(row["day_overrides"] or "{}")
+                overrides = get_day_overrides(conn, atype, row["id"])
                 in_overrides = old_date in overrides
                 start_match = row["start_date"] == old_date
                 end_match = row["end_date"] == old_date
@@ -4184,11 +5082,13 @@ def cascade_apply(prod_id, day_id, old_date, new_date):
                 new_start = new_date if start_match else row["start_date"]
                 new_end = new_date if end_match else row["end_date"]
 
+                # Update both JSON column (backward compat) and relational table
                 conn.execute(
                     f"UPDATE {table} SET day_overrides=?, start_date=?, end_date=?, "
                     f"updated_at=datetime('now') WHERE id=?",
                     (json.dumps(new_overrides), new_start, new_end, row["id"])
                 )
+                save_day_overrides(conn, atype, row["id"], json.dumps(new_overrides))
                 applied["assignments"] += 1
 
         # 2. Update fuel entries date
@@ -4651,3 +5551,270 @@ def duplicate_fnb_category(category_id):
                      production_id=prod_id)
 
         return {"category": dict(new_cat), "items": [dict(i) for i in new_items]}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHYSICAL VESSELS (P2.3)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_physical_vessels(production_id, include_deleted=False):
+    with get_db() as conn:
+        sql = "SELECT * FROM physical_vessels WHERE production_id=?"
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        sql += " ORDER BY vessel_name"
+        rows = conn.execute(sql, (production_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_physical_vessel(data):
+    with get_db() as conn:
+        cur = conn.execute(
+            """INSERT INTO physical_vessels (production_id, registration_number, vessel_name, vessel_type)
+               VALUES (?, ?, ?, ?)""",
+            (data["production_id"], data.get("registration_number"), data["vessel_name"], data.get("vessel_type"))
+        )
+        return cur.lastrowid
+
+
+def update_physical_vessel(vessel_id, data):
+    fields = []
+    values = []
+    for col in ("registration_number", "vessel_name", "vessel_type"):
+        if col in data:
+            fields.append(f"{col}=?")
+            values.append(data[col])
+    if not fields:
+        return
+    values.append(vessel_id)
+    with get_db() as conn:
+        conn.execute(f"UPDATE physical_vessels SET {', '.join(fields)} WHERE id=?", values)
+
+
+def delete_physical_vessel(vessel_id):
+    with get_db() as conn:
+        conn.execute("UPDATE physical_vessels SET deleted_at = datetime('now') WHERE id=?", (vessel_id,))
+
+
+def check_vessel_cross_module_conflict(physical_vessel_id, start_date, end_date, exclude_module=None, exclude_id=None):
+    """Check if a physical vessel is already assigned in another module for overlapping dates.
+    Returns a list of conflict warnings (non-blocking)."""
+    warnings = []
+    checks = [
+        ("boat_assignments", "boat_id", "boats", "Boats"),
+        ("picture_boat_assignments", "picture_boat_id", "picture_boats", "Picture Boats"),
+        ("security_boat_assignments", "security_boat_id", "security_boats", "Security Boats"),
+    ]
+    with get_db() as conn:
+        for assign_table, fk_col, vessel_table, module_label in checks:
+            query = f"""
+                SELECT a.id, a.start_date, a.end_date, v.name as vessel_name
+                FROM {assign_table} a
+                JOIN {vessel_table} v ON v.id = a.{fk_col}
+                WHERE v.physical_vessel_id = ?
+                  AND a.start_date <= ?
+                  AND a.end_date >= ?
+            """
+            params = [physical_vessel_id, end_date, start_date]
+            if exclude_module == assign_table and exclude_id:
+                query += f" AND a.id != ?"
+                params.append(exclude_id)
+            rows = conn.execute(query, params).fetchall()
+            for r in rows:
+                warnings.append(
+                    f"Vessel already assigned in {module_label} ({r['vessel_name']}) "
+                    f"from {r['start_date']} to {r['end_date']}"
+                )
+    return warnings
+
+
+# ─── Soft Delete: generic restore ────────────────────────────────────────────
+
+def restore_entity(table, entity_id):
+    """Restore a soft-deleted entity by setting deleted_at back to NULL."""
+    with get_db() as conn:
+        conn.execute(f"UPDATE {table} SET deleted_at = NULL WHERE id=?", (entity_id,))
+
+
+def restore_fnb_category(cat_id):
+    """Restore a soft-deleted FNB category and its items."""
+    with get_db() as conn:
+        conn.execute("UPDATE fnb_categories SET deleted_at = NULL WHERE id=?", (cat_id,))
+        conn.execute("UPDATE fnb_items SET deleted_at = NULL WHERE category_id=?", (cat_id,))
+
+
+# ─── Daily Checklists ─────────────────────────────────────────────────────────
+
+def generate_daily_checklist(prod_id, date):
+    """Auto-generate a checklist from the day's assignments (boats, vehicles, labour, guards)."""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO daily_checklists (production_id, date) VALUES (?,?)",
+            (prod_id, date)
+        )
+        cl = conn.execute(
+            "SELECT id FROM daily_checklists WHERE production_id=? AND date=?",
+            (prod_id, date)
+        ).fetchone()
+        checklist_id = cl["id"]
+
+        conn.execute("DELETE FROM checklist_items WHERE checklist_id=?", (checklist_id,))
+
+        items = []
+
+        boats = conn.execute("""
+            SELECT ba.*, b.name AS boat_name, bf.name AS function_name
+            FROM boat_assignments ba
+            LEFT JOIN boats b ON ba.boat_id = b.id
+            LEFT JOIN boat_functions bf ON ba.boat_function_id = bf.id
+            WHERE bf.production_id = ? AND bf.context = 'boats'
+              AND ba.start_date <= ? AND ba.end_date >= ?
+        """, (prod_id, date, date)).fetchall()
+        for r in boats:
+            overrides = json.loads(r["day_overrides"] or "{}")
+            status = overrides.get(date, r["assignment_status"])
+            if status == "off":
+                continue
+            name = r["boat_name"] or r["boat_name_override"] or "Unnamed boat"
+            fn = r["function_name"] or ""
+            items.append(("boats", f"Boat {name} confirmed for {fn}"))
+
+        pboats = conn.execute("""
+            SELECT pba.*, pb.name AS boat_name, bf.name AS function_name
+            FROM picture_boat_assignments pba
+            LEFT JOIN picture_boats pb ON pba.picture_boat_id = pb.id
+            LEFT JOIN boat_functions bf ON pba.boat_function_id = bf.id
+            WHERE bf.production_id = ? AND bf.context = 'picture'
+              AND pba.start_date <= ? AND pba.end_date >= ?
+        """, (prod_id, date, date)).fetchall()
+        for r in pboats:
+            overrides = json.loads(r["day_overrides"] or "{}")
+            status = overrides.get(date, r["assignment_status"])
+            if status == "off":
+                continue
+            name = r["boat_name"] or r["boat_name_override"] or "Unnamed picture boat"
+            fn = r["function_name"] or ""
+            items.append(("boats", f"Picture boat {name} confirmed for {fn}"))
+
+        sboats = conn.execute("""
+            SELECT sba.*, sb.name AS boat_name, bf.name AS function_name
+            FROM security_boat_assignments sba
+            LEFT JOIN security_boats sb ON sba.security_boat_id = sb.id
+            LEFT JOIN boat_functions bf ON sba.boat_function_id = bf.id
+            WHERE bf.production_id = ? AND bf.context = 'security'
+              AND sba.start_date <= ? AND sba.end_date >= ?
+        """, (prod_id, date, date)).fetchall()
+        for r in sboats:
+            overrides = json.loads(r["day_overrides"] or "{}")
+            status = overrides.get(date, r["assignment_status"])
+            if status == "off":
+                continue
+            name = r["boat_name"] or r["boat_name_override"] or "Unnamed security boat"
+            items.append(("security", f"Security boat {name} on station"))
+
+        vehicles = conn.execute("""
+            SELECT ta.*, tv.name AS vehicle_name, tv.driver, bf.name AS function_name
+            FROM transport_assignments ta
+            LEFT JOIN transport_vehicles tv ON ta.vehicle_id = tv.id
+            LEFT JOIN boat_functions bf ON ta.boat_function_id = bf.id
+            WHERE bf.production_id = ? AND bf.context = 'transport'
+              AND ta.start_date <= ? AND ta.end_date >= ?
+        """, (prod_id, date, date)).fetchall()
+        for r in vehicles:
+            overrides = json.loads(r["day_overrides"] or "{}")
+            status = overrides.get(date, r["assignment_status"])
+            if status == "off":
+                continue
+            name = r["vehicle_name"] or r["vehicle_name_override"] or "Unnamed vehicle"
+            fn = r["function_name"] or ""
+            items.append(("transport", f"Vehicle {name} ready for {fn}"))
+            if r["driver"]:
+                items.append(("transport", f"Driver {r['driver']} briefed for {name}"))
+
+        fuel_boats = conn.execute("""
+            SELECT fe.*, ba.boat_name_override, b.name AS boat_name, bf.name AS function_name
+            FROM fuel_entries fe
+            JOIN boat_assignments ba ON fe.assignment_id = ba.id
+            LEFT JOIN boats b ON ba.boat_id = b.id
+            LEFT JOIN boat_functions bf ON ba.boat_function_id = bf.id
+            WHERE bf.production_id = ? AND fe.date = ?
+        """, (prod_id, date)).fetchall()
+        for r in fuel_boats:
+            name = r["boat_name"] or r["boat_name_override"] or "assignment"
+            items.append(("fuel", f"Fuel topped up for {name}"))
+
+        helpers = conn.execute("""
+            SELECT ha.*, h.name AS helper_name, h.role AS helper_role, bf.name AS function_name
+            FROM helper_assignments ha
+            LEFT JOIN helpers h ON ha.helper_id = h.id
+            LEFT JOIN boat_functions bf ON ha.boat_function_id = bf.id
+            WHERE bf.production_id = ? AND bf.context = 'labour'
+              AND ha.start_date <= ? AND ha.end_date >= ?
+        """, (prod_id, date, date)).fetchall()
+        for r in helpers:
+            overrides = json.loads(r["day_overrides"] or "{}")
+            status = overrides.get(date, r["assignment_status"])
+            if status == "off":
+                continue
+            name = r["helper_name"] or r["helper_name_override"] or "Unnamed helper"
+            fn = r["function_name"] or ""
+            items.append(("labour", f"{name} present for {fn}"))
+
+        guards = conn.execute("""
+            SELECT * FROM guard_location_schedules
+            WHERE production_id = ? AND date = ?
+        """, (prod_id, date)).fetchall()
+        for r in guards:
+            loc = r["location_name"]
+            nb = r["nb_guards"] or 1
+            items.append(("guards", f"Guard posted at {loc} ({nb})"))
+
+        locations = conn.execute("""
+            SELECT * FROM location_schedules
+            WHERE production_id = ? AND date = ? AND status = 'F'
+        """, (prod_id, date)).fetchall()
+        for r in locations:
+            items.append(("locations", f"Location {r['location_name']} prepped for filming"))
+
+        for cat, text in items:
+            conn.execute(
+                "INSERT INTO checklist_items (checklist_id, item_text, category) VALUES (?,?,?)",
+                (checklist_id, text, cat)
+            )
+
+        return get_daily_checklist(prod_id, date)
+
+
+def get_daily_checklist(prod_id, date):
+    """Return the checklist for a given date with all items."""
+    with get_db() as conn:
+        cl = conn.execute(
+            "SELECT * FROM daily_checklists WHERE production_id=? AND date=?",
+            (prod_id, date)
+        ).fetchone()
+        if not cl:
+            return None
+        checklist = dict(cl)
+        items = conn.execute(
+            "SELECT * FROM checklist_items WHERE checklist_id=? ORDER BY category, id",
+            (cl["id"],)
+        ).fetchall()
+        checklist["items"] = [dict(i) for i in items]
+        return checklist
+
+
+def check_checklist_item(item_id, checked, user_id=None):
+    """Toggle checked state of a checklist item."""
+    with get_db() as conn:
+        if checked:
+            conn.execute(
+                "UPDATE checklist_items SET checked=1, checked_by=?, checked_at=datetime('now') WHERE id=?",
+                (user_id, item_id)
+            )
+        else:
+            conn.execute(
+                "UPDATE checklist_items SET checked=0, checked_by=NULL, checked_at=NULL WHERE id=?",
+                (item_id,)
+            )
+        row = conn.execute("SELECT * FROM checklist_items WHERE id=?", (item_id,)).fetchone()
+        return dict(row) if row else None

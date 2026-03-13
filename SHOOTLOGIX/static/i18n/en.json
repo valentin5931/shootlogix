@@ -1,0 +1,346 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "close": "Close",
+    "add": "Add",
+    "remove": "Remove",
+    "confirm": "Confirm",
+    "yes": "Yes",
+    "no": "No",
+    "ok": "OK",
+    "undo": "UNDO",
+    "export": "Export",
+    "import": "Import",
+    "search": "Search",
+    "filter": "Filter",
+    "all": "All",
+    "none": "None",
+    "actions": "Actions",
+    "name": "Name",
+    "date": "Date",
+    "status": "Status",
+    "notes": "Notes",
+    "rate": "Rate",
+    "total": "Total",
+    "online": "Online",
+    "offline": "Offline",
+    "no_results": "No results",
+    "sign_out": "Sign Out",
+    "available": "Available",
+    "assigned": "Assigned",
+    "external": "External",
+    "cards": "Cards",
+    "schedule": "Schedule",
+    "budget": "Budget",
+    "groups": "Groups",
+    "csv": "CSV",
+    "json": "JSON",
+    "per_day": "/day",
+    "set_rate": "+ set rate",
+    "monthly": "Monthly (7d/7)",
+    "per_working_day": "Per working day (Mon-Sat)",
+    "drag_to_reorder": "Drag to reorder",
+    "click_to_edit_rate": "Click to edit rate",
+    "unsaved_change": "unsaved change",
+    "unsaved_changes": "unsaved changes",
+    "data_refreshed": "Data refreshed",
+    "refresh_failed": "Refresh failed",
+    "saved_offline": "Saved offline - will sync when back online",
+    "offline_synced": "{count} offline change(s) synced",
+    "undone": "Undone",
+    "undo_failed": "Undo failed",
+    "previous_month": "Previous month",
+    "next_month": "Next month"
+  },
+
+  "status": {
+    "draft": "Draft",
+    "approved": "Approved",
+    "edited": "Edited"
+  },
+
+  "auth": {
+    "welcome": "Welcome, {name}",
+    "select_project": "Select a project",
+    "admin": "ADMIN",
+    "user": "USER",
+    "no_project": "You are not assigned to any project.",
+    "ask_admin": "Ask an administrator to invite you to a project.",
+    "load_error": "Load error: {message}",
+    "check_server": "Check that the Flask server is running on port 5002.",
+    "session_expired": "Session expired",
+    "failed_load_project": "Failed to load project data"
+  },
+
+  "nav": {
+    "today": "Today",
+    "schedule": "Schedule",
+    "locations": "Locations",
+    "fleet": "Fleet",
+    "boats": "Boats",
+    "picture_boats": "Picture Boats",
+    "security_boats": "Security Boats",
+    "transport": "Transport",
+    "fuel": "Fuel",
+    "crew": "Crew",
+    "labour": "Labor",
+    "guards": "Guards",
+    "catering": "Catering",
+    "budget": "Budget",
+    "dashboard": "Dashboard",
+    "admin": "Admin",
+    "activity_history": "Activity history",
+    "notifications": "Notifications",
+    "scheduling_alerts": "Scheduling alerts & conflicts",
+    "export_all": "Export all logistics data (XLSX)",
+    "toggle_theme": "Toggle light/dark mode",
+    "keyboard_shortcuts": "Keyboard shortcuts (?)"
+  },
+
+  "cmd": {
+    "search_placeholder": "Search or type a command...",
+    "quick_actions": "Quick Actions",
+    "results": "Results",
+    "view_today": "View today schedule",
+    "new_boat": "New boat assignment",
+    "add_fuel": "Add fuel entry",
+    "export_budget": "Export budget",
+    "add_day": "Add shooting day",
+    "add_vehicle": "Add transport vehicle",
+    "add_worker": "Add worker",
+    "add_location": "Add location",
+    "add_guard": "Add guard",
+    "toggle_theme": "Toggle dark/light mode",
+    "show_shortcuts": "Show keyboard shortcuts"
+  },
+
+  "fab": {
+    "day": "+ Day",
+    "boat": "+ Boat",
+    "vehicle": "+ Vehicle",
+    "worker": "+ Worker",
+    "guard": "+ Guard",
+    "location": "+ Location",
+    "category": "+ Category",
+    "item": "+ Item",
+    "add_boat": "Add boat",
+    "add_picture_boat": "Add picture boat",
+    "add_security_boat": "Add security boat",
+    "add_shooting_day": "Add shooting day",
+    "add_vehicle": "Add vehicle",
+    "add_fuel_entry": "Add fuel entry",
+    "add_worker": "Add worker",
+    "add_guard": "Add guard",
+    "add_location": "Add location",
+    "add_category": "Add category",
+    "add_item": "Add item",
+    "export_budget_xlsx": "Export budget XLSX"
+  },
+
+  "ptr": {
+    "pull": "Pull to refresh",
+    "release": "Release to refresh",
+    "refreshing": "Refreshing..."
+  },
+
+  "offline_banner": "You are offline - changes will sync when connection returns",
+
+  "pdt": {
+    "title": "Schedule",
+    "day_number": "D#",
+    "event": "Event",
+    "location": "Location",
+    "game_activity": "Game / Activity",
+    "rehearsal": "Rehearsal",
+    "host": "Host",
+    "time": "Time",
+    "dep_arr": "Dep / Arr",
+    "tide": "Tide",
+    "contestants": "Ctts",
+    "upload_pdt": "Upload PDT PDF",
+    "upload_pdt_title": "Upload a PDT PDF and merge with existing data",
+    "add_day": "+ Add day",
+    "table_view": "Table view",
+    "calendar_view": "Calendar view",
+    "no_days": "No shooting days. Click + Add day to create one.",
+    "shooting_days_summary": "{count} shooting days",
+    "event_game": "GAME",
+    "event_arena": "ARENA",
+    "event_council": "COUNCIL",
+    "event_off": "OFF",
+    "event_name": "Event name",
+    "island_site": "Island / site",
+    "teaser": "Teaser",
+    "end": "End",
+    "reward": "Reward",
+    "departure": "Dep.",
+    "arrival": "Arr.",
+    "hide_advanced": "Hide advanced events",
+    "show_advanced": "Show advanced events",
+    "game": "Game",
+    "arena": "Arena",
+    "council": "Council",
+    "off": "Off"
+  },
+
+  "boats": {
+    "title": "Boats",
+    "add_boat": "+ Add",
+    "import_csv": "Import from CSV",
+    "add_function": "+ Function",
+    "no_boats": "No boats",
+    "no_functions": "No functions. Click + Function to add one.",
+    "edit_boat": "Edit boat",
+    "duplicate_boat": "Duplicate boat",
+    "delete_boat": "Delete boat",
+    "new_function": "New function",
+    "edit_function": "Edit function",
+    "edit_assignment": "Edit assignment",
+    "new_assignment": "New assignment",
+    "reset_overrides": "Reset day overrides",
+    "duplicate_7d": "Duplicate (+7d)",
+    "change_group": "Change group...",
+    "search_by_name": "Search by name...",
+    "captain": "Captain",
+    "capacity": "Capacity",
+    "vendor": "Vendor",
+    "photo": "Photo",
+    "lock_day": "Lock a day to prevent accidental changes",
+    "unlock_day": "Unlock day"
+  },
+
+  "fleet": {
+    "title": "Fleet",
+    "loading": "Loading schedule...",
+    "no_days": "No shooting days found.",
+    "boats_tab": "Boats",
+    "picture_boats_tab": "Picture Boats",
+    "security_boats_tab": "Security Boats",
+    "all_fleet": "All Fleet"
+  },
+
+  "transport": {
+    "title": "Transport",
+    "no_vehicles": "No vehicles",
+    "add_vehicle": "+ Add",
+    "edit_vehicle": "Edit vehicle",
+    "driver": "Driver",
+    "role": "Role",
+    "team_size": "Team size"
+  },
+
+  "fuel": {
+    "title": "Fuel",
+    "fuel_prices": "FUEL PRICES",
+    "diesel": "DIESEL",
+    "petrol": "PETROL",
+    "price_unit": "$/L",
+    "lock_fuel_day": "Lock fuel day (read-only)",
+    "boats_tab": "Boats",
+    "machinery_tab": "Machinery"
+  },
+
+  "crew": {
+    "title": "Crew",
+    "labour_tab": "Labor",
+    "guards_tab": "Guards",
+    "location_guards": "Location Guards",
+    "base_camp": "Base Camp",
+    "no_guards": "No guards",
+    "no_workers": "No workers",
+    "edit_worker": "Edit worker",
+    "edit_guard": "Edit guard",
+    "shift_size": "Shift size"
+  },
+
+  "locations": {
+    "title": "Locations",
+    "add_location": "Add Location",
+    "edit_location": "Edit Location",
+    "resync": "Resync all PDT locations (normalized matching)"
+  },
+
+  "fnb": {
+    "title": "Catering",
+    "no_categories": "No categories",
+    "no_items": "No items",
+    "add_category": "Add category",
+    "duplicate_category": "Duplicate category with items"
+  },
+
+  "budget": {
+    "title": "Budget",
+    "loading": "Loading budget...",
+    "comparing": "Comparing...",
+    "loading_daily": "Loading daily budget...",
+    "error_loading": "Error loading daily budget: {message}",
+    "no_days": "No shooting days found."
+  },
+
+  "admin": {
+    "title": "Admin",
+    "create_user": "Create User",
+    "create_project": "Create Project",
+    "invite_user": "Invite User to Project",
+    "reset_password": "Reset Password: {name}",
+    "rename_project": "Rename Project",
+    "save_template": "Save as Template",
+    "template_name_placeholder": "e.g. Survival Show Standard",
+    "template_desc_placeholder": "Functions, catering categories, guard posts...",
+    "user_placeholder": "e.g. JOHN",
+    "password_placeholder": "Min 6 characters",
+    "nickname_placeholder": "Existing user nickname",
+    "invite": "Invite",
+    "reset": "Reset",
+    "rename": "Rename",
+    "no_users": "No users found.",
+    "no_projects": "No projects.",
+    "no_members": "No members.",
+    "admin_full_access": "Admin users have full access. No permissions to configure.",
+    "no_templates": "No templates saved yet. Save a project config as template to reuse it.",
+    "see_financial": "See financial data",
+    "edit_prices": "Edit prices/rates",
+    "reset_pw": "Reset pw",
+    "save_template_btn": "Save Template"
+  },
+
+  "activity": {
+    "title": "Activity",
+    "loading": "Loading...",
+    "failed": "Failed to load activity",
+    "no_activity": "No activity found",
+    "all_users": "All users"
+  },
+
+  "comments": {
+    "title": "Comments",
+    "add_comment": "Add comment",
+    "no_comments": "No comments yet"
+  },
+
+  "notifications": {
+    "title": "Notifications",
+    "no_notifications": "No notifications"
+  },
+
+  "alerts": {
+    "title": "Alerts",
+    "no_alerts": "No alerts"
+  },
+
+  "today": {
+    "title": "Today",
+    "loading": "Loading..."
+  },
+
+  "dashboard": {
+    "title": "Dashboard",
+    "loading": "Loading..."
+  }
+}

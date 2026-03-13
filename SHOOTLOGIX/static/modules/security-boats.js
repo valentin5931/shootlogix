@@ -102,13 +102,18 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     return boats;
   }
 
-  function renderSbBoatList() {
+  async function renderSbBoatList() {
     const boats = _sbFilteredBoats();
     const assignedIds = new Set(state.securityAssignments.filter(a => a.security_boat_id).map(a => a.security_boat_id));
     const container = $('sb-boat-list');
     if (!container) return;
+    const boatIds = boats.map(b => b.id);
+    if (boatIds.length) await App.loadCommentCounts('security_boats', boatIds);
     if (!boats.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No security boats</div>';
+      container.innerHTML = SL.emptyState('shield',
+        'No security boats registered yet',
+        'Add security boats to manage safety vessel assignments.',
+        'Add a security boat', "App.showAddSecurityBoatModal()");
       return;
     }
     container.innerHTML = boats.map(b => {
@@ -150,6 +155,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
             onclick="event.stopPropagation();App.openSecurityBoatDetail(${b.id})">&#9998;</button>
           <button class="boat-edit-btn" title="Duplicate" style="font-size:.65rem"
             onclick="event.stopPropagation();App.duplicateEntity('security_boats',${b.id})">&#x2398;</button>
+          ${App.commentBadgeHTML('security_boats', b.id)}
           <button class="card-delete-btn" title="Delete security boat"
             onclick="event.stopPropagation();App.confirmDeleteSecurityBoat(${b.id},'${esc(b.name).replace(/'/g,"\\'")}',${boatAsgns.length})">&#x1F5D1;</button>
         </div>
@@ -198,7 +204,10 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
           ${funcs.map(f => _renderSbRoleCard(f, color)).join('')}
         </div>`;
     });
-    container.innerHTML = html || '<div style="color:var(--text-4);text-align:center;padding:3rem">No functions. Click + Function to add one.</div>';
+    container.innerHTML = html || SL.emptyState('shield',
+      'No security boat functions yet',
+      'Create a function to start assigning security boats to roles.',
+      '+ Function', "App.showAddFunctionModal()");
   }
 
   function _sbGroupOrder() {
@@ -613,7 +622,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
   function sbOnBoatDragEnd() {
     state.sbDragBoat = null;
-    document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+    document.querySelectorAll('.dragging').forEach(el => {
+      el.classList.remove('dragging');
+      el.classList.add('drag-landing');
+      el.addEventListener('animationend', () => el.classList.remove('drag-landing'), { once: true });
+    });
   }
   function sbOnDragOver(event, funcId) {
     event.preventDefault();
@@ -731,6 +744,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     $('bd-night').checked  = !!sb.night_ok;
     $('bd-rate-est').value = sb.daily_rate_estimate || '';
     $('bd-rate-act').value = sb.daily_rate_actual   || '';
+    if ($('bd-currency')) $('bd-currency').value = sb.currency || 'USD';
     $('bd-notes').value    = sb.notes || '';
 
     // Hide category row
@@ -753,16 +767,24 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
 
   async function deleteSecurityBoat(sbId) {
-    showConfirm('Delete this security boat? All assignments will be lost.', async () => {
-      try {
-        await api('DELETE', `/api/security-boats/${sbId}`);
-        state.securityBoats       = state.securityBoats.filter(b => b.id !== sbId);
-        state.securityAssignments = state.securityAssignments.filter(a => a.security_boat_id !== sbId);
-        closeBoatDetail();
-        renderSecurityBoats();
-        toast('Security boat deleted');
-      } catch (e) { toast('Error: ' + e.message, 'error'); }
-    });
+    try {
+      const sb = state.securityBoats.find(b => b.id === sbId);
+      const impact = await api('GET', `/api/security-boats/${sbId}/impact`);
+      const parts = [];
+      if (impact.assignments > 0) parts.push(`${impact.assignments} assignment(s)`);
+      if (impact.fuel_entries > 0) parts.push(`${impact.fuel_entries} fuel entry(ies)`);
+      const cascade = parts.length > 0 ? `\nThis will also remove ${parts.join(' and ')}.` : '';
+      showConfirm(`Delete security boat "${sb?.name || '?'}"?${cascade}`, async () => {
+        try {
+          await api('DELETE', `/api/security-boats/${sbId}`);
+          state.securityBoats       = state.securityBoats.filter(b => b.id !== sbId);
+          state.securityAssignments = state.securityAssignments.filter(a => a.security_boat_id !== sbId);
+          closeBoatDetail();
+          renderSecurityBoats();
+          toast('Security boat deleted');
+        } catch (e) { toast('Error: ' + e.message, 'error'); }
+      });
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
   // ── Security Boat assignment edit/remove ────────────────────
@@ -855,10 +877,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       $('nsb-delete-btn').classList.add('hidden');
     }
     el.classList.remove('hidden');
+    _SL._snapshotModal('add-security-boat-overlay');
   }
 
-  function closeAddSecurityBoatModal() {
-    $('add-security-boat-overlay')?.classList.add('hidden');
+  function closeAddSecurityBoatModal(force) {
+    _SL._guardedClose('add-security-boat-overlay', () => $('add-security-boat-overlay')?.classList.add('hidden'), force);
   }
 
   async function saveSecurityBoat() {
@@ -868,6 +891,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     const data = {
       name,
       daily_rate_estimate: parseFloat($('nsb-price').value) || 0,
+      currency: $('nsb-currency')?.value || 'USD',
       capacity: $('nsb-capacity').value.trim(),
       captain: $('nsb-captain').value.trim(),
       wave_rating: $('nsb-wave').value,
@@ -891,7 +915,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       state.securityBoats     = boats;
       state.securityFunctions = functions;
       state.securityAssignments = assignments;
-      closeAddSecurityBoatModal();
+      closeAddSecurityBoatModal(true);
       renderSecurityBoats();
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -900,20 +924,28 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     const editId = $('nsb-edit-id').value;
     if (!editId) return;
     const boat = (state.securityBoats || []).find(b => b.id === parseInt(editId));
-    if (!confirm(`Delete security boat "${boat?.name}"? This will also remove all its assignments.`)) return;
     try {
-      await api('DELETE', `/api/security-boats/${editId}`);
-      toast('Security boat deleted');
-      const [boats, functions, assignments] = await Promise.all([
-        api('GET', `/api/productions/${state.prodId}/security-boats`),
-        api('GET', `/api/productions/${state.prodId}/boat-functions?context=security`),
-        api('GET', `/api/productions/${state.prodId}/security-boat-assignments`),
-      ]);
-      state.securityBoats     = boats;
-      state.securityFunctions = functions;
-      state.securityAssignments = assignments;
-      closeAddSecurityBoatModal();
-      renderSecurityBoats();
+      const impact = await api('GET', `/api/security-boats/${editId}/impact`);
+      const parts = [];
+      if (impact.assignments > 0) parts.push(`${impact.assignments} assignment(s)`);
+      if (impact.fuel_entries > 0) parts.push(`${impact.fuel_entries} fuel entry(ies)`);
+      const cascade = parts.length > 0 ? `\nThis will also remove ${parts.join(' and ')}.` : '';
+      showConfirm(`Delete security boat "${boat?.name}"?${cascade}`, async () => {
+        try {
+          await api('DELETE', `/api/security-boats/${editId}`);
+          toast('Security boat deleted');
+          const [boats, functions, assignments] = await Promise.all([
+            api('GET', `/api/productions/${state.prodId}/security-boats`),
+            api('GET', `/api/productions/${state.prodId}/boat-functions?context=security`),
+            api('GET', `/api/productions/${state.prodId}/security-boat-assignments`),
+          ]);
+          state.securityBoats     = boats;
+          state.securityFunctions = functions;
+          state.securityAssignments = assignments;
+          closeAddSecurityBoatModal(true);
+          renderSecurityBoats();
+        } catch(e) { toast('Error: ' + e.message, 'error'); }
+      });
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -931,6 +963,7 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     };
     $('add-func-overlay').dataset.ctx = 'security';
     $('add-func-overlay').classList.remove('hidden');
+    _SL._snapshotModal('add-func-overlay');
     setTimeout(() => $('nf-name').focus(), 80);
   }
 

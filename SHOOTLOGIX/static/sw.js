@@ -4,12 +4,13 @@
  * Strategy: Cache-First for assets, Network-First for API calls.
  */
 
-const CACHE_VERSION = 'shootlogix-v1';
+const CACHE_VERSION = 'shootlogix-v2';
 const STATIC_ASSETS = [
   '/',
   '/login',
   '/static/app.js',
   '/static/style.css',
+  '/static/js/offline-queue.js',
 ];
 
 // Install: pre-cache static assets

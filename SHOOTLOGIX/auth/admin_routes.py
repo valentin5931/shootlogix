@@ -9,6 +9,7 @@ Endpoints:
   POST /api/admin/users              — Create a new user
   PUT  /api/admin/users/<id>/password — Change user password
   DELETE /api/admin/users/<id>        — Delete a user
+  POST /api/admin/revoke-tokens/<id> — Revoke all refresh tokens (P2.10)
 
   GET  /api/admin/projects           — List all projects
   POST /api/admin/projects           — Create a new project
@@ -19,9 +20,11 @@ Endpoints:
   PUT  /api/admin/projects/<id>/members/<uid> — Change user role
   DELETE /api/admin/projects/<id>/members/<uid> — Remove user from project
 """
+import csv
+import io
 import bcrypt
 from functools import wraps
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, g, Response
 
 from auth.models import (
     get_all_users,
@@ -30,6 +33,7 @@ from auth.models import (
     create_user,
     update_user_password,
     delete_user,
+    delete_user_refresh_tokens,
     get_project_members,
     get_membership,
     create_membership,
@@ -42,6 +46,11 @@ from auth.models import (
     get_user_global_permissions,
     set_user_permissions,
     ensure_user_permissions,
+    # P6.15: Entity-level permissions
+    VALID_ENTITY_TYPES,
+    get_user_entity_permissions,
+    add_user_entity_permission,
+    delete_user_entity_permission,
 )
 from database import (
     get_production_templates,
@@ -145,6 +154,21 @@ def delete_user_endpoint(user_id):
 
     delete_user(user_id)
     return jsonify({"message": f"User '{user['nickname']}' deleted"})
+
+
+# P2.10: Revoke all refresh tokens for a user (force logout)
+@admin_bp.route("/revoke-tokens/<int:user_id>", methods=["POST"])
+@require_admin
+def revoke_user_tokens(user_id):
+    """Revoke all refresh tokens for a user, forcing re-authentication."""
+    user = get_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    delete_user_refresh_tokens(user_id)
+    return jsonify({
+        "message": f"All tokens revoked for '{user['nickname']}'. User will be logged out on next API call.",
+    })
 
 
 # ─── Projects ───────────────────────────────────────────────────────────────
@@ -467,3 +491,146 @@ def create_project_from_template():
         )
 
     return jsonify({"id": prod_id, "name": name, "from_template": True}), 201
+
+
+# ─── Entity Permissions (P6.15) ───────────────────────────────────────────────
+
+@admin_bp.route("/users/<int:user_id>/entity-permissions", methods=["GET"])
+@require_admin
+def list_entity_permissions(user_id):
+    """List all entity-level permissions for a user.
+    Optional query param: entity_type to filter."""
+    user = get_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    entity_type = request.args.get("entity_type")
+    perms = get_user_entity_permissions(user_id, entity_type)
+    return jsonify({"permissions": perms, "valid_entity_types": VALID_ENTITY_TYPES})
+
+
+@admin_bp.route("/users/<int:user_id>/entity-permissions", methods=["POST"])
+@require_admin
+def add_entity_permission(user_id):
+    """Add an entity-level permission.
+    Body: { entity_type, entity_id, permission ('read'|'write'|'admin') }"""
+    user = get_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if user.get("is_admin"):
+        return jsonify({"error": "Cannot set entity permissions for admin users"}), 400
+
+    data = request.json or {}
+    entity_type = (data.get("entity_type") or "").strip()
+    entity_id = data.get("entity_id")
+    permission = (data.get("permission") or "read").strip()
+
+    if not entity_type or entity_id is None:
+        return jsonify({"error": "entity_type and entity_id are required"}), 400
+    if entity_type not in VALID_ENTITY_TYPES:
+        return jsonify({"error": f"Invalid entity_type. Must be one of: {', '.join(VALID_ENTITY_TYPES)}"}), 400
+    if permission not in ("read", "write", "admin"):
+        return jsonify({"error": "permission must be 'read', 'write', or 'admin'"}), 400
+
+    try:
+        entity_id = int(entity_id)
+    except (ValueError, TypeError):
+        return jsonify({"error": "entity_id must be an integer"}), 400
+
+    perm_id = add_user_entity_permission(user_id, entity_type, entity_id, permission)
+    return jsonify({"id": perm_id, "message": "Entity permission added"}), 201
+
+
+@admin_bp.route("/users/<int:user_id>/entity-permissions/<int:perm_id>", methods=["DELETE"])
+@require_admin
+def remove_entity_permission(user_id, perm_id):
+    """Remove an entity-level permission."""
+    user = get_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    delete_user_entity_permission(perm_id)
+    return jsonify({"message": "Entity permission removed"})
+
+
+# ─── Access Logs (P6.14) ─────────────────────────────────────────────────────
+
+@admin_bp.route("/access-logs", methods=["GET"])
+@require_admin
+def list_access_logs():
+    """List access logs with optional filters: user_id, date, endpoint, limit, offset."""
+    from db_compat import get_db
+    user_id = request.args.get("user_id", type=int)
+    date = request.args.get("date")
+    endpoint = request.args.get("endpoint")
+    limit = request.args.get("limit", 100, type=int)
+    offset = request.args.get("offset", 0, type=int)
+    limit = min(limit, 1000)
+
+    sql = """SELECT al.id, al.user_id, u.nickname, al.endpoint, al.method,
+                    al.status_code, al.ip_address, al.user_agent, al.timestamp
+             FROM access_logs al
+             LEFT JOIN auth_users u ON u.id = al.user_id
+             WHERE 1=1"""
+    params = []
+    if user_id:
+        sql += " AND al.user_id = ?"
+        params.append(user_id)
+    if date:
+        sql += " AND DATE(al.timestamp) = ?"
+        params.append(date)
+    if endpoint:
+        sql += " AND al.endpoint LIKE ?"
+        params.append(f"%{endpoint}%")
+    sql += " ORDER BY al.timestamp DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+
+    with get_db() as conn:
+        rows = conn.execute(sql, params).fetchall()
+        total = conn.execute(
+            "SELECT COUNT(*) as c FROM access_logs" +
+            (" WHERE user_id = ?" if user_id else "") +
+            (" AND DATE(timestamp) = ?" if date and user_id else (" WHERE DATE(timestamp) = ?" if date else "")),
+            ([p for p in [user_id, date] if p])
+        ).fetchone()["c"]
+    return jsonify({"logs": [dict(r) for r in rows], "total": total})
+
+
+@admin_bp.route("/access-logs/export-csv", methods=["GET"])
+@require_admin
+def export_access_logs_csv():
+    """Export access logs as CSV for external audit."""
+    from db_compat import get_db
+    user_id = request.args.get("user_id", type=int)
+    date = request.args.get("date")
+
+    sql = """SELECT al.id, al.user_id, u.nickname, al.endpoint, al.method,
+                    al.status_code, al.ip_address, al.user_agent, al.timestamp
+             FROM access_logs al
+             LEFT JOIN auth_users u ON u.id = al.user_id
+             WHERE 1=1"""
+    params = []
+    if user_id:
+        sql += " AND al.user_id = ?"
+        params.append(user_id)
+    if date:
+        sql += " AND DATE(al.timestamp) = ?"
+        params.append(date)
+    sql += " ORDER BY al.timestamp DESC"
+
+    with get_db() as conn:
+        rows = conn.execute(sql, params).fetchall()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "User ID", "Nickname", "Endpoint", "Method", "Status", "IP", "User Agent", "Timestamp"])
+    for r in rows:
+        writer.writerow([r["id"], r["user_id"], r["nickname"], r["endpoint"], r["method"],
+                         r["status_code"], r["ip_address"], r["user_agent"], r["timestamp"]])
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=access_logs.csv"}
+    )

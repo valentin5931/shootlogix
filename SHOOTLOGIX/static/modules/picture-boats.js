@@ -63,12 +63,17 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     return boats;
   }
 
-  function renderPbBoatList() {
+  async function renderPbBoatList() {
     const boats = _pbFilteredBoats();
     const assignedIds = new Set(state.pictureAssignments.filter(a => a.picture_boat_id).map(a => a.picture_boat_id));
     const container = $('pb-boat-list');
+    const boatIds = boats.map(b => b.id);
+    if (boatIds.length) await App.loadCommentCounts('picture_boats', boatIds);
     if (!boats.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No picture boats</div>';
+      container.innerHTML = SL.emptyState('camera',
+        'No picture boats registered yet',
+        'Add picture boats to manage camera boat assignments.',
+        'Add a picture boat', "App.showAddPictureBoatModal()");
       return;
     }
     container.innerHTML = boats.map(b => {
@@ -110,26 +115,33 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
             onclick="event.stopPropagation();App.openPictureBoatDetail(${b.id})">&#x270E;</button>
           <button class="boat-edit-btn" title="Duplicate" style="font-size:.65rem"
             onclick="event.stopPropagation();App.duplicateEntity('picture_boats',${b.id})">&#x2398;</button>
+          ${App.commentBadgeHTML('picture_boats', b.id)}
           <button class="card-delete-btn" title="Delete picture boat"
-            onclick="event.stopPropagation();App.confirmDeletePictureBoat(${b.id},'${esc(b.name).replace(/'/g,"\\'")}',${boatAsgns.length})">&#x1F5D1;</button>
+            onclick="event.stopPropagation();App.confirmDeletePictureBoat(${b.id},'${esc(b.name).replace(/'/g,"\\'")}')">&#x1F5D1;</button>
         </div>
       </div>`;
     }).join('');
   }
 
   // ── Delete picture boat from card ──────────────────────────
-  function confirmDeletePictureBoat(pbId, boatName, assignmentCount) {
-    const impact = assignmentCount > 0 ? `\n${assignmentCount} assignment(s) will also be deleted.` : '';
-    showConfirm(`Delete picture boat "${boatName}"?${impact}`, async () => {
-      try {
-        await api('DELETE', `/api/picture-boats/${pbId}`);
-        state.pictureBoats = state.pictureBoats.filter(b => b.id !== pbId);
-        state.pictureAssignments = state.pictureAssignments.filter(a => a.picture_boat_id !== pbId);
-        closeBoatDetail();
-        renderPictureBoats();
-        toast('Picture boat deleted');
-      } catch (e) { toast('Error: ' + e.message, 'error'); }
-    });
+  async function confirmDeletePictureBoat(pbId, boatName) {
+    try {
+      const impact = await api('GET', `/api/picture-boats/${pbId}/impact`);
+      const parts = [];
+      if (impact.assignments > 0) parts.push(`${impact.assignments} assignment(s)`);
+      if (impact.fuel_entries > 0) parts.push(`${impact.fuel_entries} fuel entry(ies)`);
+      const cascade = parts.length > 0 ? `\nThis will also remove ${parts.join(' and ')}.` : '';
+      showConfirm(`Delete picture boat "${boatName}"?${cascade}`, async () => {
+        try {
+          await api('DELETE', `/api/picture-boats/${pbId}`);
+          state.pictureBoats = state.pictureBoats.filter(b => b.id !== pbId);
+          state.pictureAssignments = state.pictureAssignments.filter(a => a.picture_boat_id !== pbId);
+          closeBoatDetail();
+          renderPictureBoats();
+          toast('Picture boat deleted');
+        } catch (e) { toast('Error: ' + e.message, 'error'); }
+      });
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
   function renderPbRoleCards() {
@@ -156,7 +168,10 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
           ${funcs.map(f => renderPbRoleCard(f, color)).join('')}
         </div>`;
     });
-    container.innerHTML = html || '<div style="color:var(--text-4);text-align:center;padding:3rem">No functions. Click + Function to add one.</div>';
+    container.innerHTML = html || SL.emptyState('camera',
+      'No picture boat functions yet',
+      'Create a function to start assigning picture boats to roles.',
+      '+ Function', "App.showAddFunctionModal()");
   }
 
   function renderPbRoleCard(func, color) {
@@ -605,7 +620,11 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
   function pbOnBoatDragEnd() {
     state.pbDragBoat = null;
-    document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+    document.querySelectorAll('.dragging').forEach(el => {
+      el.classList.remove('dragging');
+      el.classList.add('drag-landing');
+      el.addEventListener('animationend', () => el.classList.remove('drag-landing'), { once: true });
+    });
   }
   function pbOnDragOver(event, funcId) {
     event.preventDefault();

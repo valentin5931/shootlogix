@@ -27,6 +27,8 @@ from auth.models import (
     get_auth_db,
     ensure_user_permissions,
     get_user_global_permissions,
+    user_has_entity_restrictions,
+    get_user_entity_permissions,
 )
 from auth.tokens import (
     create_access_token,
@@ -205,9 +207,19 @@ def me():
             entry["global_permissions"] = get_user_global_permissions(g.user_id, prod_id)
         enriched.append(entry)
 
+    # P6.15: entity-level restrictions
+    has_entity_restrictions = False
+    entity_permissions = []
+    if not user.get("is_admin"):
+        has_entity_restrictions = user_has_entity_restrictions(user["id"])
+        if has_entity_restrictions:
+            entity_permissions = get_user_entity_permissions(user["id"])
+
     return jsonify({
         "id": user["id"],
         "nickname": user["nickname"],
         "is_admin": bool(user.get("is_admin")),
         "memberships": enriched,
+        "has_entity_restrictions": has_entity_restrictions,
+        "entity_permissions": entity_permissions,
     })

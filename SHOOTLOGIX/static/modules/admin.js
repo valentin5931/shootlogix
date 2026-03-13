@@ -39,6 +39,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
     else if (tab === 'invitations') _adminLoadInvitations();
     else if (tab === 'permissions') _adminLoadPermissions();
     else if (tab === 'templates') _adminLoadTemplates();
+    else if (tab === 'entity-permissions') _adminLoadEntityPermissions();
+    else if (tab === 'access-logs') _adminLoadAccessLogs();
   }
 
   async function _adminLoadUsers() {
@@ -369,8 +371,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   const MODULE_LABELS = {
     'pdt': 'PDT', 'locations': 'Locations', 'boats': 'Boats',
     'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
-    'transport': 'Transport', 'fuel': 'Fuel', 'labour': 'Labour',
-    'guards': 'Guards', 'fnb': 'F&B', 'budget': 'Budget',
+    'transport': 'Transport', 'fuel': 'Fuel', 'labour': 'Labor',
+    'guards': 'Guards', 'fnb': 'Catering', 'budget': 'Budget',
   };
 
   let _permProjects = [];
@@ -624,8 +626,8 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
       <div class="form-group"><label class="form-label">Template Name</label>
         <input type="text" id="adm-tpl-name" class="form-control" placeholder="e.g. Survival Show Standard"></div>
       <div class="form-group"><label class="form-label">Description (optional)</label>
-        <input type="text" id="adm-tpl-desc" class="form-control" placeholder="Functions, FNB categories, guard posts..."></div>
-      <p style="color:var(--text-3);font-size:.75rem;margin-top:.5rem">Saves: boat functions, FNB categories/items, guard posts, location sites from current project.</p>
+        <input type="text" id="adm-tpl-desc" class="form-control" placeholder="Functions, catering categories, guard posts..."></div>
+      <p style="color:var(--text-3);font-size:.75rem;margin-top:.5rem">Saves: boat functions, catering categories/items, guard posts, location sites from current project.</p>
     `;
     $('admin-modal-ok').textContent = 'Save Template';
     $('admin-modal-overlay').classList.remove('hidden');
@@ -663,6 +665,209 @@ const { state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
   }
 
 
+// ─── Entity Permissions (P6.15) ─────────────────────────────────────────────
+
+  const ENTITY_TYPE_LABELS = {
+    'boats': 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
+    'transport': 'Transport', 'locations': 'Locations', 'fuel-machinery': 'Fuel Machinery',
+    'guards': 'Guards', 'fnb': 'Catering', 'labour': 'Labor',
+  };
+
+  let _epUsers = [];
+  let _epValidTypes = [];
+  let _epPerms = [];
+
+  async function _adminLoadEntityPermissions() {
+    try {
+      _epUsers = await api('GET', '/api/admin/users');
+      const sel = $('admin-ep-user');
+      if (sel) {
+        sel.innerHTML = '<option value="">-- Select user --</option>' +
+          _epUsers.filter(u => !u.is_admin).map(u =>
+            `<option value="${u.id}">${esc(u.nickname)}</option>`
+          ).join('');
+      }
+      // Populate entity type dropdowns
+      _epValidTypes = Object.keys(ENTITY_TYPE_LABELS);
+      const typeSel = $('admin-ep-type');
+      if (typeSel) {
+        typeSel.innerHTML = '<option value="">All types</option>' +
+          _epValidTypes.map(t => `<option value="${t}">${ENTITY_TYPE_LABELS[t]}</option>`).join('');
+      }
+      const addTypeSel = $('admin-ep-add-type');
+      if (addTypeSel) {
+        addTypeSel.innerHTML = _epValidTypes.map(t =>
+          `<option value="${t}">${ENTITY_TYPE_LABELS[t]}</option>`
+        ).join('');
+      }
+      $('admin-ep-list').innerHTML = '<p style="color:var(--text-3)">Select a user to view their entity restrictions.</p>';
+      $('admin-ep-add-form')?.classList.add('hidden');
+    } catch (e) { toast('Failed to load entity permissions: ' + e.message, 'error'); }
+  }
+
+  async function adminEpLoadPerms() {
+    const userId = $('admin-ep-user')?.value;
+    if (!userId) {
+      $('admin-ep-list').innerHTML = '<p style="color:var(--text-3)">Select a user.</p>';
+      $('admin-ep-add-form')?.classList.add('hidden');
+      return;
+    }
+    const entityType = $('admin-ep-type')?.value || '';
+    try {
+      const qs = entityType ? `?entity_type=${entityType}` : '';
+      const data = await api('GET', `/api/admin/users/${userId}/entity-permissions${qs}`);
+      _epPerms = data.permissions || [];
+      if (data.valid_entity_types) _epValidTypes = data.valid_entity_types;
+      _renderEpList();
+      $('admin-ep-add-form')?.classList.remove('hidden');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function _renderEpList() {
+    const el = $('admin-ep-list');
+    if (!el) return;
+    if (!_epPerms.length) {
+      el.innerHTML = '<p style="color:var(--text-3)">No entity restrictions. This user has full access based on their role.</p>';
+      return;
+    }
+    let html = '<table class="admin-table"><thead><tr><th>Entity Type</th><th>Entity ID</th><th>Permission</th><th>Added</th><th>Actions</th></tr></thead><tbody>';
+    for (const p of _epPerms) {
+      const label = ENTITY_TYPE_LABELS[p.entity_type] || p.entity_type;
+      const permBadge = p.permission === 'admin' ? 'badge-admin' : p.permission === 'write' ? 'badge-user' : '';
+      html += `<tr>
+        <td>${esc(label)}</td>
+        <td><code>${p.entity_id}</code></td>
+        <td><span class="badge ${permBadge}">${esc(p.permission)}</span></td>
+        <td style="font-size:.8rem">${p.created_at ? fmtDate(p.created_at) : ''}</td>
+        <td><button class="btn-danger-sm" onclick="App.adminEpDelete(${p.id})">Remove</button></td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }
+
+  async function adminEpAdd() {
+    const userId = $('admin-ep-user')?.value;
+    if (!userId) return;
+    const entityType = $('admin-ep-add-type')?.value;
+    const entityId = $('admin-ep-add-id')?.value;
+    const permission = $('admin-ep-add-perm')?.value || 'read';
+    if (!entityType || !entityId) { toast('Fill entity type and ID', 'error'); return; }
+    try {
+      await api('POST', `/api/admin/users/${userId}/entity-permissions`, {
+        entity_type: entityType,
+        entity_id: parseInt(entityId),
+        permission,
+      });
+      toast('Entity permission added');
+      $('admin-ep-add-id').value = '';
+      adminEpLoadPerms();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function adminEpDelete(permId) {
+    const userId = $('admin-ep-user')?.value;
+    if (!userId) return;
+    try {
+      await api('DELETE', `/api/admin/users/${userId}/entity-permissions/${permId}`);
+      toast('Permission removed');
+      adminEpLoadPerms();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+
+// ─── Access Logs (P6.14) ───────────────────────────────────────────────────
+
+  let _logsPage = 0;
+  const _LOGS_LIMIT = 50;
+  let _logsDebounce = null;
+
+  async function _adminLoadAccessLogs() {
+    clearTimeout(_logsDebounce);
+    _logsDebounce = setTimeout(_doLoadAccessLogs, 300);
+  }
+
+  async function _doLoadAccessLogs() {
+    try {
+      const userId = $('admin-logs-user')?.value || '';
+      const date = $('admin-logs-date')?.value || '';
+      const endpoint = $('admin-logs-endpoint')?.value || '';
+      const qs = new URLSearchParams();
+      if (userId) qs.set('user_id', userId);
+      if (date) qs.set('date', date);
+      if (endpoint) qs.set('endpoint', endpoint);
+      qs.set('limit', _LOGS_LIMIT);
+      qs.set('offset', _logsPage * _LOGS_LIMIT);
+
+      const data = await api('GET', `/api/admin/access-logs?${qs}`);
+      _renderAccessLogs(data.logs, data.total);
+
+      // Populate user dropdown if empty
+      const sel = $('admin-logs-user');
+      if (sel && sel.options.length <= 1) {
+        try {
+          const users = await api('GET', '/api/admin/users');
+          for (const u of users) {
+            const opt = document.createElement('option');
+            opt.value = u.id;
+            opt.textContent = u.nickname;
+            sel.appendChild(opt);
+          }
+        } catch (_) {}
+      }
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function _renderAccessLogs(logs, total) {
+    const el = $('admin-logs-list');
+    if (!el) return;
+    if (!logs.length) {
+      el.innerHTML = '<p style="color:var(--text-3)">No access logs found.</p>';
+      $('admin-logs-pagination').innerHTML = '';
+      return;
+    }
+    let html = '<table class="admin-table"><thead><tr><th>Time</th><th>User</th><th>Method</th><th>Endpoint</th><th>Status</th><th>IP</th></tr></thead><tbody>';
+    for (const r of logs) {
+      const ts = r.timestamp ? new Date(r.timestamp + 'Z').toLocaleString() : '';
+      const statusCls = r.status_code >= 400 ? ' style="color:var(--danger)"' : '';
+      html += `<tr>
+        <td style="white-space:nowrap;font-size:.8rem">${esc(ts)}</td>
+        <td>${esc(r.nickname || '?')}</td>
+        <td><code>${esc(r.method)}</code></td>
+        <td style="font-size:.8rem;max-width:300px;overflow:hidden;text-overflow:ellipsis">${esc(r.endpoint)}</td>
+        <td${statusCls}>${r.status_code || ''}</td>
+        <td style="font-size:.8rem">${esc(r.ip_address || '')}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+
+    // Pagination
+    const pages = Math.ceil(total / _LOGS_LIMIT);
+    let pgHtml = '';
+    if (pages > 1) {
+      if (_logsPage > 0) pgHtml += `<button class="btn btn-sm" onclick="App.adminLogsPage(${_logsPage - 1})">&laquo;</button>`;
+      pgHtml += `<span style="line-height:2rem">${_logsPage + 1} / ${pages}</span>`;
+      if (_logsPage < pages - 1) pgHtml += `<button class="btn btn-sm" onclick="App.adminLogsPage(${_logsPage + 1})">&raquo;</button>`;
+    }
+    $('admin-logs-pagination').innerHTML = pgHtml;
+  }
+
+  function adminLogsPage(page) {
+    _logsPage = page;
+    _doLoadAccessLogs();
+  }
+
+  function adminExportAccessLogs() {
+    const userId = $('admin-logs-user')?.value || '';
+    const date = $('admin-logs-date')?.value || '';
+    const qs = new URLSearchParams();
+    if (userId) qs.set('user_id', userId);
+    if (date) qs.set('date', date);
+    authDownload(`/api/admin/access-logs/export-csv?${qs}`, 'access_logs.csv');
+  }
+
+
 // Register module functions on App
 Object.assign(window.App, {
   _adminLoadInvitations,
@@ -696,4 +901,13 @@ Object.assign(window.App, {
   _adminLoadTemplates,
   adminShowSaveTemplate,
   adminDeleteTemplate,
+  // Entity Permissions (P6.15)
+  _adminLoadEntityPermissions,
+  adminEpLoadPerms,
+  adminEpAdd,
+  adminEpDelete,
+  // Access Logs (P6.14)
+  adminLoadAccessLogs: _adminLoadAccessLogs,
+  adminLogsPage,
+  adminExportAccessLogs,
 });

@@ -75,6 +75,8 @@ const App = (() => {
     fuelLockedDays: {},
     fuelLockedPrices: {},   // {date: {diesel_price, petrol_price}} — snapshots from DB
     fuelPricePerL:  { DIESEL: 0, PETROL: 0 },
+    // P5.10: holiday dates cache
+    holidayDates: new Set(),
   };
 
   const DEFAULT_BOAT_GROUPS = [
@@ -153,11 +155,12 @@ const App = (() => {
     return Math.max(0, total);
   }
 
-  /** Count actual active days for an assignment, respecting day_overrides and include_sunday. */
+  /** Count actual active days for an assignment, respecting day_overrides, include_sunday and exclude_holidays. */
   function activeWorkingDays(asgn) {
     if (!asgn.start_date || !asgn.end_date) return 0;
     const overrides = JSON.parse(asgn.day_overrides || '{}');
     const includeSunday = asgn.include_sunday !== 0;
+    const excludeHolidays = asgn.exclude_holidays === 1;
     const s = new Date(asgn.start_date.slice(0,10) + 'T00:00:00');
     const e = new Date(asgn.end_date.slice(0,10) + 'T00:00:00');
     let count = 0;
@@ -168,6 +171,8 @@ const App = (() => {
       } else {
         // Skip Sundays if not included
         if (!includeSunday && d.getDay() === 0) continue;
+        // Skip holidays if excluded
+        if (excludeHolidays && state.holidayDates.has(dk)) continue;
         count++; // default: day in range is active
       }
     }
@@ -217,32 +222,146 @@ const App = (() => {
     return 'OK';
   }
 
+  // ── Empty state helper ────────────────────────────────────
+  const _emptyIcons = {
+    boat: '<svg viewBox="0 0 24 24"><path d="M2 20l2-4h16l2 4"/><path d="M4 16l1-4h14l1 4"/><path d="M12 4v8"/><path d="M8 8h8"/></svg>',
+    truck: '<svg viewBox="0 0 24 24"><rect x="1" y="6" width="15" height="10" rx="1"/><path d="M16 10h4l3 3v3h-7V10z"/><circle cx="6" cy="18" r="2"/><circle cx="20" cy="18" r="2"/></svg>',
+    fuel: '<svg viewBox="0 0 24 24"><rect x="4" y="2" width="12" height="18" rx="2"/><path d="M8 6h4"/><path d="M20 6v8a2 2 0 01-2 2h-2"/><path d="M16 6l4-2"/><rect x="2" y="20" width="16" height="2" rx="1"/></svg>',
+    worker: '<svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a6.5 6.5 0 0113 0"/></svg>',
+    shield: '<svg viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5.5-3.8 10.3-8 12-4.2-1.7-8-6.5-8-12V6l8-4z"/></svg>',
+    location: '<svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>',
+    camera: '<svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="14" rx="2"/><circle cx="12" cy="13" r="4"/><path d="M7 6l1-3h8l1 3"/></svg>',
+    food: '<svg viewBox="0 0 24 24"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/></svg>',
+    calendar: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+  };
+  function emptyState(icon, title, hint, btnLabel, btnAction) {
+    const svg = _emptyIcons[icon] || _emptyIcons.calendar;
+    const btn = btnLabel && btnAction
+      ? `<button class="btn-empty-action" onclick="${btnAction}">${btnLabel}</button>`
+      : '';
+    return `<div class="sl-empty-state">${svg}<div class="empty-title">${title}</div><div class="empty-hint">${hint}</div>${btn}</div>`;
+  }
+
   // ── Toast ──────────────────────────────────────────────────
   let toastTimer;
   function toast(msg, type = 'success', undoHistoryId = null) {
     $('toast-icon').textContent = type === 'error' ? '✕' : type === 'info' ? 'ℹ' : '✓';
     const msgEl = $('toast-msg');
-    if (undoHistoryId) {
-      msgEl.innerHTML = `${esc(msg)} <button class="toast-undo-btn" onclick="App._undoFromToast(${undoHistoryId})">UNDO</button>`;
-    } else {
-      msgEl.textContent = msg;
-    }
+    msgEl.textContent = msg;
     $('toast-inner').className = type;
     $('toast').classList.remove('hidden');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => $('toast').classList.add('hidden'), undoHistoryId ? 10000 : 3200);
+    toastTimer = setTimeout(() => $('toast').classList.add('hidden'), 3200);
+    // Track undoable action in persistent undo bar
+    if (undoHistoryId) {
+      _pushUndo(undoHistoryId, msg);
+    }
   }
 
-  async function _undoFromToast(historyId) {
+  // ── Persistent Undo Bar (P2.6) ──────────────────────────────
+  const _undoStack = []; // { id, description, ts }
+  const UNDO_STACK_MAX = 50;
+
+  function _pushUndo(historyId, description) {
+    _undoStack.unshift({ id: historyId, description, ts: Date.now() });
+    if (_undoStack.length > UNDO_STACK_MAX) _undoStack.pop();
+    _renderUndoBar();
+  }
+
+  function _renderUndoBar() {
+    let bar = $('undo-bar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'undo-bar';
+      bar.className = 'undo-bar hidden';
+      document.body.appendChild(bar);
+    }
+    const active = _undoStack.filter(u => !u.done);
+    if (!active.length) {
+      bar.classList.add('hidden');
+      return;
+    }
+    const last = active[0];
+    const count = active.length;
+    bar.innerHTML = `
+      <div class="undo-bar-inner">
+        <span class="undo-bar-msg">${esc(last.description)}</span>
+        <button class="undo-bar-btn" onclick="App._undoLast()">UNDO</button>
+        ${count > 1 ? `<button class="undo-bar-expand" onclick="App._toggleUndoPanel()">
+          ${count} actions
+        </button>` : ''}
+        <button class="undo-bar-close" onclick="App._closeUndoBar()">&times;</button>
+      </div>
+      <div id="undo-panel" class="undo-panel hidden"></div>`;
+    bar.classList.remove('hidden');
+  }
+
+  async function _undoLast() {
+    const active = _undoStack.filter(u => !u.done);
+    if (!active.length) return;
+    const entry = active[0];
     try {
-      await api('POST', `/api/history/${historyId}/undo`);
-      $('toast').classList.add('hidden');
+      const pid = state.production?.id;
+      const url = pid
+        ? `/api/productions/${pid}/history/${entry.id}/undo`
+        : `/api/history/${entry.id}/undo`;
+      await api('POST', url);
+      entry.done = true;
       toast('Undone', 'success');
-      // Reload current tab data
+      _renderUndoBar();
       setTab(state.tab);
     } catch (e) {
       toast('Undo failed: ' + e.message, 'error');
     }
+  }
+
+  async function _undoEntry(historyId) {
+    const entry = _undoStack.find(u => u.id === historyId);
+    if (!entry || entry.done) return;
+    try {
+      const pid = state.production?.id;
+      const url = pid
+        ? `/api/productions/${pid}/history/${historyId}/undo`
+        : `/api/history/${historyId}/undo`;
+      await api('POST', url);
+      entry.done = true;
+      toast('Undone', 'success');
+      _renderUndoBar();
+      _renderUndoPanel();
+      setTab(state.tab);
+    } catch (e) {
+      toast('Undo failed: ' + e.message, 'error');
+    }
+  }
+
+  function _toggleUndoPanel() {
+    const panel = $('undo-panel');
+    if (!panel) return;
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) _renderUndoPanel();
+  }
+
+  function _renderUndoPanel() {
+    const panel = $('undo-panel');
+    if (!panel) return;
+    const active = _undoStack.filter(u => !u.done);
+    panel.innerHTML = active.map(u => `
+      <div class="undo-panel-row">
+        <span>${esc(u.description)}</span>
+        <button class="undo-bar-btn" onclick="App._undoEntry(${u.id})">UNDO</button>
+      </div>`).join('');
+  }
+
+  function _closeUndoBar() {
+    // Mark all as dismissed
+    _undoStack.forEach(u => u.done = true);
+    _renderUndoBar();
+  }
+
+  // Legacy compat
+  async function _undoFromToast(historyId) {
+    _pushUndo(historyId, 'Action');
+    await _undoLast();
   }
 
   // ── AXE 5.4 — Loading Skeletons ────────────────────────────
@@ -264,6 +383,34 @@ const App = (() => {
     }
     html += '</div>';
     return html;
+  }
+
+  // ── P4.7 — Loading Indicators ─────────────────────────────
+  function _showLoading(containerId, type = 'spinner', opts = {}) {
+    const el = typeof containerId === 'string' ? $(containerId) : containerId;
+    if (!el) return;
+    const msg = opts.message || '';
+    if (type === 'spinner') {
+      el.innerHTML = `<div class="loading-container">
+        <div class="loading-spinner${opts.size ? ' ' + opts.size : ''}"></div>
+        ${msg ? `<div>${esc(msg)}</div>` : ''}
+      </div>`;
+    } else if (type === 'cards') {
+      el.innerHTML = `<div class="skeleton-list">${Array.from({ length: opts.count || 4 }, () =>
+        '<div class="skeleton skeleton-bar"></div>').join('')}</div>`;
+    } else if (type === 'table') {
+      el.innerHTML = _skeletonTable(opts.rows || 6, opts.cols || 10);
+    } else if (type === 'stats') {
+      el.innerHTML = `<div class="stat-grid">${Array.from({ length: opts.count || 3 }, () =>
+        '<div class="skeleton skeleton-stat"></div>').join('')}</div>`;
+    }
+  }
+
+  function _hideLoading(containerId) {
+    const el = typeof containerId === 'string' ? $(containerId) : containerId;
+    if (!el) return;
+    el.classList.add('loaded-fade');
+    el.addEventListener('animationend', () => el.classList.remove('loaded-fade'), { once: true });
   }
 
   // ── AXE 5.4 — Save Flash (green flash on cell/element) ────
@@ -303,21 +450,21 @@ const App = (() => {
     el.classList.remove('online', 'offline', 'fade-out');
     if (online) {
       el.classList.add('online');
-      if (label) label.textContent = 'Online';
+      if (label) label.textContent = t('common.online');
       // Fade out after 4s when online — stays visible when offline
       _netFadeTimer = setTimeout(() => el.classList.add('fade-out'), 4000);
     } else {
       el.classList.add('offline');
-      if (label) label.textContent = 'Offline';
+      if (label) label.textContent = t('common.offline');
     }
   }
 
   // ── AXE 5.4 — Unsaved Modifications Counter ───────────────
-  function _updateOfflineCounter() {
+  async function _updateOfflineCounter() {
     const el = $('offline-counter');
     const badge = $('oc-count');
     if (!el || !badge) return;
-    const count = _offlineQueue.length;
+    const count = window.OfflineQueue ? await window.OfflineQueue.getPendingCount() : 0;
     badge.textContent = count;
     el.querySelector('span:last-child').textContent = count === 1 ? 'unsaved change' : 'unsaved changes';
     el.classList.toggle('visible', count > 0);
@@ -542,10 +689,10 @@ const App = (() => {
   // ── Auth: permissions & UI restrictions (RBAC V2) ────────
   // V1 fallback tabs (used only when no V2 permissions loaded)
   const ROLE_ALLOWED_TABS = {
-    ADMIN:   ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
-    UNIT:    ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
-    TRANSPO: ['dashboard','boats','picture-boats','security-boats','transport','fuel'],
-    READER:  ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
+    ADMIN:   ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget'],
+    UNIT:    ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget'],
+    TRANSPO: ['today','dashboard','fleet','boats','picture-boats','security-boats','transport','fuel'],
+    READER:  ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget'],
   };
 
   function _getModulePerm(tab) {
@@ -555,7 +702,11 @@ const App = (() => {
 
   function _canViewTab(tab) {
     if (_isAdmin()) return true;
-    if (tab === 'dashboard') return true;
+    if (tab === 'dashboard' || tab === 'today' || tab === 'timeline') return true;
+    // Crew meta-tab: accessible if labour OR guards is accessible
+    if (tab === 'crew') return _canViewTab('labour') || _canViewTab('guards');
+    // Fleet meta-tab: accessible if any boat type is accessible
+    if (tab === 'fleet') return _canViewTab('boats') || _canViewTab('picture-boats') || _canViewTab('security-boats');
     // V2: check per-module permission
     const perm = _getModulePerm(tab);
     if (perm) return perm.access !== 'none';
@@ -656,7 +807,7 @@ const App = (() => {
       // V2: find first accessible tab from permissions
       let firstAllowed = 'dashboard';
       if (authState.permissions) {
-        for (const mod of ['pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget']) {
+        for (const mod of ['pdt','locations','fleet','transport','fuel','crew','fnb','budget']) {
           const p = authState.permissions[mod];
           if (p && p.access !== 'none') { firstAllowed = mod; break; }
         }
@@ -719,7 +870,7 @@ const App = (() => {
   function _showProjectSelector() {
     const el = $('project-selector');
     if (!el) return;
-    $('ps-welcome').textContent = `Welcome, ${authState.user.nickname}`;
+    $('ps-welcome').textContent = t('auth.welcome', { name: authState.user.nickname });
     const list = $('ps-list');
     list.innerHTML = '';
     for (const m of authState.memberships) {
@@ -760,7 +911,7 @@ const App = (() => {
     _updateTopbarUser();
     _applyUIRestrictions();
     try {
-      await Promise.all([loadShootingDays(), loadBoatsData(), loadPictureBoatsData(), _loadFuelGlobals()]);
+      await Promise.all([loadShootingDays(), loadBoatsData(), loadPictureBoatsData(), _loadFuelGlobals(), _loadHolidays()]);
       await _preloadModules();
       App.renderPDT?.();
       // Load scheduling alerts in background (AXE 7.3)
@@ -815,7 +966,7 @@ const App = (() => {
       logoutBtn.id = 'topbar-logout-btn';
       logoutBtn.className = 'tab-btn';
       logoutBtn.style.cssText = 'color:var(--text-3);font-size:0.75rem;';
-      logoutBtn.textContent = 'Sign Out';
+      logoutBtn.textContent = t('common.sign_out');
       logoutBtn.onclick = logout;
       topbar.appendChild(logoutBtn);
     }
@@ -838,43 +989,12 @@ const App = (() => {
   const _cache = {};  // { path: { data, etag, ts } }
   const CACHE_TTL = 30000; // 30s - use cache without revalidation
 
-  // ── Offline mutation queue ──────────────────────────────────
-  let _offlineQueue = [];
-  try {
-    _offlineQueue = JSON.parse(localStorage.getItem('offline_queue') || '[]');
-  } catch (e) { _offlineQueue = []; }
-
-  function _saveOfflineQueue() {
-    try { localStorage.setItem('offline_queue', JSON.stringify(_offlineQueue)); } catch (e) {}
-  }
-
+  // ── Offline mutation queue (P6.1 - delegated to OfflineQueue IndexedDB module) ──
+  // Legacy references kept for backward compat with _updateOfflineCounter
   async function _flushOfflineQueue() {
-    if (_offlineQueue.length === 0) return;
-    const queue = [..._offlineQueue];
-    _offlineQueue = [];
-    _saveOfflineQueue();
-    _updateOfflineCounter();
-    let succeeded = 0;
-    for (const item of queue) {
-      try {
-        await api(item.method, item.path, item.body);
-        succeeded++;
-      } catch (e) {
-        console.warn('Offline queue replay failed:', e);
-      }
-    }
-    if (succeeded > 0) {
-      toast(`${succeeded} offline change(s) synced`, 'success');
-      setTab(state.tab); // Refresh current view
-    }
+    if (window.OfflineQueue) await window.OfflineQueue.flush();
   }
-
-  // Listen for online event to flush queue
-  if (typeof window !== 'undefined') {
-    window.addEventListener('online', () => {
-      setTimeout(_flushOfflineQueue, 1000);
-    });
-  }
+  // Online flush is handled by OfflineQueue module's own listener
 
   function _invalidateCache(pathPattern) {
     for (const key of Object.keys(_cache)) {
@@ -886,11 +1006,12 @@ const App = (() => {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
     if (body !== undefined) opts.body = JSON.stringify(body);
 
-    // Offline handling for mutations
+    // Offline handling for mutations (P6.1 - IndexedDB queue)
     if (!navigator.onLine && method !== 'GET') {
-      _offlineQueue.push({ method, path, body, ts: Date.now() });
-      _saveOfflineQueue();
-      _updateOfflineCounter();
+      if (window.OfflineQueue) {
+        await window.OfflineQueue.enqueue({ url: path, method, body, timestamp: Date.now() });
+        window.OfflineQueue.updateBanner();
+      }
       toast('Saved offline - will sync when back online', 'info');
       return body || {};
     }
@@ -918,12 +1039,13 @@ const App = (() => {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
+      const _te = typeof translateError === 'function' ? translateError : (s) => s;
       // Handle validation errors with field details
       if (res.status === 422 && err.fields) {
         const msgs = Object.values(err.fields).join(', ');
-        throw new Error(msgs);
+        throw new Error(_te(msgs));
       }
-      throw new Error(err.error || `HTTP ${res.status}`);
+      throw new Error(_te(err.error || `HTTP ${res.status}`));
     }
 
     const data = await res.json();
@@ -994,6 +1116,17 @@ const App = (() => {
     state.pictureAssignments = assignments;
   }
 
+  // P5.10: Load holiday dates for working-day calculations
+  async function _loadHolidays() {
+    try {
+      const holidays = await api('GET', '/api/holidays');
+      state.holidayDates = new Set(holidays.map(h => h.date));
+    } catch (e) {
+      console.warn('Failed to load holidays:', e);
+      state.holidayDates = new Set();
+    }
+  }
+
   // ── Tab navigation (original — replaced by setTabLazy below) ──
   function setTab(tab) {
     // Delegate to the lazy-loading version defined later
@@ -1002,10 +1135,17 @@ const App = (() => {
 
   // ── Breadcrumb ──────────────────────────────────────────────
   const TAB_LABELS = {
-    dashboard: 'Dashboard', pdt: 'PDT', locations: 'Locations',
+    today: 'Today', dashboard: 'Dashboard', pdt: 'Schedule', locations: 'Locations',
+    fleet: 'Fleet', crew: 'Crew',
     boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
-    transport: 'Transport', fuel: 'Fuel', labour: 'Labour',
-    guards: 'Guards', fnb: 'FNB', budget: 'Budget', admin: 'Admin',
+    transport: 'Transport', fuel: 'Fuel', labour: 'Labor',
+    guards: 'Guards', fnb: 'Catering', budget: 'Budget', documents: 'Documents', timeline: 'Timeline', admin: 'Admin',
+  };
+
+  // Parent tab mapping: sub-tabs that belong to a unified view
+  const TAB_PARENT = {
+    boats: 'fleet', 'picture-boats': 'fleet', 'security-boats': 'fleet',
+    labour: 'crew', guards: 'crew',
   };
 
   function _updateBreadcrumb(view, entity) {
@@ -1014,8 +1154,27 @@ const App = (() => {
     const entityEl = $('bc-entity');
     const entitySep = document.querySelector('.bc-entity-sep');
     if (!modEl) return;
-    modEl.textContent = TAB_LABELS[state.tab] || state.tab;
-    viewEl.textContent = view || 'Overview';
+
+    const tab = state.tab;
+    const parentTab = TAB_PARENT[tab];
+
+    modEl.textContent = parentTab ? TAB_LABELS[parentTab] : (TAB_LABELS[tab] || tab);
+    modEl.onclick = () => {
+      if (parentTab) setTab(parentTab);
+      else setTab(tab);
+    };
+
+    // If there's a parent, show the sub-tab as the view level
+    if (parentTab) {
+      viewEl.textContent = view ? `${TAB_LABELS[tab]} / ${view}` : (TAB_LABELS[tab] || tab);
+    } else {
+      viewEl.textContent = view || 'Overview';
+    }
+    viewEl.onclick = () => {
+      if (parentTab) { setTab(tab); }
+      else if (view) { setTab(tab); }
+    };
+
     if (entity) {
       entityEl.textContent = entity;
       entityEl.style.display = '';
@@ -1035,7 +1194,7 @@ const App = (() => {
       btn.classList.toggle('active', btn.dataset.tab === state.tab);
     });
     // "More" button active if current tab is one of the secondary tabs
-    const primaryTabs = ['dashboard', 'pdt', 'boats', 'budget'];
+    const primaryTabs = ['today', 'pdt', 'fleet', 'budget'];
     const moreBtn = $('bnav-more-btn');
     if (moreBtn) {
       moreBtn.classList.toggle('active', !primaryTabs.includes(state.tab) && state.tab !== 'admin');
@@ -1049,6 +1208,24 @@ const App = (() => {
   function toggleBottomNavMore() {
     const sheet = $('bnav-more-sheet');
     if (sheet) sheet.classList.toggle('hidden');
+  }
+
+  // ── Mobile menu (burger) ────────────────────────────────────
+  function toggleMobileMenu() {
+    const menu = $('mobile-menu');
+    if (!menu) return;
+    const isOpen = !menu.classList.contains('hidden');
+    if (isOpen) {
+      menu.classList.add('hidden');
+      document.body.style.overflow = '';
+    } else {
+      menu.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      // Sync active state
+      menu.querySelectorAll('.mobile-menu-item[data-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === state.tab);
+      });
+    }
   }
 
   // ── Keyboard shortcuts help panel ──────────────────────────
@@ -1067,9 +1244,16 @@ const App = (() => {
   //  CONFIRM DIALOG
   // ═══════════════════════════════════════════════════════════
 
-  function showConfirm(msg, callback) {
+  function showConfirm(msg, callback, opts) {
     $('confirm-msg').textContent = msg;
     state.confirmCallback = callback;
+    const cancelBtn = $('confirm-overlay').querySelector('.btn-secondary');
+    const okBtn = $('confirm-ok');
+    if (cancelBtn) cancelBtn.textContent = opts?.cancelLabel || 'Cancel';
+    if (okBtn) {
+      okBtn.textContent = opts?.okLabel || 'Confirm';
+      okBtn.className = opts?.okClass ? `btn ${opts.okClass}` : 'btn btn-danger';
+    }
     $('confirm-overlay').classList.remove('hidden');
   }
 
@@ -1081,6 +1265,58 @@ const App = (() => {
   function _confirmOk() {
     $('confirm-overlay').classList.add('hidden');
     if (state.confirmCallback) { state.confirmCallback(); state.confirmCallback = null; }
+  }
+
+
+  // ═══════════════════════════════════════════════════════════
+  //  DIRTY STATE TRACKING — P4.5
+  // ═══════════════════════════════════════════════════════════
+
+  const _dirtySnapshots = {};
+
+  function _snapshotModal(overlayId) {
+    const overlay = $(overlayId);
+    if (!overlay) return;
+    const snapshot = {};
+    overlay.querySelectorAll('input, select, textarea').forEach(el => {
+      const key = el.id || el.name;
+      if (!key) return;
+      snapshot[key] = el.type === 'checkbox' ? el.checked : el.value;
+    });
+    _dirtySnapshots[overlayId] = snapshot;
+  }
+
+  function _isModalDirty(overlayId) {
+    const snapshot = _dirtySnapshots[overlayId];
+    if (!snapshot) return false;
+    const overlay = $(overlayId);
+    if (!overlay) return false;
+    let dirty = false;
+    overlay.querySelectorAll('input, select, textarea').forEach(el => {
+      const key = el.id || el.name;
+      if (!key || !(key in snapshot)) return;
+      const current = el.type === 'checkbox' ? el.checked : el.value;
+      if (snapshot[key] !== current) dirty = true;
+    });
+    return dirty;
+  }
+
+  function _clearSnapshot(overlayId) {
+    delete _dirtySnapshots[overlayId];
+  }
+
+  function _guardedClose(overlayId, closeFn, force) {
+    const overlay = $(overlayId);
+    if (!overlay || overlay.classList.contains('hidden')) return;
+    if (!force && _isModalDirty(overlayId)) {
+      showConfirm('You have unsaved changes. Discard?', () => {
+        _clearSnapshot(overlayId);
+        closeFn();
+      }, { cancelLabel: 'Keep Editing', okLabel: 'Discard', okClass: 'btn-warning' });
+      return;
+    }
+    _clearSnapshot(overlayId);
+    closeFn();
   }
 
 
@@ -1099,14 +1335,31 @@ const App = (() => {
 
 
   // ═══════════════════════════════════════════════════════════
-  //  GLOBAL SEARCH (Cmd+K)
+  //  COMMAND PALETTE (Cmd+K) — Search + Quick Actions
   // ═══════════════════════════════════════════════════════════
 
   let _searchOpen = false;
+  let _cmdSelectedIdx = -1;
+
+  // Quick actions available in the command palette
+  const QUICK_ACTIONS = [
+    { id: 'today',       icon: '📅', get label() { return t('cmd.view_today'); },  keywords: 'today schedule jour planning',    action: () => { App.setTab('today'); } },
+    { id: 'new-boat',    icon: '🚤', get label() { return t('cmd.new_boat'); },  keywords: 'boat assign bateau affectation',  action: () => { App.setTab('fleet'); setTimeout(() => App.showAddBoatModal?.(), 200); } },
+    { id: 'add-fuel',    icon: '⛽', get label() { return t('cmd.add_fuel'); },       keywords: 'fuel carburant essence',          action: () => { App.setTab('fuel'); setTimeout(() => App.showFuelMachineryModal?.(), 200); } },
+    { id: 'export-budget', icon: '📊', get label() { return t('cmd.export_budget'); },      keywords: 'export budget xlsx download',     action: () => { App.setTab('budget'); setTimeout(() => App.budgetExportXlsx?.(), 300); } },
+    { id: 'add-day',     icon: '➕', get label() { return t('cmd.add_day'); },     keywords: 'day jour tournage add',           action: () => { App.setTab('pdt'); setTimeout(() => App.addDay?.(), 200); } },
+    { id: 'add-vehicle', icon: '🚐', get label() { return t('cmd.add_vehicle'); }, keywords: 'vehicle vehicule transport add', action: () => { App.setTab('transport'); setTimeout(() => App.showAddTransportVehicleModal?.(), 200); } },
+    { id: 'add-worker',  icon: '👷', get label() { return t('cmd.add_worker'); },           keywords: 'worker helper labour travailleur', action: () => { App.setTab('crew'); App.crewSetSubTab('labour'); setTimeout(() => App.showAddWorkerModal?.(), 200); } },
+    { id: 'add-location', icon: '📍', get label() { return t('cmd.add_location'); },       keywords: 'location lieu site add',          action: () => { App.setTab('locations'); setTimeout(() => App.showAddLocationModal?.(), 200); } },
+    { id: 'add-guard',   icon: '🛡️', get label() { return t('cmd.add_guard'); },           keywords: 'guard securite add',              action: () => { App.setTab('crew'); App.crewSetSubTab('guards'); setTimeout(() => App.gcShowAddWorkerModal?.(), 200); } },
+    { id: 'toggle-theme', icon: '🌓', get label() { return t('cmd.toggle_theme'); }, keywords: 'theme dark light mode sombre', action: () => { App.toggleTheme(); } },
+    { id: 'shortcuts',   icon: '⌨️', get label() { return t('cmd.show_shortcuts'); }, keywords: 'keyboard shortcuts raccourcis clavier', action: () => { App.openShortcutsPanel(); } },
+  ];
 
   function _openSearch() {
     if (_searchOpen) return;
     _searchOpen = true;
+    _cmdSelectedIdx = -1;
     let overlay = $('search-overlay');
     if (!overlay) {
       overlay = document.createElement('div');
@@ -1114,7 +1367,10 @@ const App = (() => {
       overlay.className = 'search-overlay';
       overlay.innerHTML = `
         <div class="search-modal">
-          <input type="text" id="search-input" class="search-input" placeholder="Search boats, vehicles, helpers, guards, locations..." autocomplete="off">
+          <div class="cmd-input-row">
+            <span class="cmd-icon">⌘K</span>
+            <input type="text" id="search-input" class="search-input" placeholder="${t('cmd.search_placeholder')}" autocomplete="off">
+          </div>
           <div id="search-results" class="search-results"></div>
         </div>`;
       document.body.appendChild(overlay);
@@ -1125,19 +1381,39 @@ const App = (() => {
     const input = $('search-input');
     input.value = '';
     input.focus();
-    $('search-results').innerHTML = '<div style="color:var(--text-4);padding:1rem;text-align:center;font-size:.8rem">Start typing to search...</div>';
+    _renderCommandPalette('');
 
     input.oninput = () => {
       clearTimeout(input._debounce);
-      input._debounce = setTimeout(() => _doSearch(input.value.trim()), 150);
+      input._debounce = setTimeout(() => {
+        _cmdSelectedIdx = -1;
+        _renderCommandPalette(input.value.trim());
+      }, 120);
     };
     input.onkeydown = e => {
-      if (e.key === 'Escape') _closeSearch();
-      if (e.key === 'Enter') {
-        const first = $('search-results')?.querySelector('.search-result-item');
-        if (first) first.click();
+      if (e.key === 'Escape') { _closeSearch(); return; }
+      const items = $('search-results')?.querySelectorAll('.search-result-item') || [];
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        _cmdSelectedIdx = Math.min(_cmdSelectedIdx + 1, items.length - 1);
+        _cmdHighlight(items);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        _cmdSelectedIdx = Math.max(_cmdSelectedIdx - 1, 0);
+        _cmdHighlight(items);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const sel = _cmdSelectedIdx >= 0 ? items[_cmdSelectedIdx] : items[0];
+        if (sel) sel.click();
       }
     };
+  }
+
+  function _cmdHighlight(items) {
+    items.forEach((el, i) => el.classList.toggle('cmd-active', i === _cmdSelectedIdx));
+    if (_cmdSelectedIdx >= 0 && items[_cmdSelectedIdx]) {
+      items[_cmdSelectedIdx].scrollIntoView({ block: 'nearest' });
+    }
   }
 
   function _closeSearch() {
@@ -1149,28 +1425,75 @@ const App = (() => {
     }
   }
 
-  function _doSearch(query) {
+  function _renderCommandPalette(query) {
     const container = $('search-results');
     if (!container) return;
-    if (!query || query.length < 2) {
-      container.innerHTML = '<div style="color:var(--text-4);padding:1rem;text-align:center;font-size:.8rem">Start typing to search...</div>';
-      return;
+
+    const q = (query || '').toLowerCase();
+    let html = '';
+
+    // Filter quick actions
+    const filteredActions = QUICK_ACTIONS.filter(a => {
+      if (!q) return true;
+      return a.label.toLowerCase().includes(q) || a.keywords.toLowerCase().includes(q);
+    });
+
+    if (filteredActions.length > 0) {
+      html += `<div class="cmd-section-label">${t('cmd.quick_actions')}</div>`;
+      html += filteredActions.map((a, i) => {
+        return `<div class="search-result-item cmd-action-item" data-cmd-idx="${i}" onclick="App._cmdExec('${a.id}')">
+          <span class="cmd-action-icon">${a.icon}</span>
+          <span class="search-result-name">${esc(a.label)}</span>
+          <span class="cmd-action-hint">↵</span>
+        </div>`;
+      }).join('');
     }
 
-    const q = query.toLowerCase();
+    // Entity search (only if query >= 2 chars)
+    if (q.length >= 2) {
+      const results = _searchEntities(q);
+      if (results.length > 0) {
+        html += `<div class="cmd-section-label">${t('cmd.results')}</div>`;
+        html += results.slice(0, 15).map(r => {
+          const extra = r.crewSub ? `App.crewSetSubTab('${r.crewSub}');` : '';
+          return `<div class="search-result-item" onclick="App.setTab('${r.tab}');${extra}App._closeSearch()">
+            <span class="search-result-type">${esc(r.type)}</span>
+            <span class="search-result-name">${esc(r.name)}</span>
+            <span class="search-result-detail">${esc(r.detail)}</span>
+          </div>`;
+        }).join('');
+      }
+    }
+
+    if (!html) {
+      html = `<div style="color:var(--text-4);padding:1.5rem;text-align:center;font-size:.8rem">${t('common.no_results')}</div>`;
+    }
+
+    container.innerHTML = html;
+  }
+
+  function _cmdExec(actionId) {
+    const action = QUICK_ACTIONS.find(a => a.id === actionId);
+    if (action) {
+      _closeSearch();
+      action.action();
+    }
+  }
+
+  function _searchEntities(q) {
     const results = [];
 
     // Search boats
     (state.boats || []).forEach(b => {
       if ((b.name || '').toLowerCase().includes(q) || (b.vendor || '').toLowerCase().includes(q)) {
-        results.push({ type: 'Boat', name: b.name, detail: b.vendor || '', tab: 'boats', id: b.id });
+        results.push({ type: 'Boat', name: b.name, detail: b.vendor || '', tab: 'fleet', id: b.id });
       }
     });
 
     // Search picture boats
     (state.pictureBoats || []).forEach(b => {
       if ((b.name || '').toLowerCase().includes(q) || (b.vendor || '').toLowerCase().includes(q)) {
-        results.push({ type: 'Picture Boat', name: b.name, detail: b.vendor || '', tab: 'picture-boats', id: b.id });
+        results.push({ type: 'Picture Boat', name: b.name, detail: b.vendor || '', tab: 'fleet', id: b.id });
       }
     });
 
@@ -1184,14 +1507,14 @@ const App = (() => {
     // Search helpers/labour
     (state.lbWorkers || []).forEach(h => {
       if ((h.name || '').toLowerCase().includes(q) || (h.role || '').toLowerCase().includes(q)) {
-        results.push({ type: 'Worker', name: h.name, detail: h.role || '', tab: 'labour', id: h.id });
+        results.push({ type: 'Worker', name: h.name, detail: h.role || '', tab: 'crew', id: h.id });
       }
     });
 
     // Search security boats
     (state.securityBoats || []).forEach(b => {
       if ((b.name || '').toLowerCase().includes(q) || (b.vendor || '').toLowerCase().includes(q)) {
-        results.push({ type: 'Security Boat', name: b.name, detail: b.vendor || '', tab: 'security-boats', id: b.id });
+        results.push({ type: 'Security Boat', name: b.name, detail: b.vendor || '', tab: 'fleet', id: b.id });
       }
     });
 
@@ -1206,21 +1529,21 @@ const App = (() => {
     // Search functions/roles
     (state.functions || []).forEach(f => {
       if ((f.name || '').toLowerCase().includes(q)) {
-        results.push({ type: 'Function', name: f.name, detail: f.function_group || '', tab: 'boats', id: f.id });
+        results.push({ type: 'Function', name: f.name, detail: f.function_group || '', tab: 'fleet', id: f.id });
       }
     });
 
     // Search guard camp workers
     (state.gcWorkers || []).forEach(g => {
       if ((g.name || '').toLowerCase().includes(q) || (g.role || '').toLowerCase().includes(q)) {
-        results.push({ type: 'Guard', name: g.name, detail: g.role || '', tab: 'guards', id: g.id });
+        results.push({ type: 'Guard', name: g.name, detail: g.role || '', tab: 'crew', id: g.id, crewSub: 'guards' });
       }
     });
 
     // Search guard posts
     (state.guardPosts || []).forEach(p => {
       if ((p.name || '').toLowerCase().includes(q) || (p.location || '').toLowerCase().includes(q)) {
-        results.push({ type: 'Guard Post', name: p.name, detail: p.location || '', tab: 'guards', id: p.id });
+        results.push({ type: 'Guard Post', name: p.name, detail: p.location || '', tab: 'crew', id: p.id, crewSub: 'guards' });
       }
     });
 
@@ -1231,18 +1554,11 @@ const App = (() => {
       }
     });
 
-    if (results.length === 0) {
-      container.innerHTML = '<div style="color:var(--text-4);padding:1rem;text-align:center;font-size:.8rem">No results</div>';
-      return;
-    }
-
-    container.innerHTML = results.slice(0, 20).map(r => `
-      <div class="search-result-item" onclick="App.setTab('${r.tab}');App._closeSearch()">
-        <span class="search-result-type">${esc(r.type)}</span>
-        <span class="search-result-name">${esc(r.name)}</span>
-        <span class="search-result-detail">${esc(r.detail)}</span>
-      </div>`).join('');
+    return results;
   }
+
+  // Legacy compat
+  function _doSearch(query) { _renderCommandPalette(query); }
 
 
   // ═══════════════════════════════════════════════════════════
@@ -1251,6 +1567,8 @@ const App = (() => {
 
   const _loadedModules = {};
   const MODULE_MAP = {
+    'today':          '/static/modules/today.js',
+    'fleet':          '/static/modules/fleet.js',
     'pdt':            '/static/modules/pdt.js',
     'boats':          '/static/modules/boats.js',
     'picture-boats':  '/static/modules/picture-boats.js',
@@ -1260,6 +1578,7 @@ const App = (() => {
     'labour':         '/static/modules/labour.js',
     'security-boats': '/static/modules/security-boats.js',
     'locations':      '/static/modules/locations.js',
+    'crew':           '/static/modules/crew.js',
     'guards':         '/static/modules/guards.js',
     'fnb':            '/static/modules/fnb.js',
     'dashboard':      '/static/modules/dashboard.js',
@@ -1268,12 +1587,15 @@ const App = (() => {
     'activity':       '/static/modules/activity.js',
     'comments':       '/static/modules/comments.js',
     'notifications':  '/static/modules/notifications.js',
+    'documents':      '/static/modules/documents.js',
   };
 
   // Dependencies: some modules need other modules loaded first
   const MODULE_DEPS = {
     'budget': ['boats', 'transport', 'fuel', 'labour', 'security-boats', 'locations', 'guards'],
     'dashboard': ['boats'],
+    'fleet': ['boats', 'picture-boats', 'security-boats'],
+    'crew': ['labour', 'guards'],
   };
 
   async function _loadModule(name) {
@@ -1372,6 +1694,9 @@ const App = (() => {
 
 
   async function init() {
+    // Load i18n translations before rendering
+    if (typeof I18n !== 'undefined') await I18n.init(localStorage.getItem('locale') || 'en');
+
     // Apply saved theme
     _applyTheme(localStorage.getItem('theme') || 'dark');
 
@@ -1442,6 +1767,12 @@ const App = (() => {
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
+        // If confirm dialog is visible, dismiss it first and stop
+        const confirmOv = $('confirm-overlay');
+        if (confirmOv && !confirmOv.classList.contains('hidden')) {
+          cancelConfirm();
+          return;
+        }
         // Close alerts panel (AXE 7.3)
         if (_alertsPanelOpen) { App.toggleAlertsPanel?.(); }
         closeShortcutsPanel();
@@ -1456,13 +1787,13 @@ const App = (() => {
         App.closeBoatView?.();
         App.closeBoatDetail?.();
         closeSchedulePopover();
-        cancelConfirm();
         App.closeAddLocationModal?.();
         App.closeAddGuardModal?.();
         App.closeAddSecurityBoatModal?.();
         App.closeAddWorkerModal?.();
         App.closeFnbCatModal?.();
         App.closeFnbItemModal?.();
+        App.closeFuelMachineryModal?.();
         if (state.selectedBoat) {
           state.selectedBoat  = null;
           state.pendingFuncId = null;
@@ -1534,7 +1865,7 @@ const App = (() => {
       }
       // Number keys 1-0 for quick tab navigation (not in inputs)
       if (!isInput && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const numTabs = ['dashboard', 'pdt', 'locations', 'boats', 'picture-boats', 'security-boats', 'transport', 'fuel', 'labour', 'guards'];
+        const numTabs = ['today', 'pdt', 'locations', 'fleet', 'transport', 'fuel', 'crew', 'fnb', 'budget'];
         const idx = '1234567890'.indexOf(e.key);
         if (idx >= 0 && idx < numTabs.length) {
           e.preventDefault();
@@ -1564,6 +1895,8 @@ const App = (() => {
 
     // AXE 5.4: Init network indicator + offline counter
     _updateNetIndicator(navigator.onLine);
+    // P6.1: Init IndexedDB offline queue (migrates localStorage queue)
+    if (window.OfflineQueue) await window.OfflineQueue.init();
     _updateOfflineCounter();
 
     try {
@@ -1577,8 +1910,8 @@ const App = (() => {
       } else {
         document.getElementById('main-content').innerHTML =
           `<div style="color:var(--text-3);padding:3rem;text-align:center">
-            You are not assigned to any project.<br>
-            <small>Ask an administrator to invite you to a project.</small>
+            ${t('auth.no_project')}<br>
+            <small>${t('auth.ask_admin')}</small>
           </div>`;
       }
     } catch (e) {
@@ -1586,8 +1919,8 @@ const App = (() => {
       if (e.message === 'Session expired') return;
       document.getElementById('main-content').innerHTML =
         `<div style="color:var(--red);padding:3rem;text-align:center">
-          Load error: ${esc(e.message)}<br>
-          <small>Check that the Flask server is running on port 5002.</small>
+          ${t('auth.load_error', { message: esc(e.message) })}<br>
+          <small>${t('auth.check_server')}</small>
         </div>`;
     }
   }
@@ -1598,15 +1931,48 @@ const App = (() => {
   // ═══════════════════════════════════════════════════════════
 
   const FAB_CONFIG = {
-    pdt:              { label: '+ Day',       action: () => App.addDay?.() },
-    boats:            { label: '+ Boat',      action: () => App.showAddBoatModal?.() },
-    'picture-boats':  { label: '+ Boat',      action: () => App.showAddPictureBoatModal?.() },
-    'security-boats': { label: '+ Boat',      action: () => App.showAddSecurityBoatModal?.() },
-    transport:        { label: '+ Vehicle',   action: () => App.showAddTransportVehicleModal?.() },
-    labour:           { label: '+ Worker',    action: () => App.showAddWorkerModal?.() },
-    guards:           { label: '+ Guard',     action: () => App.gcShowAddWorkerModal?.() },
-    locations:        { label: '+ Location',  action: () => App.showAddLocationModal?.() },
-    fnb:              { label: '+ Category',  action: () => App.showFnbCatModal?.() },
+    pdt:              { get label() { return t('fab.day'); },       action: () => App.addDay?.() },
+    boats:            { get label() { return t('fab.boat'); },      action: () => App.showAddBoatModal?.() },
+    'picture-boats':  { get label() { return t('fab.boat'); },      action: () => App.showAddPictureBoatModal?.() },
+    'security-boats': { get label() { return t('fab.boat'); },      action: () => App.showAddSecurityBoatModal?.() },
+    transport:        { get label() { return t('fab.vehicle'); },   action: () => App.showAddTransportVehicleModal?.() },
+    crew:             { get label() { return t('fab.worker'); },    action: () => { const sub = App._crewSubTab || 'labour'; sub === 'guards' ? App.gcShowAddWorkerModal?.() : App.showAddWorkerModal?.(); } },
+    labour:           { get label() { return t('fab.worker'); },    action: () => App.showAddWorkerModal?.() },
+    guards:           { get label() { return t('fab.guard'); },     action: () => App.gcShowAddWorkerModal?.() },
+    locations:        { get label() { return t('fab.location'); },  action: () => App.showAddLocationModal?.() },
+    fnb:              { get label() { return t('fab.category'); },  action: () => App.showFnbCatModal?.() },
+  };
+
+  // Contextual actions per module (for FAB long-press menu)
+  const FAB_CONTEXT_ACTIONS = {
+    fleet: [
+      { get label() { return t('fab.add_boat'); }, action: () => App.showAddBoatModal?.() },
+      { get label() { return t('fab.add_picture_boat'); }, action: () => App.showAddPictureBoatModal?.() },
+      { get label() { return t('fab.add_security_boat'); }, action: () => App.showAddSecurityBoatModal?.() },
+    ],
+    pdt: [
+      { get label() { return t('fab.add_shooting_day'); }, action: () => App.addDay?.() },
+    ],
+    transport: [
+      { get label() { return t('fab.add_vehicle'); }, action: () => App.showAddTransportVehicleModal?.() },
+    ],
+    fuel: [
+      { get label() { return t('fab.add_fuel_entry'); }, action: () => App.showFuelMachineryModal?.() },
+    ],
+    crew: [
+      { get label() { return t('fab.add_worker'); }, action: () => { App.crewSetSubTab('labour'); setTimeout(() => App.showAddWorkerModal?.(), 100); } },
+      { get label() { return t('fab.add_guard'); }, action: () => { App.crewSetSubTab('guards'); setTimeout(() => App.gcShowAddWorkerModal?.(), 100); } },
+    ],
+    locations: [
+      { get label() { return t('fab.add_location'); }, action: () => App.showAddLocationModal?.() },
+    ],
+    fnb: [
+      { get label() { return t('fab.add_category'); }, action: () => App.showFnbCatModal?.() },
+      { get label() { return t('fab.add_item'); }, action: () => App.showFnbItemModal?.() },
+    ],
+    budget: [
+      { get label() { return t('fab.export_budget_xlsx'); }, action: () => App.budgetExportXlsx?.() },
+    ],
   };
 
   function _updateFab() {
@@ -1615,16 +1981,64 @@ const App = (() => {
     const cfg = FAB_CONFIG[state.tab];
     if (!cfg || !_canEdit()) {
       fab.style.display = 'none';
+      _closeFabMenu();
       return;
     }
-    fab.style.display = '';
+    fab.style.display = 'flex';
     const lbl = $('fab-label');
     if (lbl) lbl.textContent = cfg.label;
   }
 
+  let _fabMenuOpen = false;
+
   function fabAction() {
     const cfg = FAB_CONFIG[state.tab];
     if (cfg) cfg.action();
+  }
+
+  function _toggleFabMenu() {
+    if (_fabMenuOpen) { _closeFabMenu(); return; }
+    const ctx = FAB_CONTEXT_ACTIONS[state.tab];
+    if (!ctx || ctx.length <= 1) return; // No menu if single action
+    _fabMenuOpen = true;
+    let menu = $('fab-context-menu');
+    if (!menu) {
+      menu = document.createElement('div');
+      menu.id = 'fab-context-menu';
+      menu.className = 'fab-context-menu';
+      document.body.appendChild(menu);
+    }
+    menu.innerHTML = ctx.map((a, i) =>
+      `<button class="fab-ctx-item" onclick="App._fabCtxAction(${i})">${esc(a.label)}</button>`
+    ).join('');
+    menu.classList.remove('hidden');
+    menu.style.display = 'flex';
+    // Close on outside click
+    setTimeout(() => {
+      document.addEventListener('click', _fabMenuOutside, { once: true });
+    }, 10);
+  }
+
+  function _fabMenuOutside(e) {
+    const menu = $('fab-context-menu');
+    const fab = $('fab-btn');
+    if (menu && !menu.contains(e.target) && fab && !fab.contains(e.target)) {
+      _closeFabMenu();
+    }
+  }
+
+  function _closeFabMenu() {
+    _fabMenuOpen = false;
+    const menu = $('fab-context-menu');
+    if (menu) { menu.classList.add('hidden'); menu.style.display = 'none'; }
+  }
+
+  function _fabCtxAction(idx) {
+    const ctx = FAB_CONTEXT_ACTIONS[state.tab];
+    if (ctx && ctx[idx]) {
+      _closeFabMenu();
+      ctx[idx].action();
+    }
   }
 
   // Hook into setTab to update FAB
@@ -1662,11 +2076,11 @@ const App = (() => {
         indicator.classList.add('ptr-pulling');
         if (dy > 70) {
           icon.classList.add('ptr-ready');
-          text.textContent = 'Release to refresh';
+          text.textContent = t('ptr.release');
           _ptrTriggered = true;
         } else {
           icon.classList.remove('ptr-ready');
-          text.textContent = 'Pull to refresh';
+          text.textContent = t('ptr.pull');
           _ptrTriggered = false;
         }
       }
@@ -1686,7 +2100,7 @@ const App = (() => {
         spinner.className = 'ptr-spinner';
         icon.parentNode.insertBefore(spinner, icon);
         icon.style.display = 'none';
-        text.textContent = 'Refreshing...';
+        text.textContent = t('ptr.refreshing');
         indicator.classList.remove('ptr-pulling');
         indicator.classList.add('ptr-refreshing');
 
@@ -1698,14 +2112,14 @@ const App = (() => {
             icon.style.display = '';
             icon.innerHTML = '\u2193';
             icon.classList.remove('ptr-ready');
-            text.textContent = 'Pull to refresh';
-            toast('Data refreshed', 'success');
+            text.textContent = t('ptr.pull');
+            toast(t('common.data_refreshed'), 'success');
           }, 400);
         });
       } else {
         indicator.classList.remove('ptr-pulling');
         icon.classList.remove('ptr-ready');
-        text.textContent = 'Pull to refresh';
+        text.textContent = t('ptr.pull');
       }
       _ptrTriggered = false;
     }, { passive: true });
@@ -1746,6 +2160,14 @@ const App = (() => {
     const panel = $(`view-${tab}`);
     if (panel) panel.classList.add('active');
 
+    // P4.7 — Show immediate skeleton feedback while module loads
+    const _loadingTargets = {
+      pdt: () => { const tb = $('pdt-tbody'); if (tb) tb.innerHTML = `<tr><td colspan="13">${_skeletonTable(8, 12)}</td></tr>`; },
+      fleet: () => _showLoading('fleet-cards', 'cards', { count: 6 }),
+      budget: () => _showLoading('budget-content', 'stats', { count: 3 }),
+    };
+    if (_loadingTargets[tab]) _loadingTargets[tab]();
+
     // Load module for this tab
     const moduleKey = tab === 'picture-boats' ? 'picture-boats'
                     : tab === 'security-boats' ? 'security-boats'
@@ -1755,8 +2177,11 @@ const App = (() => {
     }
 
     // Call render functions (now available on App after module load)
+    if (tab === 'today')           App.renderToday?.();
+    if (tab === 'fleet')           App.loadAndRenderFleet?.();
+    if (tab === 'crew')            App._renderCrewSubTab?.();
     if (tab === 'dashboard')       App.renderDashboard?.();
-    if (tab === 'pdt')             { if (typeof _pdtView !== 'undefined' && _pdtView === 'calendar') { App._initCalMonth?.(); App.renderPDTCalendar?.(); } else App.renderPDT?.(); }
+    if (tab === 'pdt')             { if (typeof _pdtView !== 'undefined' && _pdtView === 'calendar') { App._initCalMonth?.(); App.renderPDTCalendar?.(); } else App.renderPDT?.(); _hideLoading('pdt-tbody'); }
     if (tab === 'boats')           { _tabCtx = 'boats';     App.renderBoats?.(); }
     if (tab === 'picture-boats')   { _tabCtx = 'picture';   App.renderPictureBoats?.(); }
     if (tab === 'transport')       { _tabCtx = 'transport'; App._loadAndRenderTransport?.(); }
@@ -1767,6 +2192,8 @@ const App = (() => {
     if (tab === 'locations')       { state.locationSchedules = null; App.renderLocations?.(); }
     if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; App.renderGuards?.(); }
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; App.renderFnb?.(); }
+    if (tab === 'documents')       App.renderDocuments?.();
+    if (tab === 'timeline')        App.renderTimeline?.();
     if (tab === 'admin')           App.adminSetTab?.(_adminTab || 'users');
     _updateFab();
     _updateBreadcrumb();
@@ -1780,12 +2207,12 @@ const App = (() => {
 
   // Expose shared utilities for module files to access
   window._SL = {
-    state, authState, $, esc, api, toast, fmtMoney, fmtDate, fmtDateLong,
+    state, authState, $, esc, api, toast, _pushUndo, fmtMoney, fmtDate, fmtDateLong,
     _localDk, workingDays, activeWorkingDays, computeWd, effectiveStatus,
     waveClass, waveLabel, _morphHTML, _morphChildren, _morphAttributes,
     _debouncedRender, _renderTimers,
     _flashSaved, _flashSavedCard, _queueCellFlash,
-    _skeletonCards, _skeletonTable,
+    _skeletonCards, _skeletonTable, _showLoading, _hideLoading,
     _virtualScheduleSetup, _getVisibleColRange, _vcolWidth,
     VCOL_WIDTH_DESKTOP, VCOL_WIDTH_MOBILE, VCOL_BUFFER,
     _saveScheduleScroll, _restoreScheduleScroll, _scheduleCellBg,
@@ -1801,10 +2228,12 @@ const App = (() => {
     _invalidateCache,
     loadShootingDays, loadBoatsData, loadPictureBoatsData,
     showConfirm, cancelConfirm,
+    _snapshotModal, _isModalDirty, _clearSnapshot, _guardedClose,
     closeSchedulePopover: typeof closeSchedulePopover === 'function' ? closeSchedulePopover : () => {},
     renderSchedulePopover: typeof renderSchedulePopover === 'function' ? renderSchedulePopover : () => {},
     _updateBreadcrumb, _updateBottomNav, _updateFab,
     _loadModule,
+    emptyState,
     // Multi-select — these may be defined in boats module, expose stubs
     _multiSelect: typeof _multiSelect !== 'undefined' ? _multiSelect : { active: false, cells: [] },
     _onScheduleMouseDown: typeof _onScheduleMouseDown === 'function' ? _onScheduleMouseDown : () => {},
@@ -1969,6 +2398,37 @@ const App = (() => {
     authDownload(url);
   }
 
+  // ── Crew unified tab (Labour + Guards sub-tabs) ────────────
+  let _crewSubTab = 'labour';  // 'labour' | 'guards'
+
+  function crewSetSubTab(sub) {
+    _crewSubTab = sub;
+    const labourPanel = $('crew-labour-panel');
+    const guardsPanel = $('crew-guards-panel');
+    const labourBtn = $('crew-subtab-labour');
+    const guardsBtn = $('crew-subtab-guards');
+    if (labourBtn) labourBtn.classList.toggle('active', sub === 'labour');
+    if (guardsBtn) guardsBtn.classList.toggle('active', sub === 'guards');
+    if (labourPanel) labourPanel.classList.toggle('hidden', sub !== 'labour');
+    if (guardsPanel) guardsPanel.classList.toggle('hidden', sub !== 'guards');
+    // Load and render the selected sub-module
+    if (sub === 'labour') {
+      _tabCtx = 'labour';
+      App._loadAndRenderLabour?.();
+    } else {
+      state.guardSchedules = null;
+      state.locationSchedules = null;
+      state.locationSites = null;
+      App.renderGuards?.();
+    }
+    _updateFab();
+    _updateBreadcrumb(sub === 'labour' ? 'Labor' : 'Guards');
+  }
+
+  function _renderCrewSubTab() {
+    crewSetSubTab(_crewSubTab);
+  }
+
   // ── Public API ─────────────────────────────────────────────
   const App = {
     setTab: setTabLazy,
@@ -1981,14 +2441,16 @@ const App = (() => {
     showConfirm, cancelConfirm,
     toggleTheme,
     // Navigation
-    toggleBottomNavMore, _updateBreadcrumb,
+    toggleBottomNavMore, toggleMobileMenu, _updateBreadcrumb,
+    // Crew unified tab
+    crewSetSubTab, _renderCrewSubTab, get _crewSubTab() { return _crewSubTab; },
     openShortcutsPanel, closeShortcutsPanel,
-    // Search
-    _openSearch, _closeSearch,
-    // History undo
-    _undoFromToast,
+    // Search / Command palette
+    _openSearch, _closeSearch, _cmdExec,
+    // History undo (P2.6 persistent)
+    _undoFromToast, _undoLast, _undoEntry, _toggleUndoPanel, _closeUndoBar,
     // FAB
-    fabAction,
+    fabAction, _toggleFabMenu, _fabCtxAction,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
     // Groups
@@ -2021,18 +2483,27 @@ if ('serviceWorker' in navigator) {
 
 // ── Offline/Online detection ─────────────────────────────────
 window.addEventListener('offline', () => {
-  const banner = document.createElement('div');
-  banner.id = 'offline-banner';
-  banner.className = 'offline-banner';
-  banner.textContent = 'You are offline - changes will sync when connection returns';
-  document.body.prepend(banner);
   // AXE 5.4: update network indicator
   if (typeof App !== 'undefined' && App._updateNetIndicator) App._updateNetIndicator(false);
+  // P6.1: OfflineQueue banner handles the visual feedback
+  if (window.OfflineQueue) window.OfflineQueue.updateBanner();
 });
 
 window.addEventListener('online', () => {
-  const banner = document.getElementById('offline-banner');
-  if (banner) banner.remove();
   // AXE 5.4: update network indicator
   if (typeof App !== 'undefined' && App._updateNetIndicator) App._updateNetIndicator(true);
+  // P6.1: OfflineQueue handles flush + banner update
+  if (window.OfflineQueue) window.OfflineQueue.updateBanner();
+});
+
+// ── P4.5: Protect against browser close with unsaved modal changes ───
+window.addEventListener('beforeunload', e => {
+  if (typeof window._SL === 'undefined') return;
+  const overlays = document.querySelectorAll('.modal-overlay[id]');
+  for (const ov of overlays) {
+    if (!ov.classList.contains('hidden') && window._SL._isModalDirty(ov.id)) {
+      e.preventDefault();
+      return;
+    }
+  }
 });
