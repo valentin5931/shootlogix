@@ -264,6 +264,32 @@ const App = (() => {
     return html;
   }
 
+  // ── Loading helpers (needed by dynamic modules) ────
+  function _showLoading(containerId, type = 'spinner', opts = {}) {
+    const el = typeof containerId === 'string' ? $(containerId) : containerId;
+    if (!el) return;
+    const msg = opts.message || '';
+    if (type === 'spinner') {
+      el.innerHTML = `<div class="loading-container">
+        <div class="loading-spinner${opts.size ? ' ' + opts.size : ''}"></div>
+        ${msg ? `<div>${esc(msg)}</div>` : ''}
+      </div>`;
+    } else if (type === 'cards') {
+      el.innerHTML = `<div class="skeleton-list">${_skeletonCards(opts.count || 4)}</div>`;
+    } else if (type === 'stats') {
+      el.innerHTML = _skeletonCards(opts.count || 3);
+    } else if (type === 'table') {
+      el.innerHTML = _skeletonTable(opts.rows || 6, opts.cols || 10);
+    }
+  }
+
+  function _hideLoading(containerId) {
+    const el = typeof containerId === 'string' ? $(containerId) : containerId;
+    if (!el) return;
+    el.classList.add('loaded-fade');
+    el.addEventListener('animationend', () => el.classList.remove('loaded-fade'), { once: true });
+  }
+
   // ── AXE 5.4 — Save Flash (green flash on cell/element) ────
   let _pendingFlash = null; // { selector, timeout }
   function _flashSaved(el) {
@@ -567,6 +593,24 @@ const App = (() => {
 
   function _isAdmin() {
     return authState.currentRole === 'ADMIN' || (authState.user && authState.user.is_admin);
+  }
+
+  function _getModulePerm(mod) {
+    return authState.permissions ? authState.permissions[mod] : null;
+  }
+
+  function _canViewMoney() {
+    return _isAdmin() || authState.currentRole === 'UNIT';
+  }
+
+  function _canExport(mod) {
+    const perm = _getModulePerm(mod);
+    return perm ? !!perm.can_export : _canEdit();
+  }
+
+  function _canImport(mod) {
+    const perm = _getModulePerm(mod);
+    return perm ? !!perm.can_import : _isAdmin();
   }
 
   function _applyUIRestrictions() {
@@ -910,7 +954,7 @@ const App = (() => {
   }
 
   // ── Tab navigation ─────────────────────────────────────────
-  function setTab(tab) {
+  async function setTab(tab) {
     state.tab = tab;
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tab === tab);
@@ -933,6 +977,12 @@ const App = (() => {
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
     if (tab === 'checklist')       loadChecklist();
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
+    // Dynamic module tabs (fleet, today, crew, documents, timeline)
+    if (tab === 'today')           { await _loadModule('today'); App.renderToday?.(); }
+    if (tab === 'fleet')           { _showLoading('fleet-cards', 'cards', { count: 6 }); await _loadModule('fleet'); App.loadAndRenderFleet?.(); }
+    if (tab === 'crew')            { _renderCrewSubTab(); }
+    if (tab === 'documents')       { await _loadModule('documents'); App.renderDocuments?.(); }
+    if (tab === 'timeline')        { App.renderTimeline?.(); }
     _updateFab();
     _updateBreadcrumb();
     _updateBottomNav();
@@ -940,10 +990,12 @@ const App = (() => {
 
   // ── Breadcrumb ──────────────────────────────────────────────
   const TAB_LABELS = {
-    dashboard: 'Dashboard', pdt: 'PDT', locations: 'Locations',
+    today: 'Today', dashboard: 'Dashboard', pdt: 'Schedule', locations: 'Locations',
+    fleet: 'Fleet', crew: 'Crew',
     boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
     transport: 'Transport', fuel: 'Fuel', labour: 'Labor',
-    guards: 'Guards', fnb: 'Catering', budget: 'Budget', admin: 'Admin',
+    guards: 'Guards', fnb: 'Catering', budget: 'Budget',
+    documents: 'Documents', timeline: 'Timeline', admin: 'Admin',
   };
 
   function _updateBreadcrumb(view, entity) {
@@ -12664,6 +12716,99 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ── Crew Tab (unified view of Labour + Guards) ──────────────
+  let _crewSubTab = 'labour';
+
+  function crewSetSubTab(sub) {
+    _crewSubTab = sub;
+    const labourPanel = $('crew-labour-panel');
+    const guardsPanel = $('crew-guards-panel');
+    const labourBtn = $('crew-subtab-labour');
+    const guardsBtn = $('crew-subtab-guards');
+    if (labourBtn) labourBtn.classList.toggle('active', sub === 'labour');
+    if (guardsBtn) guardsBtn.classList.toggle('active', sub === 'guards');
+    if (labourPanel) labourPanel.classList.toggle('hidden', sub !== 'labour');
+    if (guardsPanel) guardsPanel.classList.toggle('hidden', sub !== 'guards');
+    // Render sub-tab content into the crew panel
+    if (sub === 'labour') {
+      _tabCtx = 'labour';
+      // Move labour content into crew panel if needed
+      const labourView = $('view-labour');
+      if (labourView && labourPanel && labourPanel.children.length === 0) {
+        while (labourView.firstChild) labourPanel.appendChild(labourView.firstChild);
+      }
+      _loadAndRenderLabour();
+    } else {
+      state.guardSchedules = null;
+      state.locationSchedules = null;
+      state.locationSites = null;
+      // Move guards content into crew panel if needed
+      const guardsView = $('view-guards');
+      if (guardsView && guardsPanel && guardsPanel.children.length === 0) {
+        while (guardsView.firstChild) guardsPanel.appendChild(guardsView.firstChild);
+      }
+      renderGuards();
+    }
+  }
+
+  function _renderCrewSubTab() {
+    crewSetSubTab(_crewSubTab);
+  }
+
+  // ── Undo stub (for dynamic modules) ────────────────────────
+  function _pushUndo() { /* undo not implemented in monolith — stub */ }
+
+  // ── Dynamic Module Loader (for tabs not in monolith) ──────
+  const _loadedModules = {};
+  const MODULE_MAP = {
+    'today':     '/static/modules/today.js',
+    'fleet':     '/static/modules/fleet.js',
+    'crew':      '/static/modules/crew.js',
+    'documents': '/static/modules/documents.js',
+  };
+  const MODULE_DEPS = {
+    'fleet': ['boats', 'picture-boats', 'security-boats'],
+    'crew':  ['labour', 'guards'],
+  };
+
+  async function _loadModule(name) {
+    if (_loadedModules[name]) return;
+    const deps = MODULE_DEPS[name] || [];
+    for (const dep of deps) {
+      await _loadModule(dep);
+    }
+    if (_loadedModules[name]) return;
+    const url = MODULE_MAP[name];
+    if (!url) { _loadedModules[name] = true; return; }
+    try {
+      _loadedModules[name] = true;
+      await import(url);
+    } catch (e) {
+      console.error(`[MODULE] Failed to load ${name}:`, e);
+      _loadedModules[name] = false;
+    }
+  }
+
+  // ── Expose shared context for dynamic modules ───────────────
+  window._SL = {
+    state, authState, $, esc, api, toast, _pushUndo, fmtMoney, fmtDate, fmtDateLong,
+    _localDk, workingDays, activeWorkingDays, computeWd, effectiveStatus,
+    waveClass, waveLabel, _morphHTML, _morphChildren, _morphAttributes,
+    _debouncedRender, _renderTimers,
+    _flashSaved, _flashSavedCard, _queueCellFlash,
+    _skeletonCards, _skeletonTable, _showLoading, _hideLoading,
+    _virtualScheduleSetup, _getVisibleColRange, _vcolWidth,
+    VCOL_WIDTH_DESKTOP, VCOL_WIDTH_MOBILE, VCOL_BUFFER,
+    _saveScheduleScroll, _restoreScheduleScroll, _scheduleCellBg,
+    _canEdit, _canEditPrices, _canEditFuelPrices, _isAdmin, _canViewTab,
+    _canExport, _canImport, _canViewMoney, _getModulePerm,
+    _applyPriceRestrictions, _applyUIRestrictions,
+    authFetch, authDownload, _getAccessToken,
+    STATUS_LABEL, SCHEDULE_START, SCHEDULE_END, EV_DEFAULTS,
+    _groupColor, _groupOrder,
+    _loadModule,
+  };
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -12770,6 +12915,8 @@ const App = (() => {
     fnbSetSubTab, fnbSetViewMode, fnbCellClick, fnbCellClear, fnbExportCSV,
     showFnbCatModal, closeFnbCatModal, editFnbCategory, saveFnbCategory, deleteFnbCategory,
     showFnbItemModal, closeFnbItemModal, editFnbItem, saveFnbItem, deleteFnbItem,
+    // Crew
+    crewSetSubTab, _renderCrewSubTab,
     // Checklist
     loadChecklist, generateChecklist, toggleChecklistItem,
     // Auth
