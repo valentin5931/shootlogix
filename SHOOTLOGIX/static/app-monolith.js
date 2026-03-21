@@ -539,10 +539,10 @@ const App = (() => {
 
   // ── Auth: permissions & UI restrictions ──────────────────
   const ROLE_ALLOWED_TABS = {
-    ADMIN:   ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
-    UNIT:    ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
-    TRANSPO: ['dashboard','boats','picture-boats','security-boats','transport','fuel'],
-    READER:  ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
+    ADMIN:   ['dashboard','today','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline'],
+    UNIT:    ['dashboard','today','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline'],
+    TRANSPO: ['dashboard','today','fleet','boats','picture-boats','security-boats','transport','fuel'],
+    READER:  ['dashboard','today','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline'],
   };
 
   function _canViewTab(tab) {
@@ -920,12 +920,15 @@ const App = (() => {
     if (panel) panel.classList.add('active');
 
     if (tab === 'dashboard')       renderDashboard();
+    if (tab === 'today')           renderToday();
     if (tab === 'pdt')             { if (_pdtView === 'calendar') { _initCalMonth(); renderPDTCalendar(); } else renderPDT(); }
+    if (tab === 'fleet')           renderFleetHub();
     if (tab === 'boats')           { _tabCtx = 'boats';     renderBoats(); }
     if (tab === 'picture-boats')   { _tabCtx = 'picture';   renderPictureBoats(); }
     if (tab === 'transport')       { _tabCtx = 'transport'; _loadAndRenderTransport(); }
     if (tab === 'fuel')            _loadAndRenderFuel();
     if (tab === 'budget')          renderBudget();
+    if (tab === 'crew')            renderCrewHub();
     if (tab === 'labour')          { _tabCtx = 'labour'; _loadAndRenderLabour(); }
     if (tab === 'security-boats')  _loadAndRenderSecurityBoats();
     if (tab === 'locations')       { state.locationSchedules = null; renderLocations(); }
@@ -940,10 +943,11 @@ const App = (() => {
 
   // ── Breadcrumb ──────────────────────────────────────────────
   const TAB_LABELS = {
-    dashboard: 'Dashboard', pdt: 'PDT', locations: 'Locations',
-    boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
-    transport: 'Transport', fuel: 'Fuel', labour: 'Labor',
+    dashboard: 'Dashboard', today: 'Today', pdt: 'PDT', locations: 'Locations',
+    fleet: 'Fleet', boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
+    transport: 'Transport', fuel: 'Fuel', crew: 'Crew', labour: 'Labor',
     guards: 'Guards', fnb: 'Catering', budget: 'Budget', admin: 'Admin',
+    checklist: 'Checklist', documents: 'Documents', timeline: 'Timeline',
   };
 
   function _updateBreadcrumb(view, entity) {
@@ -998,6 +1002,119 @@ const App = (() => {
   function closeShortcutsPanel() {
     const overlay = $('shortcuts-overlay');
     if (overlay) overlay.classList.add('hidden');
+  }
+
+  // ── Today tab ──────────────────────────────────────────────
+  async function renderToday() {
+    const container = $('today-content');
+    if (!container) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const days = state.days || [];
+    const todayDay = days.find(d => d.date === todayStr);
+    if (!todayDay) {
+      container.innerHTML = `<div style="padding:2rem;text-align:center;color:var(--text-3)">
+        <h3>No shooting day scheduled for today (${todayStr})</h3>
+        <p>Check the <a href="#" onclick="App.setTab('pdt');return false" style="color:var(--primary)">Schedule</a> for upcoming days.</p>
+      </div>`;
+      return;
+    }
+    container.innerHTML = `<div style="padding:1rem">
+      <h3 style="margin-bottom:.5rem">Day ${todayDay.day_number || '?'} — ${todayStr}</h3>
+      <div style="display:grid;gap:.5rem;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+        <div class="stat-card"><div class="stat-label">Location</div><div class="stat-value">${todayDay.location || '—'}</div></div>
+        <div class="stat-card"><div class="stat-label">Event</div><div class="stat-value">${todayDay.event_type || '—'}</div></div>
+        <div class="stat-card"><div class="stat-label">Game</div><div class="stat-value">${todayDay.game || '—'}</div></div>
+        <div class="stat-card"><div class="stat-label">Status</div><div class="stat-value">${todayDay.status || '—'}</div></div>
+      </div>
+    </div>`;
+  }
+
+  // ── Fleet hub tab ──────────────────────────────────────────
+  function renderFleetHub() {
+    const nav = $('fleet-sub-nav');
+    const cards = $('fleet-cards');
+    if (!nav || !cards) return;
+    nav.innerHTML = `<div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
+      <button class="filter-pill" onclick="App.setTab('boats')">Boats</button>
+      <button class="filter-pill" onclick="App.setTab('picture-boats')">Picture Boats</button>
+      <button class="filter-pill" onclick="App.setTab('security-boats')">Security Boats</button>
+    </div>`;
+    const boatCount = (state.boats || []).length;
+    const pbCount = (state.pictureBoats || []).length;
+    const sbCount = (state.securityBoats || []).length;
+    cards.innerHTML = `<div style="padding:1rem;display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+      <div class="stat-card" style="cursor:pointer" onclick="App.setTab('boats')">
+        <div class="stat-label">Boats</div>
+        <div class="stat-value">${boatCount}</div>
+        <div style="font-size:.75rem;color:var(--text-3)">Click to manage</div>
+      </div>
+      <div class="stat-card" style="cursor:pointer" onclick="App.setTab('picture-boats')">
+        <div class="stat-label">Picture Boats</div>
+        <div class="stat-value">${pbCount}</div>
+        <div style="font-size:.75rem;color:var(--text-3)">Click to manage</div>
+      </div>
+      <div class="stat-card" style="cursor:pointer" onclick="App.setTab('security-boats')">
+        <div class="stat-label">Security Boats</div>
+        <div class="stat-value">${sbCount}</div>
+        <div style="font-size:.75rem;color:var(--text-3)">Click to manage</div>
+      </div>
+    </div>`;
+  }
+
+  // ── Crew hub tab ───────────────────────────────────────────
+  let _crewSubTab = 'labour';
+
+  function renderCrewHub() {
+    // The crew hub shows sub-navigation pills between Labour and Guards.
+    // Render summary cards and keep sub-tabs functional.
+    const labourPanel = $('crew-labour-panel');
+    const guardsPanel = $('crew-guards-panel');
+    if (labourPanel) {
+      const workerCount = (state.labourWorkers || []).length;
+      const funcCount = (state.labourFunctions || []).filter(f => f.context === 'labour').length;
+      labourPanel.innerHTML = `<div style="padding:1rem;display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+        <div class="stat-card" style="cursor:pointer" onclick="App.setTab('labour')">
+          <div class="stat-label">Workers</div>
+          <div class="stat-value">${workerCount}</div>
+          <div style="font-size:.75rem;color:var(--text-3)">Click for full view</div>
+        </div>
+        <div class="stat-card" style="cursor:pointer" onclick="App.setTab('labour')">
+          <div class="stat-label">Functions</div>
+          <div class="stat-value">${funcCount}</div>
+          <div style="font-size:.75rem;color:var(--text-3)">Click for full view</div>
+        </div>
+      </div>`;
+    }
+    if (guardsPanel) {
+      guardsPanel.innerHTML = `<div style="padding:1rem;display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+        <div class="stat-card" style="cursor:pointer" onclick="App.setTab('guards')">
+          <div class="stat-label">Guard Posts</div>
+          <div class="stat-value">—</div>
+          <div style="font-size:.75rem;color:var(--text-3)">Click for full view</div>
+        </div>
+      </div>`;
+    }
+    crewSetSubTab(_crewSubTab || 'labour');
+  }
+
+  function crewSetSubTab(tab) {
+    _crewSubTab = tab;
+    const labourPanel = $('crew-labour-panel');
+    const guardsPanel = $('crew-guards-panel');
+    const labourBtn = $('crew-subtab-labour');
+    const guardsBtn = $('crew-subtab-guards');
+
+    if (tab === 'labour') {
+      if (labourPanel) labourPanel.classList.remove('hidden');
+      if (guardsPanel) guardsPanel.classList.add('hidden');
+      if (labourBtn) labourBtn.classList.add('active');
+      if (guardsBtn) guardsBtn.classList.remove('active');
+    } else if (tab === 'guards') {
+      if (labourPanel) labourPanel.classList.add('hidden');
+      if (guardsPanel) guardsPanel.classList.remove('hidden');
+      if (labourBtn) labourBtn.classList.remove('active');
+      if (guardsBtn) guardsBtn.classList.add('active');
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -12573,6 +12690,9 @@ const App = (() => {
       else if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
       else if (tab === 'budget')          { renderBudget(); }
       else if (tab === 'dashboard')       { renderDashboard(); }
+      else if (tab === 'fleet')           { renderFleetHub(); }
+      else if (tab === 'crew')            { renderCrewHub(); }
+      else if (tab === 'today')           { renderToday(); }
     } catch(e) { toast('Refresh failed: ' + e.message, 'error'); }
   }
 
@@ -12794,6 +12914,8 @@ const App = (() => {
     _undoFromToast,
     // FAB
     fabAction,
+    // Fleet & Crew hub tabs
+    renderFleetHub, renderCrewHub, crewSetSubTab, renderToday,
     // Bottom nav & breadcrumb & shortcuts
     toggleBottomNavMore, _updateBreadcrumb,
     openShortcutsPanel, closeShortcutsPanel,
