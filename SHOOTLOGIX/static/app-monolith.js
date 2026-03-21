@@ -931,6 +931,11 @@ const App = (() => {
     if (tab === 'locations')       { state.locationSchedules = null; renderLocations(); }
     if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
+    if (tab === 'fleet')           _renderFleetHub();
+    if (tab === 'today')           _renderTodayView();
+    if (tab === 'crew')            _renderCrewHub();
+    if (tab === 'documents')       _renderDocumentsPlaceholder();
+    if (tab === 'timeline')        _renderTimelinePlaceholder();
     if (tab === 'checklist')       loadChecklist();
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
@@ -940,10 +945,11 @@ const App = (() => {
 
   // ── Breadcrumb ──────────────────────────────────────────────
   const TAB_LABELS = {
-    dashboard: 'Dashboard', pdt: 'PDT', locations: 'Locations',
-    boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
-    transport: 'Transport', fuel: 'Fuel', labour: 'Labor',
-    guards: 'Guards', fnb: 'Catering', budget: 'Budget', admin: 'Admin',
+    dashboard: 'Dashboard', today: 'Today', pdt: 'PDT', locations: 'Locations',
+    fleet: 'Fleet', boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
+    transport: 'Transport', fuel: 'Fuel', crew: 'Crew', labour: 'Labor',
+    guards: 'Guards', fnb: 'Catering', budget: 'Budget',
+    documents: 'Documents', timeline: 'Timeline', admin: 'Admin',
   };
 
   function _updateBreadcrumb(view, entity) {
@@ -987,6 +993,176 @@ const App = (() => {
   function toggleBottomNavMore() {
     const sheet = $('bnav-more-sheet');
     if (sheet) sheet.classList.toggle('hidden');
+  }
+
+  // ── Fleet Hub (P0 fix — unified Boats/Picture Boats/Security Boats) ───
+  let _fleetSubTab = 'boats';
+
+  function _renderFleetHub() {
+    const nav = $('fleet-sub-nav');
+    const cards = $('fleet-cards');
+    if (!nav) return;
+    nav.innerHTML = `
+      <div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
+        <button class="filter-pill ${_fleetSubTab === 'boats' ? 'active' : ''}"
+                onclick="App.fleetSetSubTab('boats')">Boats</button>
+        <button class="filter-pill ${_fleetSubTab === 'picture' ? 'active' : ''}"
+                onclick="App.fleetSetSubTab('picture')">Picture Boats</button>
+        <button class="filter-pill ${_fleetSubTab === 'security' ? 'active' : ''}"
+                onclick="App.fleetSetSubTab('security')">Security Boats</button>
+      </div>`;
+    // Delegate to the existing per-module render
+    if (_fleetSubTab === 'boats')    { _tabCtx = 'boats';   renderBoats(); _showFleetContent('boats'); }
+    if (_fleetSubTab === 'picture')  { _tabCtx = 'picture'; renderPictureBoats(); _showFleetContent('picture-boats'); }
+    if (_fleetSubTab === 'security') { _loadAndRenderSecurityBoats(); _showFleetContent('security-boats'); }
+  }
+
+  function _showFleetContent(subView) {
+    // Show the sub-view panel inside the fleet container
+    // We move the existing view panel content into fleet-cards if needed
+    const cards = $('fleet-cards');
+    const source = $(`view-${subView}`);
+    if (!cards || !source) return;
+    // Clone children from the sub-view into fleet-cards
+    cards.innerHTML = '';
+    // Instead of moving DOM, simply switch to the actual sub-tab view
+    // Hide the fleet panel and show the sub-view panel
+    document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+    source.classList.add('active');
+    // Keep fleet tab highlighted in nav
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === 'fleet');
+    });
+    // Re-render sub-nav at top of sub-view
+    const existingNav = source.querySelector('.fleet-injected-nav');
+    if (existingNav) existingNav.remove();
+    const navClone = $('fleet-sub-nav').cloneNode(true);
+    navClone.classList.add('fleet-injected-nav');
+    navClone.id = '';
+    source.insertBefore(navClone, source.firstChild);
+  }
+
+  function fleetSetSubTab(sub) {
+    _fleetSubTab = sub;
+    _renderFleetHub();
+  }
+
+  // ── Crew Hub (P0 fix — unified Labour + Guards) ──────────────
+  let _crewSubTab = 'labour';
+
+  function _renderCrewHub() {
+    const labourPanel = $('crew-labour-panel');
+    const guardsPanel = $('crew-guards-panel');
+    if (!labourPanel || !guardsPanel) return;
+    // Update sub-tab buttons
+    const labBtn = $('crew-subtab-labour');
+    const gdBtn = $('crew-subtab-guards');
+    if (labBtn) labBtn.classList.toggle('active', _crewSubTab === 'labour');
+    if (gdBtn) gdBtn.classList.toggle('active', _crewSubTab === 'guards');
+    if (_crewSubTab === 'labour') {
+      labourPanel.classList.remove('hidden');
+      guardsPanel.classList.add('hidden');
+      _tabCtx = 'labour';
+      _loadAndRenderLabour();
+    } else {
+      labourPanel.classList.add('hidden');
+      guardsPanel.classList.remove('hidden');
+      state.guardSchedules = null;
+      state.locationSchedules = null;
+      state.locationSites = null;
+      renderGuards();
+    }
+  }
+
+  function crewSetSubTab(sub) {
+    _crewSubTab = sub;
+    _renderCrewHub();
+  }
+
+  // ── Today View (P0 fix — daily operations overview) ──────────
+  async function _renderTodayView() {
+    const panel = $('view-today');
+    if (!panel) return;
+    const today = new Date().toISOString().slice(0, 10);
+    panel.innerHTML = `<div style="padding:1rem">
+      <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem">
+        <h2 style="margin:0">Today's Operations</h2>
+        <input type="date" id="today-date-picker" class="form-control" style="width:auto"
+               value="${today}" onchange="App.renderTodayView()">
+      </div>
+      <div id="today-content"><div class="loading-spinner">Loading...</div></div>
+    </div>`;
+    const dateInput = $('today-date-picker');
+    const selectedDate = dateInput ? dateInput.value : today;
+    try {
+      const [days, boats, funcs, assignments] = await Promise.all([
+        api(`/api/productions/${state.prodId}/shooting-days`),
+        api(`/api/productions/${state.prodId}/boats`),
+        api(`/api/productions/${state.prodId}/boat-functions`),
+        api(`/api/productions/${state.prodId}/boat-assignments`),
+      ]);
+      const dayInfo = days.find(d => d.date === selectedDate);
+      const activeAssignments = assignments.filter(a => {
+        return a.start_date <= selectedDate && a.end_date >= selectedDate;
+      });
+      const content = $('today-content');
+      if (!content) return;
+      let html = '';
+      // Day info
+      if (dayInfo) {
+        html += `<div class="card" style="padding:.75rem;margin-bottom:1rem">
+          <h3 style="margin:0 0 .5rem">Day ${dayInfo.day_number} — ${esc(dayInfo.date)}</h3>
+          ${dayInfo.location ? `<p style="margin:.2rem 0"><strong>Location:</strong> ${esc(dayInfo.location)}</p>` : ''}
+          ${dayInfo.game_name ? `<p style="margin:.2rem 0"><strong>Game:</strong> ${esc(dayInfo.game_name)}</p>` : ''}
+          ${dayInfo.notes ? `<p style="margin:.2rem 0;color:var(--text-muted)">${esc(dayInfo.notes)}</p>` : ''}
+        </div>`;
+      } else {
+        html += `<div class="card" style="padding:.75rem;margin-bottom:1rem;color:var(--text-muted)">No shooting day scheduled for ${esc(selectedDate)}</div>`;
+      }
+      // Active boats
+      html += `<h3>Active Boat Assignments (${activeAssignments.length})</h3>`;
+      if (activeAssignments.length === 0) {
+        html += `<p style="color:var(--text-muted)">No active boat assignments for this date.</p>`;
+      } else {
+        html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.5rem">`;
+        for (const a of activeAssignments) {
+          const fn = funcs.find(f => f.id === a.function_id);
+          const boat = boats.find(b => b.id === a.boat_id);
+          html += `<div class="card" style="padding:.5rem">
+            <div style="font-weight:600">${esc(fn ? fn.name : 'Function #' + a.function_id)}</div>
+            <div style="color:var(--text-muted);font-size:.85rem">${esc(boat ? boat.name : 'Boat #' + a.boat_id)}</div>
+            <div style="font-size:.8rem;color:var(--text-muted)">${esc(a.start_date)} → ${esc(a.end_date)}</div>
+          </div>`;
+        }
+        html += `</div>`;
+      }
+      content.innerHTML = html;
+    } catch (e) {
+      const content = $('today-content');
+      if (content) content.innerHTML = `<p style="color:var(--error)">Failed to load today's data: ${esc(e.message)}</p>`;
+    }
+  }
+
+  // ── Documents placeholder (P0 fix — shows empty state) ───────
+  function _renderDocumentsPlaceholder() {
+    const content = $('documents-content');
+    if (!content || content.children.length > 0) return;
+    content.innerHTML = `<div style="padding:2rem;text-align:center;color:var(--text-muted)">
+      <h2>Documents</h2>
+      <p>Document management for this production.</p>
+      <p style="font-size:.85rem">Upload and manage production documents here.</p>
+    </div>`;
+  }
+
+  // ── Timeline placeholder (P0 fix — shows empty state) ────────
+  function _renderTimelinePlaceholder() {
+    const content = $('timeline-content');
+    if (!content || content.children.length > 0) return;
+    content.innerHTML = `<div style="padding:2rem;text-align:center;color:var(--text-muted)">
+      <h2>Timeline</h2>
+      <p>Gantt-style timeline view of the production schedule.</p>
+      <p style="font-size:.85rem">Coming soon.</p>
+    </div>`;
   }
 
   // ── Keyboard shortcuts help panel ──────────────────────────
@@ -12794,6 +12970,12 @@ const App = (() => {
     _undoFromToast,
     // FAB
     fabAction,
+    // Fleet hub (P0 fix)
+    fleetSetSubTab,
+    // Crew hub (P0 fix)
+    crewSetSubTab,
+    // Today view (P0 fix)
+    renderTodayView: _renderTodayView,
     // Bottom nav & breadcrumb & shortcuts
     toggleBottomNavMore, _updateBreadcrumb,
     openShortcutsPanel, closeShortcutsPanel,
