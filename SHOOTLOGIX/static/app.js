@@ -689,10 +689,10 @@ const App = (() => {
   // ── Auth: permissions & UI restrictions (RBAC V2) ────────
   // V1 fallback tabs (used only when no V2 permissions loaded)
   const ROLE_ALLOWED_TABS = {
-    ADMIN:   ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget'],
-    UNIT:    ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget'],
-    TRANSPO: ['today','dashboard','fleet','boats','picture-boats','security-boats','transport','fuel'],
-    READER:  ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget'],
+    ADMIN:   ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline','admin'],
+    UNIT:    ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline'],
+    TRANSPO: ['today','dashboard','fleet','boats','picture-boats','security-boats','transport','fuel','checklist','documents','timeline'],
+    READER:  ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline'],
   };
 
   function _getModulePerm(tab) {
