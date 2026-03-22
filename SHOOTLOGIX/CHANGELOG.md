@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-03-22 — [P0] Fix Timeline API crash — 3 wrong column references
+
+**Problem**: The `/api/productions/:id/timeline` endpoint crashed with 500 `sqlite3.OperationalError` every time it was called.
+
+**Root cause**: The timeline query referenced 3 columns that don't exist in the actual database schema:
+1. `locations.site` — doesn't exist (actual columns: `type`, `location_type`)
+2. `location_schedules.prep/filming/wrap` — don't exist (actual: single `status` column with P/F/W values)
+3. `guard_camp_assignments.worker_id` — doesn't exist (actual: `helper_id`)
+
+**Fix**:
+- `app.py` (lines ~7893-7914): Rewrote the Locations and Guards sections of `api_timeline()` to match actual schema
+
+**Verification**:
+- Timeline endpoint returns 200 with 81 resources and 32 shooting days (was 500)
+- Location resources show correct subgroups from `location_type`
+- No regressions on other endpoints
+
+**Branch**: fix/2026-03-22-timeline-no-such-column-site
+**PR**: #21
+**Side effects**: None
+**Next priority**: P1 issues — Picture Boats and Security Boats lists empty; Transport/Helpers/Guards lists empty (no data seeded)
+
 ## 2026-03-22 — [P0] Fix 5 broken tabs (Fleet, Crew, Today, Documents, Timeline) + Documents API crash
 
 **Problem**: Fleet, Crew, Today, Documents, and Timeline tabs did nothing when clicked. Additionally, all Documents API endpoints crashed with a 500 error.

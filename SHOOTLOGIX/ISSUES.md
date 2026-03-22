@@ -1,5 +1,16 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## ~~[P0] Timeline API crash — no such column: site~~ ✅ FIXED (PR #21)
+- **Fixed**: 2026-03-22
+- **Fix**: Corrected 3 wrong column references in timeline endpoint (locations.site, location_schedules.prep/filming/wrap, guard_camp_assignments.worker_id)
+
+## [P1] No /api/schedule or /api/labour routes — PDT and Labour diagnostic checks return 404
+- **Discovered**: 2026-03-22
+- **Symptoms**: `/api/productions/1/schedule` and `/api/productions/1/labour` return 404. The app uses `location-schedules` for scheduling and `helpers` for labour workers instead.
+- **Likely cause**: The diagnostic checklist references routes that were never created. The JS frontend uses `location-schedules` and `helpers` endpoints correctly.
+- **Files involved**: `app.py` — no schedule/labour routes exist
+- **Estimated effort**: Quick — either add alias routes or update the diagnostic checklist
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
