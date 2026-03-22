@@ -35,6 +35,10 @@
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
 
+## [P0] RESOLVED — Timeline API crash (fixed 2026-03-22)
+- `locations.site` → `location_type`, `location_schedules.prep/filming/wrap` → `status`
+- Fixed in PR #17
+
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22
 - **Symptoms**: Files like `fleet.js`, `crew.js`, `today.js`, `documents.js`, etc. in `static/modules/` reference `window._SL` which doesn't exist. They are never loaded by `index.html`.

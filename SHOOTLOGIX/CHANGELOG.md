@@ -22,3 +22,22 @@
 **PR**: #14
 **Side effects**: None
 **Next priority**: Test fleet/crew sub-tab navigation thoroughly; remaining P0 items from CLAUDE.md checklist (modal/form submissions, entity CRUD operations)
+
+## 2026-03-22 — [P0] Fix Timeline API crash — wrong column names in SQL
+
+**Problem**: The `/api/productions/:id/timeline` endpoint crashed with `sqlite3.OperationalError: no such column: site` (HTTP 500).
+
+**Root cause**: The timeline endpoint's SQL queries referenced non-existent columns:
+- `locations.site` (actual column: `location_type`)
+- `location_schedules.prep`, `.filming`, `.wrap` (actual column: `status` with values like 'P', 'F', 'W')
+
+**Fix**: `app.py` line ~7893: Updated SQL queries to use correct column names and adjusted the phase-building logic to work with the single `status` column.
+
+**Verification**:
+- Timeline returns 200 with 81 resources, 121 functions
+- All 45 tests pass
+- All other endpoints unaffected
+
+**Branch**: fix/2026-03-22-timeline-api-crash
+**Side effects**: None
+**Next priority**: P1 UX issues — 16 duplicate PRs cleaned up, all P0 backend crashes resolved
