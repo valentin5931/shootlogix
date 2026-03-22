@@ -7880,7 +7880,7 @@ def api_timeline(prod_id):
         guards = conn.execute("SELECT id, name, role FROM guard_camp_workers WHERE production_id=?", (prod_id,)).fetchall()
         for g in guards:
             assignments = conn.execute(
-                "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM guard_camp_assignments WHERE worker_id=?",
+                "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM guard_camp_assignments WHERE helper_id=?",
                 (g['id'],)
             ).fetchall()
             resources.append({
@@ -7898,11 +7898,11 @@ def api_timeline(prod_id):
             ).fetchall()
             loc_assignments = []
             for s in schedules:
-                status_val = s['status'] or ''
-                if status_val:
+                phase = s['status'] or ''
+                if phase:
                     loc_assignments.append({
                         'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
-                        'status': 'confirmed', 'phases': status_val
+                        'status': 'confirmed', 'phases': phase
                     })
             resources.append({
                 'id': f"loc-{loc['id']}", 'name': loc['name'], 'type': 'location', 'group': 'Locations',
