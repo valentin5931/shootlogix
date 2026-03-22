@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-03-22 — [P0] Fix Timeline API crash — wrong column names in SQL queries
+
+**Problem**: The `/api/productions/{id}/timeline` endpoint returned a 500 error (`sqlite3.OperationalError`), making the Timeline tab completely non-functional.
+
+**Root cause**: Three SQL queries in `api_timeline()` referenced columns that don't exist in the actual database schema:
+1. `SELECT id, name, site FROM locations` — `site` column doesn't exist (should be `location_type`)
+2. `SELECT id, date, prep, filming, wrap FROM location_schedules` — `prep`/`filming`/`wrap` columns don't exist (the table uses a single `status` column with values like 'F', 'P', 'W')
+3. `WHERE worker_id=?` in `guard_camp_assignments` — column is actually `helper_id`
+
+**Fix**:
+- `app.py` line 7893: Changed `site` → `location_type` in locations query
+- `app.py` lines 7896-7908: Rewrote location_schedules query to use `status` column instead of `prep`/`filming`/`wrap`
+- `app.py` line 7883: Changed `worker_id` → `helper_id` in guard_camp_assignments query
+
+**Verification**:
+- Timeline API now returns 200 with 81 resources and 32 shooting days
+- All other endpoints still return 200 (no regressions)
+- Python syntax check passes
+
+**Branch**: fix/2026-03-22-timeline-api-crash
+**PR**: #15
+**Side effects**: None
+**Next priority**: P1 issues — empty picture-boats, security-boats, transport, guards lists
+
 ## 2026-03-22 — [P0] Fix 5 broken tabs (Fleet, Crew, Today, Documents, Timeline) + Documents API crash
 
 **Problem**: Fleet, Crew, Today, Documents, and Timeline tabs did nothing when clicked. Additionally, all Documents API endpoints crashed with a 500 error.
@@ -22,3 +46,22 @@
 **PR**: #14
 **Side effects**: None
 **Next priority**: Test fleet/crew sub-tab navigation thoroughly; remaining P0 items from CLAUDE.md checklist (modal/form submissions, entity CRUD operations)
+
+## 2026-03-22 — [P0] Fix Timeline API crash — wrong column names in SQL
+
+**Problem**: The `/api/productions/:id/timeline` endpoint crashed with `sqlite3.OperationalError: no such column: site` (HTTP 500).
+
+**Root cause**: The timeline endpoint's SQL queries referenced non-existent columns:
+- `locations.site` (actual column: `location_type`)
+- `location_schedules.prep`, `.filming`, `.wrap` (actual column: `status` with values like 'P', 'F', 'W')
+
+**Fix**: `app.py` line ~7893: Updated SQL queries to use correct column names and adjusted the phase-building logic to work with the single `status` column.
+
+**Verification**:
+- Timeline returns 200 with 81 resources, 121 functions
+- All 45 tests pass
+- All other endpoints unaffected
+
+**Branch**: fix/2026-03-22-timeline-api-crash
+**Side effects**: None
+**Next priority**: P1 UX issues — 16 duplicate PRs cleaned up, all P0 backend crashes resolved
