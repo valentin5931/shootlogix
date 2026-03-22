@@ -18,7 +18,7 @@
 - No regressions in other tabs
 
 **Branch**: fix/2026-03-22-checklist-tab-broken
-**PR**: (pending)
+**PR**: #22
 **Side effects**: None
 **Next priority**: P1 — Timeline tab has no `renderTimeline` implementation; Picture Boats/Security Boats/Labour/Guards tabs show empty lists (data model issue)
 
