@@ -1588,6 +1588,7 @@ const App = (() => {
     'comments':       '/static/modules/comments.js',
     'notifications':  '/static/modules/notifications.js',
     'documents':      '/static/modules/documents.js',
+    'checklist':      '/static/modules/checklist.js',
   };
 
   // Dependencies: some modules need other modules loaded first
@@ -2192,6 +2193,7 @@ const App = (() => {
     if (tab === 'locations')       { state.locationSchedules = null; App.renderLocations?.(); }
     if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; App.renderGuards?.(); }
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; App.renderFnb?.(); }
+    if (tab === 'checklist')       App.loadChecklist?.();
     if (tab === 'documents')       App.renderDocuments?.();
     if (tab === 'timeline')        App.renderTimeline?.();
     if (tab === 'admin')           App.adminSetTab?.(_adminTab || 'users');

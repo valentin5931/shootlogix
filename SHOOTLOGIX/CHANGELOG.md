@@ -14,3 +14,17 @@
 **PR**: #6
 **Side effects**: None — all previously working tabs continue to work. The monolith file is still present but no longer loaded.
 **Next priority**: Verify all tab rendering works end-to-end in browser. Then continue with P0 checklist (test adding/editing entities, export CSV, check for console errors).
+
+## 2026-03-22 — [P0] Add Checklist tab support to modular app.js
+
+**Problem**: Checklist tab had no handler in `setTabLazy` and no module in `static/modules/`.
+
+**Root cause**: The checklist code only existed in the old `app-monolith.js`. When switching to modular `app.js`, checklist functionality was lost.
+
+**Fix**:
+- `static/app.js`: Added `'checklist'` to `MODULE_MAP` and `setTabLazy` handler
+- `static/modules/checklist.js`: New module extracted from monolith, adapted to modular API (`state.prodId`, `window._SL` pattern)
+
+**Verification**: All 45 tests pass, module loads at `/static/modules/checklist.js` (200).
+**Branch**: fix/2026-03-22-switch-to-modular-app-js
+**Side effects**: None
