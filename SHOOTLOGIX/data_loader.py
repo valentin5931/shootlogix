@@ -21,6 +21,7 @@ from database import (
     create_production, seed_departments,
     create_boat, create_boat_function, create_boat_assignment,
     create_helper, create_helper_assignment,
+    create_picture_boat,
     create_security_boat, create_security_boat_assignment,
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
@@ -301,6 +302,7 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _populate_picture_boats_from_fleet(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -340,6 +342,7 @@ def bootstrap():
               f"delta={bv.get('delta')}")
 
     _seed_picture_boats(prod_id)
+    _populate_picture_boats_from_fleet(prod_id)
     _seed_helpers(prod_id)
     _seed_security_boats(prod_id)
     _seed_transport(prod_id)
@@ -1490,6 +1493,71 @@ def _migrate_boat_update_mar(prod_id):
 
     set_setting("boat_update_mar_v1", "1")
     print("  [Update Mar] Boat schedule update complete.")
+
+
+def _populate_picture_boats_from_fleet(prod_id):
+    """
+    Migrate boats from the main `boats` table into `picture_boats`.
+    All boats in the fleet should also appear in the Picture Boats sub-tab.
+    Sets physical_vessel_id to link back to the physical vessel.
+    Idempotent: skipped if already run (flag: populate_picture_boats_v1).
+    """
+    if get_setting("populate_picture_boats_v1"):
+        return
+
+    with get_db() as conn:
+        # Only migrate if picture_boats is still empty
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM picture_boats WHERE production_id=?", (prod_id,)
+        ).fetchone()[0]
+        if existing > 0:
+            set_setting("populate_picture_boats_v1", "1")
+            return
+
+        boats = conn.execute(
+            "SELECT * FROM boats WHERE production_id=? AND deleted_at IS NULL ORDER BY sort_order, boat_nr, name",
+            (prod_id,)
+        ).fetchall()
+
+        if not boats:
+            print("  [Populate PB] No boats found to migrate")
+            set_setting("populate_picture_boats_v1", "1")
+            return
+
+        cols = ["production_id", "boat_nr", "name", "capacity", "night_ok",
+                "wave_rating", "captain", "vendor", "group_name", "notes",
+                "daily_rate_estimate", "daily_rate_actual", "image_path",
+                "currency"]
+        placeholders = ", ".join("?" * len(cols))
+        col_names = ", ".join(cols)
+
+        count = 0
+        for b in boats:
+            b = dict(b)
+            values = [
+                prod_id,
+                b.get("boat_nr"),
+                b["name"],
+                b.get("capacity"),
+                b.get("night_ok", 0),
+                b.get("wave_rating", "Waves"),
+                b.get("captain"),
+                b.get("vendor"),
+                b.get("group_name", "Custom"),
+                b.get("notes"),
+                b.get("daily_rate_estimate", 0),
+                b.get("daily_rate_actual"),
+                b.get("image_path"),
+                b.get("currency", "USD"),
+            ]
+            conn.execute(
+                f"INSERT INTO picture_boats ({col_names}) VALUES ({placeholders})",
+                values
+            )
+            count += 1
+
+    set_setting("populate_picture_boats_v1", "1")
+    print(f"  [Populate PB] Migrated {count} boats from fleet to picture_boats table")
 
 
 if __name__ == "__main__":
