@@ -10,6 +10,7 @@
 - `loadChecklist()`: guard clause + API URL
 - `generateChecklist()`: guard clause + API URL
 - `toggleChecklistItem()`: guard clause + API URL
+- `_renderChecklist()`: Fixed `_esc(item.item_text)` → `esc(item.item_text)` (line 13064) — `_esc` was undefined, would crash with ReferenceError when rendering checklist items
 
 **Verification**:
 - JS syntax check passes
