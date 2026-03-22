@@ -4334,7 +4334,11 @@ const App = (() => {
     const assignedIds = new Set(state.pictureAssignments.filter(a => a.picture_boat_id).map(a => a.picture_boat_id));
     const container = $('pb-boat-list');
     if (!boats.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No picture boats</div>';
+      container.innerHTML = `<div style="color:var(--text-4);font-size:.85rem;text-align:center;padding:2rem 1rem">
+        <div style="font-size:1.5rem;margin-bottom:.5rem">⛵</div>
+        <div>No picture boats yet</div>
+        ${_canEdit() ? '<div style="margin-top:.5rem;font-size:.75rem">Tap the <strong>+</strong> button to add one</div>' : ''}
+      </div>`;
       return;
     }
     container.innerHTML = boats.map(b => {
@@ -8126,7 +8130,11 @@ const App = (() => {
     const container = $('sb-boat-list');
     if (!container) return;
     if (!boats.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No security boats</div>';
+      container.innerHTML = `<div style="color:var(--text-4);font-size:.85rem;text-align:center;padding:2rem 1rem">
+        <div style="font-size:1.5rem;margin-bottom:.5rem">🛡️</div>
+        <div>No security boats yet</div>
+        ${_canEdit() ? '<div style="margin-top:.5rem;font-size:.75rem">Tap the <strong>+</strong> button to add one</div>' : ''}
+      </div>`;
       return;
     }
     container.innerHTML = boats.map(b => {
@@ -12862,10 +12870,17 @@ const App = (() => {
     fnb:              { get label() { return t('fab.category'); },  action: () => showFnbCatModal() },
   };
 
+  function _fabEffectiveTab() {
+    // Fleet and Crew are unified tabs with sub-tabs that have their own FAB configs
+    if (state.tab === 'fleet') return _fleetSubTab || 'boats';
+    if (state.tab === 'crew')  return _crewSubTab  || 'labour';
+    return state.tab;
+  }
+
   function _updateFab() {
     const fab = $('fab-btn');
     if (!fab) return;
-    const cfg = FAB_CONFIG[state.tab];
+    const cfg = FAB_CONFIG[_fabEffectiveTab()];
     if (!cfg || !_canEdit()) {
       fab.style.display = 'none';
       return;
@@ -12876,7 +12891,7 @@ const App = (() => {
   }
 
   function fabAction() {
-    const cfg = FAB_CONFIG[state.tab];
+    const cfg = FAB_CONFIG[_fabEffectiveTab()];
     if (cfg) cfg.action();
   }
 

@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-03-22 — [P1] Fix FAB (+ button) hidden on Fleet/Crew sub-tabs + improve empty states
+
+**Problem**: When navigating to Fleet > Picture Boats, Fleet > Security Boats, Crew > Labour, or Crew > Guards via the unified tab sub-navigation, the floating action button (FAB/+ button) was hidden. Users could not add new picture boats, security boats, workers, or guards from these views. Additionally, empty state messages were unhelpful ("No picture boats" with no guidance).
+
+**Root cause**: The `_updateFab()` function looked up `FAB_CONFIG[state.tab]`, but when Fleet or Crew unified tabs were active, `state.tab` was set to `'fleet'` or `'crew'` — values that had no FAB_CONFIG entry. The actual sub-tab values (`'picture-boats'`, `'security-boats'`, `'labour'`, `'guards'`) that DO have FAB_CONFIG entries were stored in `_fleetSubTab` / `_crewSubTab` variables but never consulted.
+
+**Fix**:
+- `static/app-monolith.js`: Added `_fabEffectiveTab()` helper that resolves `fleet` → `_fleetSubTab` and `crew` → `_crewSubTab`, used by both `_updateFab()` and `fabAction()`
+- Improved empty state messages for picture boats and security boats with icons and actionable guidance
+
+**Verification**:
+- FAB now appears correctly on all Fleet/Crew sub-tabs
+- Empty state messages guide users to use the + button
+- 45/45 tests pass
+- All API endpoints return 200
+- No JS syntax errors (balanced braces and template literals)
+
+**Branch**: fix/2026-03-22-fleet-crew-fab-hidden
+**PR**: pending
+**Side effects**: None
+**Next priority**: Picture boats and security boats tables are empty (data seeding issue — users need to add them manually via the now-working FAB button)
+
 ## 2026-03-22 — [P0] Fix 5 broken tabs (Fleet, Crew, Today, Documents, Timeline) + Documents API crash
 
 **Problem**: Fleet, Crew, Today, Documents, and Timeline tabs did nothing when clicked. Additionally, all Documents API endpoints crashed with a 500 error.
