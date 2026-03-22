@@ -18,7 +18,7 @@
 - No JS syntax errors (balanced braces and template literals)
 
 **Branch**: fix/2026-03-22-fleet-crew-fab-hidden
-**PR**: pending
+**PR**: #24
 **Side effects**: None
 **Next priority**: Picture boats and security boats tables are empty (data seeding issue — users need to add them manually via the now-working FAB button)
 
