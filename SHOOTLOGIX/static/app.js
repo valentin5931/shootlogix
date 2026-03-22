@@ -689,10 +689,10 @@ const App = (() => {
   // ── Auth: permissions & UI restrictions (RBAC V2) ────────
   // V1 fallback tabs (used only when no V2 permissions loaded)
   const ROLE_ALLOWED_TABS = {
-    ADMIN:   ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget'],
-    UNIT:    ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget'],
-    TRANSPO: ['today','dashboard','fleet','boats','picture-boats','security-boats','transport','fuel'],
-    READER:  ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget'],
+    ADMIN:   ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline'],
+    UNIT:    ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline'],
+    TRANSPO: ['today','dashboard','fleet','boats','picture-boats','security-boats','transport','fuel','checklist'],
+    READER:  ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline'],
   };
 
   function _getModulePerm(tab) {
@@ -1139,7 +1139,7 @@ const App = (() => {
     fleet: 'Fleet', crew: 'Crew',
     boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
     transport: 'Transport', fuel: 'Fuel', labour: 'Labor',
-    guards: 'Guards', fnb: 'Catering', budget: 'Budget', documents: 'Documents', timeline: 'Timeline', admin: 'Admin',
+    guards: 'Guards', fnb: 'Catering', budget: 'Budget', checklist: 'Checklist', documents: 'Documents', timeline: 'Timeline', admin: 'Admin',
   };
 
   // Parent tab mapping: sub-tabs that belong to a unified view
@@ -1588,6 +1588,7 @@ const App = (() => {
     'comments':       '/static/modules/comments.js',
     'notifications':  '/static/modules/notifications.js',
     'documents':      '/static/modules/documents.js',
+    'checklist':      '/static/modules/checklist.js',
   };
 
   // Dependencies: some modules need other modules loaded first
@@ -2194,6 +2195,7 @@ const App = (() => {
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; App.renderFnb?.(); }
     if (tab === 'documents')       App.renderDocuments?.();
     if (tab === 'timeline')        App.renderTimeline?.();
+    if (tab === 'checklist')       App.loadChecklist?.();
     if (tab === 'admin')           App.adminSetTab?.(_adminTab || 'users');
     _updateFab();
     _updateBreadcrumb();
