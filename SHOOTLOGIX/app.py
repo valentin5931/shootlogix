@@ -7402,18 +7402,17 @@ def api_restore_fnb_category(cat_id):
 @app.route("/api/productions/<int:prod_id>/documents", methods=["GET"])
 def api_get_documents(prod_id):
     prod_or_404(prod_id)
-    db = get_db()
-    rows = db.execute(
-        "SELECT * FROM documents WHERE production_id = ? ORDER BY uploaded_at DESC",
-        (prod_id,)
-    ).fetchall()
-    return jsonify([dict(r) for r in rows])
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT * FROM documents WHERE production_id = ? ORDER BY uploaded_at DESC",
+            (prod_id,)
+        ).fetchall()
+        return jsonify([dict(r) for r in rows])
 
 
 @app.route("/api/productions/<int:prod_id>/documents", methods=["POST"])
 def api_create_document(prod_id):
     prod_or_404(prod_id)
-    db = get_db()
     data = request.form if request.files else request.get_json(force=True)
     name = data.get("name", "").strip()
     if not name:
@@ -7438,120 +7437,116 @@ def api_create_document(prod_id):
             file_path = f"data/documents/{prod_id}/{safe_name}"
             fmt = fmt or os.path.splitext(safe_name)[1].lstrip('.')
 
-    cur = db.execute(
-        """INSERT INTO documents (production_id, department_id, name, doc_type, format, file_path, uploaded_by, status, current_version)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)""",
-        (prod_id, department_id, name, doc_type, fmt, file_path, user_id, status)
-    )
-    doc_id = cur.lastrowid
+    with get_db() as db:
+        cur = db.execute(
+            """INSERT INTO documents (production_id, department_id, name, doc_type, format, file_path, uploaded_by, status, current_version)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+            (prod_id, department_id, name, doc_type, fmt, file_path, user_id, status)
+        )
+        doc_id = cur.lastrowid
 
-    # Create initial version entry
-    db.execute(
-        """INSERT INTO document_versions (document_id, version_number, file_path, uploaded_by, upload_nickname)
-           VALUES (?, 1, ?, ?, ?)""",
-        (doc_id, file_path, user_id, nickname)
-    )
-    db.commit()
+        # Create initial version entry
+        db.execute(
+            """INSERT INTO document_versions (document_id, version_number, file_path, uploaded_by, upload_nickname)
+               VALUES (?, 1, ?, ?, ?)""",
+            (doc_id, file_path, user_id, nickname)
+        )
     return jsonify({"id": doc_id}), 201
 
 
 @app.route("/api/productions/<int:prod_id>/documents/<int:doc_id>", methods=["PUT"])
 def api_update_document(prod_id, doc_id):
     prod_or_404(prod_id)
-    db = get_db()
-    row = db.execute("SELECT * FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id)).fetchone()
-    if not row:
-        abort(404, description="Document not found")
-    data = request.get_json(force=True)
-    name = data.get("name", row["name"])
-    doc_type = data.get("doc_type", row["doc_type"])
-    department_id = data.get("department_id", row["department_id"])
-    db.execute(
-        "UPDATE documents SET name = ?, doc_type = ?, department_id = ? WHERE id = ?",
-        (name, doc_type, department_id, doc_id)
-    )
-    db.commit()
+    with get_db() as db:
+        row = db.execute("SELECT * FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id)).fetchone()
+        if not row:
+            abort(404, description="Document not found")
+        data = request.get_json(force=True)
+        name = data.get("name", row["name"])
+        doc_type = data.get("doc_type", row["doc_type"])
+        department_id = data.get("department_id", row["department_id"])
+        db.execute(
+            "UPDATE documents SET name = ?, doc_type = ?, department_id = ? WHERE id = ?",
+            (name, doc_type, department_id, doc_id)
+        )
     return jsonify({"updated": doc_id})
 
 
 @app.route("/api/productions/<int:prod_id>/documents/<int:doc_id>", methods=["DELETE"])
 def api_delete_document(prod_id, doc_id):
     prod_or_404(prod_id)
-    db = get_db()
-    db.execute("DELETE FROM document_versions WHERE document_id = ?", (doc_id,))
-    db.execute("DELETE FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id))
-    db.commit()
+    with get_db() as db:
+        db.execute("DELETE FROM document_versions WHERE document_id = ?", (doc_id,))
+        db.execute("DELETE FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id))
     return jsonify({"deleted": doc_id})
 
 
 @app.route("/api/productions/<int:prod_id>/documents/<int:doc_id>/status", methods=["PUT"])
 def api_update_document_status(prod_id, doc_id):
     prod_or_404(prod_id)
-    db = get_db()
-    row = db.execute("SELECT * FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id)).fetchone()
-    if not row:
-        abort(404, description="Document not found")
-    data = request.get_json(force=True)
-    new_status = data.get("status", "").strip()
-    valid = ('draft', 'under_review', 'approved', 'archived')
-    if new_status not in valid:
-        return jsonify({"error": f"status must be one of {valid}"}), 400
-    db.execute("UPDATE documents SET status = ? WHERE id = ?", (new_status, doc_id))
-    db.commit()
+    with get_db() as db:
+        row = db.execute("SELECT * FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id)).fetchone()
+        if not row:
+            abort(404, description="Document not found")
+        data = request.get_json(force=True)
+        new_status = data.get("status", "").strip()
+        valid = ('draft', 'under_review', 'approved', 'archived')
+        if new_status not in valid:
+            return jsonify({"error": f"status must be one of {valid}"}), 400
+        db.execute("UPDATE documents SET status = ? WHERE id = ?", (new_status, doc_id))
     return jsonify({"id": doc_id, "status": new_status})
 
 
 @app.route("/api/productions/<int:prod_id>/documents/<int:doc_id>/versions", methods=["GET"])
 def api_get_document_versions(prod_id, doc_id):
     prod_or_404(prod_id)
-    db = get_db()
-    row = db.execute("SELECT id FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id)).fetchone()
-    if not row:
-        abort(404, description="Document not found")
-    versions = db.execute(
-        "SELECT * FROM document_versions WHERE document_id = ? ORDER BY version_number DESC",
-        (doc_id,)
-    ).fetchall()
-    return jsonify([dict(v) for v in versions])
+    with get_db() as db:
+        row = db.execute("SELECT id FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id)).fetchone()
+        if not row:
+            abort(404, description="Document not found")
+        versions = db.execute(
+            "SELECT * FROM document_versions WHERE document_id = ? ORDER BY version_number DESC",
+            (doc_id,)
+        ).fetchall()
+        return jsonify([dict(v) for v in versions])
 
 
 @app.route("/api/productions/<int:prod_id>/documents/<int:doc_id>/versions", methods=["POST"])
 def api_upload_document_version(prod_id, doc_id):
     prod_or_404(prod_id)
-    db = get_db()
-    row = db.execute("SELECT * FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id)).fetchone()
-    if not row:
-        abort(404, description="Document not found")
+    with get_db() as db:
+        row = db.execute("SELECT * FROM documents WHERE id = ? AND production_id = ?", (doc_id, prod_id)).fetchone()
+        if not row:
+            abort(404, description="Document not found")
 
-    user_id = getattr(g, 'user_id', None)
-    nickname = getattr(g, 'nickname', None)
-    current_ver = row["current_version"] or 1
-    new_ver = current_ver + 1
+        user_id = getattr(g, 'user_id', None)
+        nickname = getattr(g, 'nickname', None)
+        current_ver = row["current_version"] or 1
+        new_ver = current_ver + 1
 
-    file_path = None
-    if "file" in request.files:
-        f = request.files["file"]
-        if f.filename:
-            import werkzeug.utils
-            upload_dir = os.path.join(os.path.dirname(__file__), 'data', 'documents', str(prod_id))
-            os.makedirs(upload_dir, exist_ok=True)
-            safe_name = werkzeug.utils.secure_filename(f.filename)
-            base, ext = os.path.splitext(safe_name)
-            versioned_name = f"{base}_v{new_ver}{ext}"
-            dest = os.path.join(upload_dir, versioned_name)
-            f.save(dest)
-            file_path = f"data/documents/{prod_id}/{versioned_name}"
+        file_path = None
+        if "file" in request.files:
+            f = request.files["file"]
+            if f.filename:
+                import werkzeug.utils
+                upload_dir = os.path.join(os.path.dirname(__file__), 'data', 'documents', str(prod_id))
+                os.makedirs(upload_dir, exist_ok=True)
+                safe_name = werkzeug.utils.secure_filename(f.filename)
+                base, ext = os.path.splitext(safe_name)
+                versioned_name = f"{base}_v{new_ver}{ext}"
+                dest = os.path.join(upload_dir, versioned_name)
+                f.save(dest)
+                file_path = f"data/documents/{prod_id}/{versioned_name}"
 
-    db.execute(
-        """INSERT INTO document_versions (document_id, version_number, file_path, uploaded_by, upload_nickname)
-           VALUES (?, ?, ?, ?, ?)""",
-        (doc_id, new_ver, file_path, user_id, nickname)
-    )
-    db.execute(
-        "UPDATE documents SET current_version = ?, file_path = ? WHERE id = ?",
-        (new_ver, file_path or row["file_path"], doc_id)
-    )
-    db.commit()
+        db.execute(
+            """INSERT INTO document_versions (document_id, version_number, file_path, uploaded_by, upload_nickname)
+               VALUES (?, ?, ?, ?, ?)""",
+            (doc_id, new_ver, file_path, user_id, nickname)
+        )
+        db.execute(
+            "UPDATE documents SET current_version = ?, file_path = ? WHERE id = ?",
+            (new_ver, file_path or row["file_path"], doc_id)
+        )
     return jsonify({"id": doc_id, "version": new_ver}), 201
 
 
