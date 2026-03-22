@@ -909,6 +909,297 @@ const App = (() => {
     state.pictureAssignments = assignments;
   }
 
+  // ── Fleet unified view ─────────────────────────────────────
+  let _fleetData = [];
+  let _fleetFilter = 'all';
+
+  async function _loadAndRenderFleet() {
+    const container = $('fleet-cards');
+    const subNav = $('fleet-sub-nav');
+    if (!container) return;
+    container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">Loading fleet…</div>';
+    try {
+      const prodId = state.prodId;
+      const [boats, pictureBoats, securityBoats] = await Promise.all([
+        api('GET', `/api/productions/${prodId}/boats`).catch(() => []),
+        api('GET', `/api/productions/${prodId}/picture-boats`).catch(() => []),
+        api('GET', `/api/productions/${prodId}/security-boats`).catch(() => []),
+      ]);
+      _fleetData = [
+        ...boats.map(b => ({ ...b, _fleetType: 'boat' })),
+        ...pictureBoats.map(b => ({ ...b, _fleetType: 'picture' })),
+        ...securityBoats.map(b => ({ ...b, _fleetType: 'security' })),
+      ];
+      _renderFleetView();
+      if (subNav) {
+        subNav.innerHTML = `<div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
+          ${['all','boat','picture','security'].map(f => {
+            const label = f === 'all' ? 'All' : f === 'boat' ? 'Boats' : f === 'picture' ? 'Picture' : 'Security';
+            const count = f === 'all' ? _fleetData.length : _fleetData.filter(b => b._fleetType === f).length;
+            return `<button class="filter-pill ${_fleetFilter === f ? 'active' : ''}" onclick="App.fleetSetFilter('${f}')">${esc(label)} (${count})</button>`;
+          }).join('')}
+        </div>`;
+      }
+    } catch (e) {
+      container.innerHTML = `<div style="padding:2rem;text-align:center;color:var(--red)">Error loading fleet: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function fleetSetFilter(f) {
+    _fleetFilter = f;
+    _loadAndRenderFleet();
+  }
+
+  function _renderFleetView() {
+    const container = $('fleet-cards');
+    if (!container) return;
+    let list = _fleetData;
+    if (_fleetFilter !== 'all') list = list.filter(b => b._fleetType === _fleetFilter);
+    if (list.length === 0) {
+      container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">No vessels found</div>';
+      return;
+    }
+    const TYPE_BADGE = { boat: { label: 'Boat', bg: '#3B82F6' }, picture: { label: 'Picture', bg: '#8B5CF6' }, security: { label: 'Security', bg: '#EF4444' } };
+    container.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.7rem;padding:1rem">${list.map(b => {
+      const t = TYPE_BADGE[b._fleetType] || TYPE_BADGE.boat;
+      const rate = b.daily_rate_estimate || b.daily_rate || 0;
+      const rateStr = rate > 0 ? `<div style="font-size:.65rem;color:var(--green)">$${Math.round(rate).toLocaleString('en-US')}/d</div>` : '';
+      const clickTab = b._fleetType === 'picture' ? 'picture-boats' : b._fleetType === 'security' ? 'security-boats' : 'boats';
+      return `<div class="card" style="padding:.7rem;cursor:pointer;display:flex;gap:.5rem;align-items:center" onclick="App.setTab('${clickTab}')">
+        <div style="flex-shrink:0;width:36px;height:36px;border-radius:8px;background:${t.bg};color:#fff;display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700">${esc((b.boat_nr || '?').toString().slice(0,3))}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.name)}</div>
+          <div style="display:flex;gap:.3rem;align-items:center;flex-wrap:wrap">
+            <span style="font-size:.55rem;font-weight:700;padding:.05rem .3rem;border-radius:3px;background:${t.bg};color:#fff">${t.label}</span>
+            ${b.captain ? `<span style="font-size:.6rem;color:var(--text-3)">⚓ ${esc(b.captain)}</span>` : ''}
+          </div>
+          ${rateStr}
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+
+  // ── Crew unified view ─────────────────────────────────────
+  let _crewSubTab = 'labour';
+
+  function _renderCrewTab() {
+    crewSetSubTab(_crewSubTab);
+  }
+
+  function crewSetSubTab(sub) {
+    _crewSubTab = sub;
+    const labourPanel = $('crew-labour-panel');
+    const guardsPanel = $('crew-guards-panel');
+    const labourBtn = $('crew-subtab-labour');
+    const guardsBtn = $('crew-subtab-guards');
+    if (labourBtn) labourBtn.classList.toggle('active', sub === 'labour');
+    if (guardsBtn) guardsBtn.classList.toggle('active', sub === 'guards');
+    if (labourPanel) labourPanel.classList.toggle('hidden', sub !== 'labour');
+    if (guardsPanel) guardsPanel.classList.toggle('hidden', sub !== 'guards');
+    if (sub === 'labour') {
+      _tabCtx = 'labour';
+      _loadAndRenderLabourInto('crew-labour-panel');
+    } else {
+      _loadAndRenderGuardsInto('crew-guards-panel');
+    }
+  }
+
+  async function _loadAndRenderLabourInto(containerId) {
+    const container = $(containerId);
+    if (!container) return;
+    try {
+      const prodId = state.prodId;
+      const [helpers, assignments] = await Promise.all([
+        api('GET', `/api/productions/${prodId}/helpers`),
+        api('GET', `/api/productions/${prodId}/helper-assignments`),
+      ]);
+      state.helpers = helpers;
+      state.helperAssignments = assignments;
+      let html = '<div style="padding:1rem">';
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.7rem">
+        <h3 style="margin:0;font-size:1rem">Labor (${helpers.length} workers)</h3>
+      </div>`;
+      if (helpers.length === 0) {
+        html += '<div style="color:var(--text-3);text-align:center;padding:2rem">No workers. Go to the Labour tab to add workers.</div>';
+      } else {
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.5rem">';
+        helpers.forEach(h => {
+          const asgn = assignments.filter(a => a.helper_id === h.id);
+          html += `<div class="card" style="padding:.6rem">
+            <div style="font-weight:600;font-size:.8rem">${esc(h.name)}</div>
+            <div style="font-size:.65rem;color:var(--text-3)">${esc(h.role || h.group_name || '')}</div>
+            <div style="font-size:.6rem;color:var(--text-4)">${asgn.length} assignment(s)</div>
+          </div>`;
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = `<div style="padding:2rem;color:var(--red)">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  async function _loadAndRenderGuardsInto(containerId) {
+    const container = $(containerId);
+    if (!container) return;
+    try {
+      const prodId = state.prodId;
+      const [workers, assignments] = await Promise.all([
+        api('GET', `/api/productions/${prodId}/guard-camp-workers`),
+        api('GET', `/api/productions/${prodId}/guard-camp-assignments`),
+      ]);
+      let html = '<div style="padding:1rem">';
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.7rem">
+        <h3 style="margin:0;font-size:1rem">Guards (${workers.length} workers)</h3>
+      </div>`;
+      if (workers.length === 0) {
+        html += '<div style="color:var(--text-3);text-align:center;padding:2rem">No guards. Go to the Guards tab to add guards.</div>';
+      } else {
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.5rem">';
+        workers.forEach(w => {
+          const asgn = assignments.filter(a => a.worker_id === w.id);
+          html += `<div class="card" style="padding:.6rem">
+            <div style="font-weight:600;font-size:.8rem">${esc(w.name)}</div>
+            <div style="font-size:.65rem;color:var(--text-3)">${esc(w.role || w.group_name || '')}</div>
+            <div style="font-size:.6rem;color:var(--text-4)">${asgn.length} assignment(s)</div>
+          </div>`;
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = `<div style="padding:2rem;color:var(--red)">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  // ── Today view ────────────────────────────────────────────
+  async function _loadAndRenderToday() {
+    const container = $('today-content');
+    if (!container) return;
+    container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">Loading today…</div>';
+    try {
+      const prodId = state.prodId;
+      const data = await api('GET', `/api/productions/${prodId}/today`);
+      let html = '<div style="padding:1rem">';
+      html += `<h2 style="margin:0 0 .5rem;font-size:1.2rem">Today — ${esc(data.date || new Date().toISOString().slice(0,10))}</h2>`;
+      if (data.schedule) {
+        const s = data.schedule;
+        html += `<div class="card" style="padding:.8rem;margin-bottom:.7rem">
+          <div style="font-weight:600;margin-bottom:.3rem">Day ${s.day_number || '?'} — ${esc(s.location || '')}</div>
+          <div style="font-size:.8rem;color:var(--text-3)">${esc(s.game_description || s.description || '')}</div>
+        </div>`;
+      } else {
+        html += '<div class="card" style="padding:.8rem;margin-bottom:.7rem;color:var(--text-3)">No shooting day scheduled for today</div>';
+      }
+      if (data.fleet && data.fleet.length > 0) {
+        html += `<h3 style="font-size:.9rem;margin:.7rem 0 .3rem">Fleet (${data.fleet.length} vessels)</h3>`;
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.4rem">';
+        data.fleet.forEach(b => {
+          html += `<div class="card" style="padding:.5rem"><div style="font-weight:600;font-size:.75rem">${esc(b.function_name || b.name || '—')}</div><div style="font-size:.65rem;color:var(--text-3)">${esc(b.boat_name || b.name || '')}</div></div>`;
+        });
+        html += '</div>';
+      }
+      if (data.transport && data.transport.length > 0) {
+        html += `<h3 style="font-size:.9rem;margin:.7rem 0 .3rem">Transport (${data.transport.length})</h3>`;
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.4rem">';
+        data.transport.forEach(v => {
+          html += `<div class="card" style="padding:.5rem"><div style="font-weight:600;font-size:.75rem">${esc(v.function_name || v.name || '—')}</div><div style="font-size:.65rem;color:var(--text-3)">${esc(v.vehicle_name || v.name || '')}</div></div>`;
+        });
+        html += '</div>';
+      }
+      if (data.crew && data.crew.length > 0) {
+        html += `<h3 style="font-size:.9rem;margin:.7rem 0 .3rem">Crew (${data.crew.length})</h3>`;
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.4rem">';
+        data.crew.forEach(c => {
+          html += `<div class="card" style="padding:.5rem"><div style="font-weight:600;font-size:.75rem">${esc(c.function_name || c.name || '—')}</div><div style="font-size:.65rem;color:var(--text-3)">${esc(c.worker_name || c.name || '')}</div></div>`;
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = `<div style="padding:2rem;color:var(--red)">Error loading today: ${esc(e.message)}</div>`;
+    }
+  }
+
+  // ── Documents view ────────────────────────────────────────
+  async function _loadAndRenderDocuments() {
+    const container = $('documents-content');
+    if (!container) return;
+    container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">Loading documents…</div>';
+    try {
+      const prodId = state.prodId;
+      const docs = await api('GET', `/api/productions/${prodId}/documents`);
+      let html = '<div style="padding:1rem">';
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.7rem">
+        <h2 style="margin:0;font-size:1.1rem">Documents (${docs.length})</h2>
+      </div>`;
+      if (docs.length === 0) {
+        html += '<div style="text-align:center;padding:2rem;color:var(--text-3)">No documents uploaded yet</div>';
+      } else {
+        html += '<div style="display:flex;flex-direction:column;gap:.4rem">';
+        docs.forEach(d => {
+          const statusColor = d.status === 'approved' ? 'var(--green)' : d.status === 'draft' ? 'var(--orange)' : 'var(--text-3)';
+          html += `<div class="card" style="padding:.6rem;display:flex;align-items:center;gap:.7rem">
+            <div style="font-size:1.5rem">📄</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.title || d.filename || 'Untitled')}</div>
+              <div style="font-size:.65rem;color:var(--text-3)">${esc(d.category || '')} ${d.created_at ? '— ' + esc(d.created_at.slice(0,10)) : ''}</div>
+            </div>
+            <span style="font-size:.6rem;font-weight:600;color:${statusColor};text-transform:uppercase">${esc(d.status || 'unknown')}</span>
+          </div>`;
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = `<div style="padding:2rem;color:var(--red)">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  // ── Timeline view ─────────────────────────────────────────
+  async function _loadAndRenderTimeline() {
+    const container = $('timeline-content');
+    if (!container) return;
+    container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">Loading timeline…</div>';
+    try {
+      const prodId = state.prodId;
+      const data = await api('GET', `/api/productions/${prodId}/timeline`);
+      let html = '<div style="padding:1rem">';
+      html += '<h2 style="margin:0 0 .7rem;font-size:1.1rem">Production Timeline</h2>';
+      const modules = data.modules || data.groups || [];
+      if (modules.length === 0 && !data.start_date) {
+        html += '<div style="text-align:center;padding:2rem;color:var(--text-3)">No timeline data available</div>';
+      } else {
+        // Show date range
+        if (data.start_date && data.end_date) {
+          html += `<div style="font-size:.8rem;color:var(--text-3);margin-bottom:.7rem">${esc(data.start_date)} → ${esc(data.end_date)}</div>`;
+        }
+        // Render each module as a row
+        if (modules.length > 0) {
+          html += '<div style="display:flex;flex-direction:column;gap:.5rem">';
+          modules.forEach(m => {
+            const items = m.items || m.assignments || [];
+            html += `<div class="card" style="padding:.6rem">
+              <div style="font-weight:600;font-size:.8rem;margin-bottom:.3rem">${esc(m.label || m.name || 'Module')}</div>
+              <div style="display:flex;flex-wrap:wrap;gap:.2rem">
+                ${items.map(it => `<span style="font-size:.6rem;padding:.15rem .4rem;border-radius:4px;background:${esc(it.color || 'var(--bg-surface)')};border:1px solid var(--border-lt)">${esc(it.label || it.name || '—')}</span>`).join('')}
+              </div>
+            </div>`;
+          });
+          html += '</div>';
+        }
+      }
+      html += '</div>';
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = `<div style="padding:2rem;color:var(--red)">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
   // ── Tab navigation ─────────────────────────────────────────
   function setTab(tab) {
     state.tab = tab;
@@ -931,6 +1222,11 @@ const App = (() => {
     if (tab === 'locations')       { state.locationSchedules = null; renderLocations(); }
     if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
+    if (tab === 'fleet')           _loadAndRenderFleet();
+    if (tab === 'crew')            _renderCrewTab();
+    if (tab === 'today')           _loadAndRenderToday();
+    if (tab === 'documents')       _loadAndRenderDocuments();
+    if (tab === 'timeline')        _loadAndRenderTimeline();
     if (tab === 'checklist')       loadChecklist();
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
@@ -944,6 +1240,7 @@ const App = (() => {
     boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
     transport: 'Transport', fuel: 'Fuel', labour: 'Labor',
     guards: 'Guards', fnb: 'Catering', budget: 'Budget', admin: 'Admin',
+    fleet: 'Fleet', crew: 'Crew', today: 'Today', documents: 'Documents', timeline: 'Timeline',
   };
 
   function _updateBreadcrumb(view, entity) {
@@ -12799,6 +13096,10 @@ const App = (() => {
     openShortcutsPanel, closeShortcutsPanel,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
+    // Fleet unified view
+    fleetSetFilter,
+    // Crew unified view
+    crewSetSubTab,
     init,
   };
 })();
