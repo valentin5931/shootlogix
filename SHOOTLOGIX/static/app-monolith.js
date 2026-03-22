@@ -12996,9 +12996,9 @@ const App = (() => {
       dateEl.value = today;
     }
     const date = dateEl.value;
-    if (!state.production) return;
+    if (!state.prodId) return;
     try {
-      const data = await api('GET', `/api/productions/${state.production.id}/checklists?date=${date}`);
+      const data = await api('GET', `/api/productions/${state.prodId}/checklists?date=${date}`);
       _renderChecklist(data);
     } catch (e) {
       $('checklist-content').innerHTML = `<p style="color:var(--text-muted)">No checklist for this date.</p>`;
@@ -13008,18 +13008,18 @@ const App = (() => {
 
   async function generateChecklist() {
     const dateEl = $('checklist-date');
-    if (!dateEl.value || !state.production) return;
+    if (!dateEl.value || !state.prodId) return;
     try {
-      const data = await api('POST', `/api/productions/${state.production.id}/checklists/generate?date=${dateEl.value}`);
+      const data = await api('POST', `/api/productions/${state.prodId}/checklists/generate?date=${dateEl.value}`);
       _renderChecklist(data);
       toast(`Checklist generated: ${(data.items || []).length} items`);
     } catch (e) { toast(e.message, 'error'); }
   }
 
   async function toggleChecklistItem(itemId, checkbox) {
-    if (!state.production) return;
+    if (!state.prodId) return;
     try {
-      await api('PUT', `/api/productions/${state.production.id}/checklists/items/${itemId}/check`, {
+      await api('PUT', `/api/productions/${state.prodId}/checklists/items/${itemId}/check`, {
         checked: checkbox.checked
       });
       const container = $('checklist-content');
