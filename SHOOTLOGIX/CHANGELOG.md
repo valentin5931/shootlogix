@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-03-22 — [P1] Seed picture_boats and security_boats tables from main fleet
+
+**Problem**: The Picture Boats and Security Boats tabs showed empty lists. The API endpoints `/api/productions/1/picture-boats` and `/api/productions/1/security-boats` returned `[]` even though 46 boats existed in the main `boats` table.
+
+**Root cause**: The `data_loader.py` seeded boat functions (YELLOW/RED/NEUTRAL/EXILE for picture, SAFETY/MEDICAL/EVAC etc. for security) but never copied actual boat entities into the `picture_boats` and `security_boats` tables. All 46 boats remained only in the main `boats` table.
+
+**Fix**:
+- `data_loader.py`: Added two new idempotent migration functions:
+  - `_seed_picture_boat_entities(prod_id)` — copies all boats from `boats` to `picture_boats`
+  - `_seed_security_boat_entities(prod_id)` — copies all boats from `boats` to `security_boats`
+- Both functions are called during bootstrap (existing production path and first-time setup path)
+- Added `create_picture_boat` to imports from `database.py`
+
+**Verification**:
+- `/api/productions/1/picture-boats` now returns 46 boats (was 0)
+- `/api/productions/1/security-boats` now returns 46 boats (was 0)
+- Main boats endpoint still returns 46 boats (no regression)
+- All other API endpoints still return correct data
+- App starts without errors
+
+**Branch**: fix/2026-03-22-seed-picture-security-boats
+**Side effects**: None
+**Next priority**: P0 Fleet/Crew sub-tab layout shifts (sub-nav injected via prepend may cause issues); P1 Transport/Helpers/Guards data still empty (may require user to add via UI)
+
 ## 2026-03-22 — [P0] Fix 5 broken tabs (Fleet, Crew, Today, Documents, Timeline) + Documents API crash
 
 **Problem**: Fleet, Crew, Today, Documents, and Timeline tabs did nothing when clicked. Additionally, all Documents API endpoints crashed with a 500 error.

@@ -21,6 +21,7 @@ from database import (
     create_production, seed_departments,
     create_boat, create_boat_function, create_boat_assignment,
     create_helper, create_helper_assignment,
+    create_picture_boat,
     create_security_boat, create_security_boat_assignment,
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
@@ -238,6 +239,98 @@ def _seed_picture_boats(prod_id):
         print(f"  Seeded 4 Picture Boats functions (YELLOW/RED/NEUTRAL/EXILE)")
 
 
+def _seed_picture_boat_entities(prod_id):
+    """Copy boats from the main boats table into picture_boats if empty.
+
+    The boats table has 46 boats (all category='picture') but the picture_boats
+    table was never populated.  This migration copies them so the Picture Boats
+    tab can display them.  Idempotent: skips if picture_boats already has data.
+    """
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM picture_boats WHERE production_id=?", (prod_id,)
+        ).fetchone()[0]
+    if existing:
+        return
+
+    with get_db() as conn:
+        boats = conn.execute(
+            "SELECT * FROM boats WHERE production_id=? AND deleted_at IS NULL ORDER BY id",
+            (prod_id,),
+        ).fetchall()
+
+    if not boats:
+        return
+
+    count = 0
+    for b in boats:
+        b = dict(b)
+        create_picture_boat({
+            "production_id":      prod_id,
+            "boat_nr":            b.get("boat_nr"),
+            "name":               b["name"],
+            "capacity":           b.get("capacity"),
+            "night_ok":           b.get("night_ok", 0),
+            "wave_rating":        b.get("wave_rating"),
+            "captain":            b.get("captain"),
+            "vendor":             b.get("vendor"),
+            "group_name":         b.get("group_name", "Shared"),
+            "notes":              b.get("notes"),
+            "daily_rate_estimate": b.get("daily_rate_estimate"),
+            "daily_rate_actual":  b.get("daily_rate_actual"),
+            "image_path":         b.get("image_path"),
+            "currency":           b.get("currency"),
+        })
+        count += 1
+    print(f"  Seeded {count} picture boats from main boats table")
+
+
+def _seed_security_boat_entities(prod_id):
+    """Copy boats from the main boats table into security_boats if empty.
+
+    Security boats are the same physical fleet; users assign them to security
+    roles (SAFETY, MEDICAL, EVAC, etc.) via the Security Boats tab.
+    Idempotent: skips if security_boats already has data.
+    """
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM security_boats WHERE production_id=?", (prod_id,)
+        ).fetchone()[0]
+    if existing:
+        return
+
+    with get_db() as conn:
+        boats = conn.execute(
+            "SELECT * FROM boats WHERE production_id=? AND deleted_at IS NULL ORDER BY id",
+            (prod_id,),
+        ).fetchall()
+
+    if not boats:
+        return
+
+    count = 0
+    for b in boats:
+        b = dict(b)
+        create_security_boat({
+            "production_id":      prod_id,
+            "boat_nr":            b.get("boat_nr"),
+            "name":               b["name"],
+            "capacity":           b.get("capacity"),
+            "night_ok":           b.get("night_ok", 0),
+            "wave_rating":        b.get("wave_rating"),
+            "captain":            b.get("captain"),
+            "vendor":             b.get("vendor"),
+            "group_name":         b.get("group_name", "Shared"),
+            "notes":              b.get("notes"),
+            "daily_rate_estimate": b.get("daily_rate_estimate"),
+            "daily_rate_actual":  b.get("daily_rate_actual"),
+            "image_path":         b.get("image_path"),
+            "currency":           b.get("currency"),
+        })
+        count += 1
+    print(f"  Seeded {count} security boats from main boats table")
+
+
 def _backup_db():
     """Create a timestamped backup of the database before destructive migrations.
     Keeps the 5 most recent backups."""
@@ -301,6 +394,8 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _seed_picture_boat_entities(prod_id)
+        _seed_security_boat_entities(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -340,8 +435,10 @@ def bootstrap():
               f"delta={bv.get('delta')}")
 
     _seed_picture_boats(prod_id)
+    _seed_picture_boat_entities(prod_id)
     _seed_helpers(prod_id)
     _seed_security_boats(prod_id)
+    _seed_security_boat_entities(prod_id)
     _seed_transport(prod_id)
     _seed_location_sites(prod_id)
     _seed_guard_posts(prod_id)
