@@ -920,18 +920,23 @@ const App = (() => {
     if (panel) panel.classList.add('active');
 
     if (tab === 'dashboard')       renderDashboard();
+    if (tab === 'today')           _renderToday();
     if (tab === 'pdt')             { if (_pdtView === 'calendar') { _initCalMonth(); renderPDTCalendar(); } else renderPDT(); }
+    if (tab === 'fleet')           _renderFleetTab();
     if (tab === 'boats')           { _tabCtx = 'boats';     renderBoats(); }
     if (tab === 'picture-boats')   { _tabCtx = 'picture';   renderPictureBoats(); }
     if (tab === 'transport')       { _tabCtx = 'transport'; _loadAndRenderTransport(); }
     if (tab === 'fuel')            _loadAndRenderFuel();
     if (tab === 'budget')          renderBudget();
+    if (tab === 'crew')            _renderCrewTab();
     if (tab === 'labour')          { _tabCtx = 'labour'; _loadAndRenderLabour(); }
     if (tab === 'security-boats')  _loadAndRenderSecurityBoats();
     if (tab === 'locations')       { state.locationSchedules = null; renderLocations(); }
     if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
     if (tab === 'checklist')       loadChecklist();
+    if (tab === 'documents')       _renderDocuments();
+    if (tab === 'timeline')        _renderTimeline();
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
     _updateBreadcrumb();
@@ -943,7 +948,9 @@ const App = (() => {
     dashboard: 'Dashboard', pdt: 'PDT', locations: 'Locations',
     boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
     transport: 'Transport', fuel: 'Fuel', labour: 'Labor',
-    guards: 'Guards', fnb: 'Catering', budget: 'Budget', admin: 'Admin',
+    guards: 'Guards', fnb: 'Catering', budget: 'Budget',
+    today: 'Today', fleet: 'Fleet', crew: 'Crew', documents: 'Documents', timeline: 'Timeline',
+    admin: 'Admin',
   };
 
   function _updateBreadcrumb(view, entity) {
@@ -12664,6 +12671,198 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ── Fleet unified tab (Boats + Picture Boats + Security Boats) ──
+  let _fleetSubTab = 'boats';  // 'boats' | 'picture-boats' | 'security-boats'
+  const FLEET_SUBS = ['boats', 'picture-boats', 'security-boats'];
+  const FLEET_LABELS = { boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats' };
+
+  function _renderFleetTab() {
+    // Render sub-navigation inside fleet panel
+    const nav = $('fleet-sub-nav');
+    if (nav) {
+      nav.innerHTML = FLEET_SUBS.map(s =>
+        `<button class="filter-pill${_fleetSubTab === s ? ' active' : ''}" onclick="App.fleetSetSubTab('${s}')">${FLEET_LABELS[s]}</button>`
+      ).join('');
+      nav.style.cssText = 'display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)';
+    }
+    // Show/hide sub-panels within fleet
+    _fleetShowSub(_fleetSubTab);
+  }
+
+  function fleetSetSubTab(sub) {
+    _fleetSubTab = sub;
+    // Update pills
+    const nav = $('fleet-sub-nav');
+    if (nav) {
+      nav.querySelectorAll('.filter-pill').forEach((btn, i) => {
+        btn.classList.toggle('active', FLEET_SUBS[i] === sub);
+      });
+    }
+    _fleetShowSub(sub);
+  }
+
+  function _fleetShowSub(sub) {
+    // Move the sub-panel content into fleet-cards, or toggle visibility
+    // Approach: show/hide the actual view panels inside fleet container
+    const container = $('fleet-cards');
+    if (!container) return;
+    // Ensure sub-panels are inside fleet-cards
+    for (const s of FLEET_SUBS) {
+      const panel = $(`view-${s}`);
+      if (panel && panel.parentNode !== container) {
+        container.appendChild(panel);
+      }
+      if (panel) {
+        panel.style.display = s === sub ? '' : 'none';
+        // Ensure panel is not treated as view-panel for tab switching
+        panel.classList.remove('active');
+      }
+    }
+    // Load and render
+    if (sub === 'boats')           { _tabCtx = 'boats'; renderBoats(); }
+    if (sub === 'picture-boats')   { _tabCtx = 'picture'; renderPictureBoats(); }
+    if (sub === 'security-boats')  _loadAndRenderSecurityBoats();
+    _updateBreadcrumb(FLEET_LABELS[sub]);
+  }
+
+  // ── Crew unified tab (Labour + Guards sub-tabs) ────────────
+  let _crewSubTab = 'labour';  // 'labour' | 'guards'
+
+  function crewSetSubTab(sub) {
+    _crewSubTab = sub;
+    const labourBtn = $('crew-subtab-labour');
+    const guardsBtn = $('crew-subtab-guards');
+    if (labourBtn) labourBtn.classList.toggle('active', sub === 'labour');
+    if (guardsBtn) guardsBtn.classList.toggle('active', sub === 'guards');
+    // Move the actual view panels into crew container panels
+    const labourPanel = $('crew-labour-panel');
+    const guardsPanel = $('crew-guards-panel');
+    const labourView = $('view-labour');
+    const guardsView = $('view-guards');
+    if (labourView && labourPanel && labourView.parentNode !== labourPanel) {
+      labourPanel.appendChild(labourView);
+    }
+    if (guardsView && guardsPanel && guardsView.parentNode !== guardsPanel) {
+      guardsPanel.appendChild(guardsView);
+    }
+    if (labourView) { labourView.style.display = sub === 'labour' ? '' : 'none'; labourView.classList.remove('active'); }
+    if (guardsView) { guardsView.style.display = sub === 'guards' ? '' : 'none'; guardsView.classList.remove('active'); }
+    if (labourPanel) labourPanel.classList.toggle('hidden', sub !== 'labour');
+    if (guardsPanel) guardsPanel.classList.toggle('hidden', sub !== 'guards');
+    if (sub === 'labour') {
+      _tabCtx = 'labour';
+      _loadAndRenderLabour();
+    } else {
+      state.guardSchedules = null;
+      state.locationSchedules = null;
+      state.locationSites = null;
+      renderGuards();
+    }
+    _updateBreadcrumb(sub === 'labour' ? 'Labor' : 'Guards');
+  }
+
+  function _renderCrewTab() {
+    crewSetSubTab(_crewSubTab);
+  }
+
+  // ── Today tab (summary of today's schedule) ────────────────
+  async function _renderToday() {
+    const container = $('view-today');
+    if (!container) return;
+    const today = new Date().toISOString().slice(0, 10);
+    container.innerHTML = '<div style="padding:1rem;color:var(--text-3)">Loading today\'s overview...</div>';
+    try {
+      const days = state.shootingDays || [];
+      const todayDay = days.find(d => d.date === today);
+      if (todayDay) {
+        const events = todayDay.events || [];
+        let html = `<div style="padding:1rem">
+          <h3 style="margin:0 0 .8rem">Today — Day ${todayDay.day_number} (${today})</h3>`;
+        if (events.length === 0) {
+          html += '<p style="color:var(--text-3)">No events scheduled for today.</p>';
+        } else {
+          html += '<div style="display:flex;flex-direction:column;gap:.5rem">';
+          for (const ev of events) {
+            html += `<div style="padding:.6rem .8rem;background:var(--bg-2);border-radius:.5rem;border:1px solid var(--border)">
+              <strong>${esc(ev.event_type || '')}</strong>
+              ${ev.name ? ' — ' + esc(ev.name) : ''}
+              ${ev.location ? ' @ ' + esc(ev.location) : ''}
+              ${ev.heure_arrivee ? ' | ' + esc(ev.heure_arrivee) : ''}
+            </div>`;
+          }
+          html += '</div>';
+        }
+        html += '</div>';
+        container.innerHTML = html;
+      } else {
+        container.innerHTML = `<div style="padding:1rem">
+          <h3 style="margin:0 0 .5rem">Today — ${today}</h3>
+          <p style="color:var(--text-3)">No shooting day scheduled for today.</p>
+        </div>`;
+      }
+    } catch (e) {
+      container.innerHTML = `<div style="padding:1rem;color:var(--text-3)">Could not load today's data.</div>`;
+    }
+  }
+
+  // ── Documents tab (placeholder) ────────────────────────────
+  function _renderDocuments() {
+    const container = $('view-documents');
+    if (!container) return;
+    if (!state.prodId) { container.innerHTML = '<p style="padding:1rem;color:var(--text-3)">Select a project first.</p>'; return; }
+    container.innerHTML = '<div style="padding:1rem;color:var(--text-3)">Loading documents...</div>';
+    api('GET', `/api/productions/${state.prodId}/documents`)
+      .then(docs => {
+        if (!docs || docs.length === 0) {
+          container.innerHTML = '<div style="padding:1rem"><p style="color:var(--text-3)">No documents uploaded yet.</p></div>';
+          return;
+        }
+        let html = '<div style="padding:1rem"><h3 style="margin:0 0 .8rem">Documents</h3><div style="display:flex;flex-direction:column;gap:.4rem">';
+        for (const doc of docs) {
+          html += `<div style="padding:.5rem .8rem;background:var(--bg-2);border-radius:.4rem;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+            <span>${esc(doc.name || doc.filename || 'Untitled')}</span>
+            ${doc.filepath ? `<a href="/api/documents/download/${encodeURIComponent(doc.filepath)}" style="color:var(--accent);font-size:.8rem">Download</a>` : ''}
+          </div>`;
+        }
+        html += '</div></div>';
+        container.innerHTML = html;
+      })
+      .catch(() => {
+        container.innerHTML = '<div style="padding:1rem;color:var(--text-3)">Could not load documents.</div>';
+      });
+  }
+
+  // ── Timeline tab (activity feed) ──────────────────────────
+  function _renderTimeline() {
+    const container = $('view-timeline');
+    if (!container) return;
+    if (!state.prodId) { container.innerHTML = '<p style="padding:1rem;color:var(--text-3)">Select a project first.</p>'; return; }
+    container.innerHTML = '<div style="padding:1rem;color:var(--text-3)">Loading activity...</div>';
+    api('GET', `/api/productions/${state.prodId}/activity?limit=50`)
+      .then(entries => {
+        if (!entries || entries.length === 0) {
+          container.innerHTML = '<div style="padding:1rem"><p style="color:var(--text-3)">No activity yet.</p></div>';
+          return;
+        }
+        let html = '<div style="padding:1rem"><h3 style="margin:0 0 .8rem">Activity Timeline</h3><div style="display:flex;flex-direction:column;gap:.4rem">';
+        for (const e of entries) {
+          const desc = e.human_description || e.description || e.action || '';
+          const who = e.user_nickname || '';
+          const when = e.created_at ? e.created_at.slice(0, 16).replace('T', ' ') : '';
+          html += `<div style="padding:.5rem .8rem;background:var(--bg-2);border-radius:.4rem;border:1px solid var(--border);font-size:.85rem">
+            <span style="color:var(--text-2);font-weight:600">${esc(who)}</span>
+            <span style="color:var(--text-3)">${esc(desc)}</span>
+            <span style="color:var(--text-4);font-size:.75rem;float:right">${esc(when)}</span>
+          </div>`;
+        }
+        html += '</div></div>';
+        container.innerHTML = html;
+      })
+      .catch(() => {
+        container.innerHTML = '<div style="padding:1rem;color:var(--text-3)">Could not load activity.</div>';
+      });
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -12799,6 +12998,12 @@ const App = (() => {
     openShortcutsPanel, closeShortcutsPanel,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
+    // Fleet unified tab
+    fleetSetSubTab,
+    // Crew unified tab
+    crewSetSubTab,
+    // Today / Documents / Timeline
+    _renderToday, _renderDocuments, _renderTimeline,
     init,
   };
 })();
