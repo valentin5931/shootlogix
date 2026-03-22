@@ -909,6 +909,405 @@ const App = (() => {
     state.pictureAssignments = assignments;
   }
 
+  // ── Fleet unified tab ──────────────────────────────────────
+  // Fleet shows a sub-navigation, then activates the appropriate existing tab view
+  let _fleetSubTab = 'boats'; // boats | picture-boats | security-boats
+
+  function renderFleetUnified() {
+    // Switch to the appropriate sub-tab view while keeping Fleet visually active
+    const tabMap = { 'boats': 'boats', 'picture-boats': 'picture-boats', 'security-boats': 'security-boats' };
+    const target = tabMap[_fleetSubTab] || 'boats';
+
+    // Hide the fleet panel, show the sub-tab panel instead
+    const fleetPanel = $('view-fleet');
+    if (fleetPanel) fleetPanel.classList.remove('active');
+    const targetPanel = $(`view-${target}`);
+    if (targetPanel) targetPanel.classList.add('active');
+
+    // Render sub-nav inside fleet panel (shown at top)
+    const nav = $('fleet-sub-nav');
+    if (nav) {
+      nav.innerHTML = `
+        <div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
+          <button class="filter-pill${_fleetSubTab === 'boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('boats')">Boats</button>
+          <button class="filter-pill${_fleetSubTab === 'picture-boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('picture-boats')">Picture Boats</button>
+          <button class="filter-pill${_fleetSubTab === 'security-boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('security-boats')">Security Boats</button>
+        </div>`;
+      // Inject sub-nav before the target panel content
+      if (targetPanel) {
+        targetPanel.prepend(nav);
+        nav.style.display = 'block';
+      }
+    }
+
+    // Trigger the sub-tab's render function
+    if (target === 'boats')           { _tabCtx = 'boats';   renderBoats(); }
+    if (target === 'picture-boats')   { _tabCtx = 'picture'; renderPictureBoats(); }
+    if (target === 'security-boats')  { _loadAndRenderSecurityBoats(); }
+
+    // Keep Fleet tab visually active
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === 'fleet');
+    });
+  }
+
+  function fleetSetSubTab(sub) {
+    _fleetSubTab = sub;
+    renderFleetUnified();
+  }
+
+  // ── Crew unified tab ──────────────────────────────────────
+  // Crew shows a sub-navigation, then activates labour or guards view
+  let _crewSubTab = 'labour'; // labour | guards
+
+  function renderCrewUnified() {
+    const tabMap = { 'labour': 'labour', 'guards': 'guards' };
+    const target = tabMap[_crewSubTab] || 'labour';
+
+    // Hide crew panel, show sub-tab panel
+    const crewPanel = $('view-crew');
+    if (crewPanel) crewPanel.classList.remove('active');
+    const targetPanel = $(`view-${target}`);
+    if (targetPanel) targetPanel.classList.add('active');
+
+    // Update crew sub-tab buttons (they exist in view-crew HTML)
+    const lBtn = $('crew-subtab-labour');
+    const gBtn = $('crew-subtab-guards');
+    if (lBtn) lBtn.classList.toggle('active', _crewSubTab === 'labour');
+    if (gBtn) gBtn.classList.toggle('active', _crewSubTab === 'guards');
+
+    // Inject crew sub-nav at top of target panel
+    let subNav = document.getElementById('crew-sub-nav-injected');
+    if (!subNav) {
+      subNav = document.createElement('div');
+      subNav.id = 'crew-sub-nav-injected';
+    }
+    subNav.innerHTML = `
+      <div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
+        <button class="filter-pill${_crewSubTab === 'labour' ? ' active' : ''}" onclick="App.crewSetSubTab('labour')">Labor</button>
+        <button class="filter-pill${_crewSubTab === 'guards' ? ' active' : ''}" onclick="App.crewSetSubTab('guards')">Guards</button>
+      </div>`;
+    if (targetPanel) targetPanel.prepend(subNav);
+
+    // Trigger the sub-tab's render function
+    if (target === 'labour') { _tabCtx = 'labour'; _loadAndRenderLabour(); }
+    if (target === 'guards') { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
+
+    // Keep Crew tab visually active
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === 'crew');
+    });
+  }
+
+  function crewSetSubTab(sub) {
+    _crewSubTab = sub;
+    renderCrewUnified();
+  }
+
+  // ── Today tab ─────────────────────────────────────────────
+  let _todayDate = new Date().toISOString().slice(0, 10);
+
+  async function renderToday() {
+    const container = $('today-content');
+    if (!container) return;
+
+    container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">Loading...</div>';
+
+    let d;
+    try {
+      d = await api('GET', `/api/productions/${state.prodId}/today?date=${_todayDate}`);
+    } catch (err) {
+      container.innerHTML = '<div style="padding:2rem;text-align:center;color:#EF4444">Failed to load data</div>';
+      return;
+    }
+
+    const isToday = _todayDate === new Date().toISOString().slice(0, 10);
+    const dateObj = new Date(_todayDate + 'T12:00:00');
+    const dateDisplay = dateObj.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+    let html = '';
+
+    // Date nav toolbar
+    html += `
+      <div style="display:flex;align-items:center;gap:.5rem;padding:.8rem 1rem;border-bottom:1px solid var(--border)">
+        <button class="btn btn-sm btn-secondary" onclick="App._todayPrev()">&#9664;</button>
+        <button class="btn btn-sm ${isToday ? 'btn-primary' : 'btn-secondary'}" onclick="App._todayGoToday()">Today</button>
+        <button class="btn btn-sm btn-secondary" onclick="App._todayNext()">&#9654;</button>
+        <input type="date" style="padding:.2rem .4rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-2);color:var(--text-1)" value="${_todayDate}" onchange="App._todayPickDate(event)">
+        <span style="font-weight:600;color:var(--text-1)">${esc(dateDisplay)}</span>
+      </div>`;
+
+    // Schedule section
+    html += '<div style="padding:1rem">';
+    if (d.schedule) {
+      const s = d.schedule;
+      html += `<div style="margin-bottom:1rem"><h3 style="margin:0 0 .5rem;color:var(--text-1)">&#128197; Day ${s.day_number || '?'} — Schedule</h3>`;
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.5rem">';
+      if (s.location) html += `<div><span style="color:var(--text-3);font-size:.8rem">Location</span><br><strong>${esc(s.location)}</strong></div>`;
+      if (s.game_name) html += `<div><span style="color:var(--text-3);font-size:.8rem">Game</span><br><strong>${esc(s.game_name)}</strong></div>`;
+      if (s.status) html += `<div><span style="color:var(--text-3);font-size:.8rem">Status</span><br><strong>${esc(s.status)}</strong></div>`;
+      if (s.heure_rehearsal) html += `<div><span style="color:var(--text-3);font-size:.8rem">Rehearsal</span><br><strong>${esc(s.heure_rehearsal)}</strong></div>`;
+      if (s.heure_game) html += `<div><span style="color:var(--text-3);font-size:.8rem">Game Time</span><br><strong>${esc(s.heure_game)}</strong></div>`;
+      if (s.nb_candidats) html += `<div><span style="color:var(--text-3);font-size:.8rem">Contestants</span><br><strong>${s.nb_candidats}</strong></div>`;
+      html += '</div>';
+      if (s.events && s.events.length) {
+        html += '<div style="margin-top:.5rem;display:flex;gap:.3rem;flex-wrap:wrap">';
+        for (const ev of s.events) {
+          const evColors = { game: '#3B82F6', council: '#F59E0B', arena: '#EF4444', off: '#94A3B8' };
+          html += `<span style="padding:.2rem .5rem;border-radius:4px;font-size:.75rem;background:${(evColors[ev.event_type] || '#64748B')}20;color:${evColors[ev.event_type] || '#64748B'};border:1px solid ${(evColors[ev.event_type] || '#64748B')}40">${esc((ev.event_type || '').toUpperCase())} ${esc(ev.name || '')}</span>`;
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+    } else {
+      html += '<div style="margin-bottom:1rem;padding:1rem;background:var(--bg-2);border-radius:6px;color:var(--text-3)">No shooting day scheduled for this date</div>';
+    }
+
+    // Fleet section
+    const fleetTotal = (d.counts && d.counts.fleet_total) || 0;
+    if (fleetTotal > 0) {
+      html += `<h3 style="margin:.8rem 0 .3rem;color:#3B82F6">&#9973; Fleet (${fleetTotal})</h3>`;
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.5rem">';
+      for (const b of (d.boats || [])) html += `<div style="padding:.5rem;border-left:3px solid #3B82F6;background:var(--bg-2);border-radius:4px"><strong>${esc(b.boat_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">${esc(b.function_name || '')}</span></div>`;
+      for (const b of (d.picture_boats || [])) html += `<div style="padding:.5rem;border-left:3px solid #8B5CF6;background:var(--bg-2);border-radius:4px"><strong>${esc(b.boat_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">Picture — ${esc(b.function_name || '')}</span></div>`;
+      for (const b of (d.security_boats || [])) html += `<div style="padding:.5rem;border-left:3px solid #EF4444;background:var(--bg-2);border-radius:4px"><strong>${esc(b.boat_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">Security — ${esc(b.function_name || '')}</span></div>`;
+      html += '</div>';
+    }
+
+    // Transport
+    if (d.transport && d.transport.length) {
+      html += `<h3 style="margin:.8rem 0 .3rem;color:#22C55E">&#128663; Transport (${d.transport.length})</h3>`;
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.5rem">';
+      for (const v of d.transport) html += `<div style="padding:.5rem;border-left:3px solid #22C55E;background:var(--bg-2);border-radius:4px"><strong>${esc(v.vehicle_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">${esc(v.function_name || '')}</span></div>`;
+      html += '</div>';
+    }
+
+    // Crew
+    const crewTotal = (d.counts && d.counts.crew_total) || 0;
+    if (crewTotal > 0) {
+      html += `<h3 style="margin:.8rem 0 .3rem;color:#F59E0B">&#128100; Crew (${crewTotal})</h3>`;
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.5rem">';
+      for (const h of (d.labour || [])) html += `<div style="padding:.5rem;border-left:3px solid #F59E0B;background:var(--bg-2);border-radius:4px"><strong>${esc(h.helper_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">${esc(h.function_name || '')}</span></div>`;
+      for (const g of (d.guards || [])) html += `<div style="padding:.5rem;border-left:3px solid #06B6D4;background:var(--bg-2);border-radius:4px"><strong>${esc(g.helper_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">Guard — ${esc(g.function_name || '')}</span></div>`;
+      html += '</div>';
+    }
+
+    // Fuel summary
+    if (d.fuel) {
+      html += `<h3 style="margin:.8rem 0 .3rem;color:#F59E0B">&#9981; Fuel</h3>`;
+      html += `<div style="display:flex;gap:1.5rem;padding:.5rem;background:var(--bg-2);border-radius:6px">
+        <div><span style="font-size:1.1rem;font-weight:600">${d.fuel.total_liters || 0} L</span><br><span style="color:var(--text-3);font-size:.8rem">Consumption</span></div>
+        <div><span style="font-size:1.1rem;font-weight:600">${fmtMoney(d.fuel.total_cost)}</span><br><span style="color:var(--text-3);font-size:.8rem">Cost</span></div>
+        <div><span style="font-size:1.1rem;font-weight:600">${d.fuel.entries || 0}</span><br><span style="color:var(--text-3);font-size:.8rem">Entries</span></div>
+      </div>`;
+    }
+
+    // Empty state
+    if (!d.schedule && fleetTotal === 0 && (!d.transport || !d.transport.length) && crewTotal === 0) {
+      html += `<div style="text-align:center;padding:3rem;color:var(--text-3)">
+        <div style="font-size:2rem">&#128197;</div>
+        <div>No operations scheduled for this date</div>
+        <div style="font-size:.8rem;margin-top:.3rem">Use the date picker to navigate to an active day</div>
+      </div>`;
+    }
+
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  function _todayPrev() {
+    const d = new Date(_todayDate);
+    d.setDate(d.getDate() - 1);
+    _todayDate = d.toISOString().slice(0, 10);
+    renderToday();
+  }
+  function _todayNext() {
+    const d = new Date(_todayDate);
+    d.setDate(d.getDate() + 1);
+    _todayDate = d.toISOString().slice(0, 10);
+    renderToday();
+  }
+  function _todayGoToday() {
+    _todayDate = new Date().toISOString().slice(0, 10);
+    renderToday();
+  }
+  function _todayPickDate(e) {
+    _todayDate = e.target.value;
+    renderToday();
+  }
+
+  // ── Documents tab ─────────────────────────────────────────
+  const DOC_STATUS = {
+    draft:        { label: 'Draft',        color: '#94A3B8', next: 'under_review' },
+    under_review: { label: 'Under Review', color: '#F59E0B', next: 'approved' },
+    approved:     { label: 'Approved',     color: '#22C55E', next: 'archived' },
+    archived:     { label: 'Archived',     color: '#6B7280', next: null },
+  };
+  const DOC_TYPES = ['PDT', 'budget', 'reference', 'map_kmz', 'contract', 'other'];
+  let _docs = [];
+  let _expandedDoc = null;
+
+  async function renderDocuments() {
+    const container = $('documents-content');
+    if (!container) return;
+    container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">Loading documents...</div>';
+
+    try {
+      _docs = await api('GET', `/api/productions/${state.prodId}/documents`);
+    } catch (e) {
+      _docs = [];
+    }
+
+    const canEdit = _canEdit();
+    let html = `<div style="display:flex;align-items:center;justify-content:space-between;padding:.8rem 1rem;border-bottom:1px solid var(--border)">
+      <h2 style="margin:0;font-size:1.1rem">Documents</h2>
+      ${canEdit ? '<button class="btn btn-primary btn-sm" onclick="App._docShowUpload()">+ Upload Document</button>' : ''}
+    </div>`;
+
+    if (!_docs.length) {
+      html += `<div style="padding:3rem;text-align:center;color:var(--text-3)">
+        <p>No documents yet.</p>
+        ${canEdit ? '<p>Upload your first document to get started.</p>' : ''}
+      </div>`;
+    } else {
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:.8rem;padding:1rem">';
+      for (const doc of _docs) {
+        const st = DOC_STATUS[doc.status] || DOC_STATUS.draft;
+        const version = doc.current_version || 1;
+        html += `<div style="border:1px solid var(--border);border-radius:8px;padding:.8rem;background:var(--bg-2)">
+          <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
+            <span style="padding:.1rem .4rem;border-radius:4px;font-size:.7rem;color:#fff;background:${st.color}">${esc(st.label)}</span>
+            <span style="color:var(--text-3);font-size:.75rem">${esc(doc.doc_type || 'other')}</span>
+            <span style="color:var(--text-3);font-size:.75rem">v${version}</span>
+          </div>
+          <div style="font-weight:600;margin-bottom:.3rem">${esc(doc.name)}</div>
+          <div style="font-size:.8rem;color:var(--text-3);margin-bottom:.5rem">${doc.format ? esc(doc.format.toUpperCase()) : ''} ${doc.uploaded_at ? ' &middot; ' + fmtDate(doc.uploaded_at) : ''}</div>
+          <div style="display:flex;gap:.3rem;flex-wrap:wrap">`;
+        if (doc.file_path) html += `<a href="/api/documents/download/${esc(doc.file_path)}" class="btn btn-sm btn-secondary" target="_blank">Download</a>`;
+        if (canEdit) {
+          html += `<button class="btn btn-sm btn-secondary" onclick="App._docToggleVersions(${doc.id})">Versions</button>`;
+          if (st.next) {
+            const nc = DOC_STATUS[st.next];
+            html += `<button class="btn btn-sm" style="background:${nc.color};color:#fff" onclick="App._docSetStatus(${doc.id},'${st.next}')">${nc.label}</button>`;
+          }
+          html += `<button class="btn btn-sm btn-secondary" onclick="App._docUploadVersion(${doc.id})">+ Version</button>`;
+          html += `<button class="btn btn-sm" style="color:#EF4444" onclick="App._docDelete(${doc.id})">Del</button>`;
+        }
+        html += '</div>';
+        if (_expandedDoc === doc.id) html += `<div id="doc-versions-${doc.id}" style="margin-top:.5rem;border-top:1px solid var(--border);padding-top:.5rem">Loading versions...</div>`;
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+    if (_expandedDoc) _loadDocVersions(_expandedDoc);
+  }
+
+  async function _loadDocVersions(docId) {
+    const panel = $(`doc-versions-${docId}`);
+    if (!panel) return;
+    try {
+      const versions = await api('GET', `/api/productions/${state.prodId}/documents/${docId}/versions`);
+      if (!versions.length) { panel.innerHTML = '<div style="color:var(--text-3)">No versions found.</div>'; return; }
+      let h = '<table style="width:100%;font-size:.8rem"><thead><tr><th>Version</th><th>Uploaded</th><th>By</th><th>File</th></tr></thead><tbody>';
+      for (const v of versions) {
+        h += `<tr><td>v${v.version_number}</td><td>${v.uploaded_at ? fmtDate(v.uploaded_at) : '-'}</td><td>${esc(v.upload_nickname || '-')}</td><td>${v.file_path ? `<a href="/api/documents/download/${esc(v.file_path)}" target="_blank">Download</a>` : '-'}</td></tr>`;
+      }
+      h += '</tbody></table>';
+      panel.innerHTML = h;
+    } catch (e) { panel.innerHTML = '<div style="color:#EF4444">Error loading versions</div>'; }
+  }
+
+  function _docToggleVersions(docId) { _expandedDoc = _expandedDoc === docId ? null : docId; renderDocuments(); }
+
+  async function _docSetStatus(docId, status) {
+    try {
+      await api('PUT', `/api/productions/${state.prodId}/documents/${docId}/status`, { status });
+      toast('Status updated');
+      renderDocuments();
+    } catch (e) { toast('Error updating status', 'error'); }
+  }
+
+  async function _docDelete(docId) {
+    if (!confirm('Delete this document and all its versions?')) return;
+    try {
+      await api('DELETE', `/api/productions/${state.prodId}/documents/${docId}`);
+      toast('Document deleted');
+      renderDocuments();
+    } catch (e) { toast('Error deleting', 'error'); }
+  }
+
+  function _docShowUpload() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'doc-upload-modal';
+    overlay.innerHTML = `<div class="modal-card" style="max-width:500px">
+      <div class="modal-header"><h3>Upload Document</h3>
+        <button class="modal-close" onclick="document.getElementById('doc-upload-modal').remove()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group"><label class="form-label">Name *</label><input type="text" id="doc-up-name" class="form-control" placeholder="Document name"></div>
+        <div class="form-group"><label class="form-label">Type</label><select id="doc-up-type" class="form-control">${DOC_TYPES.map(t => '<option value="' + t + '">' + t + '</option>').join('')}</select></div>
+        <div class="form-group"><label class="form-label">File</label><input type="file" id="doc-up-file" class="form-control"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="document.getElementById('doc-upload-modal').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="App._docSubmitUpload()">Upload</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+  }
+
+  async function _docSubmitUpload() {
+    const name = document.getElementById('doc-up-name')?.value?.trim();
+    if (!name) { toast('Name is required', 'error'); return; }
+    const docType = document.getElementById('doc-up-type')?.value || '';
+    const fileInput = document.getElementById('doc-up-file');
+    const file = fileInput?.files?.[0];
+    const fd = new FormData();
+    fd.append('name', name);
+    fd.append('doc_type', docType);
+    if (file) fd.append('file', file);
+    try {
+      const res = await authFetch(`/api/productions/${state.prodId}/documents`, { method: 'POST', body: fd });
+      if (res.ok) { toast('Document uploaded'); document.getElementById('doc-upload-modal')?.remove(); renderDocuments(); }
+      else { const err = await res.json(); toast(err.error || 'Upload failed', 'error'); }
+    } catch (e) { toast('Network error', 'error'); }
+  }
+
+  function _docUploadVersion(docId) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'doc-version-modal';
+    overlay.innerHTML = `<div class="modal-card" style="max-width:400px">
+      <div class="modal-header"><h3>Upload New Version</h3>
+        <button class="modal-close" onclick="document.getElementById('doc-version-modal').remove()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group"><label class="form-label">File *</label><input type="file" id="doc-ver-file" class="form-control"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="document.getElementById('doc-version-modal').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="App._docSubmitVersion(${docId})">Upload</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+  }
+
+  async function _docSubmitVersion(docId) {
+    const fileInput = document.getElementById('doc-ver-file');
+    const file = fileInput?.files?.[0];
+    if (!file) { toast('File is required', 'error'); return; }
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await authFetch(`/api/productions/${state.prodId}/documents/${docId}/versions`, { method: 'POST', body: fd });
+      if (res.ok) { toast('New version uploaded'); document.getElementById('doc-version-modal')?.remove(); _expandedDoc = docId; renderDocuments(); }
+      else { const err = await res.json(); toast(err.error || 'Upload failed', 'error'); }
+    } catch (e) { toast('Network error', 'error'); }
+  }
+
   // ── Tab navigation ─────────────────────────────────────────
   function setTab(tab) {
     state.tab = tab;
@@ -932,6 +1331,11 @@ const App = (() => {
     if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
     if (tab === 'checklist')       loadChecklist();
+    if (tab === 'fleet')           renderFleetUnified();
+    if (tab === 'crew')            renderCrewUnified();
+    if (tab === 'today')           renderToday();
+    if (tab === 'documents')       renderDocuments();
+    if (tab === 'timeline')        { if (typeof App.renderTimeline === 'function') App.renderTimeline(); }
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
     _updateBreadcrumb();
@@ -941,9 +1345,10 @@ const App = (() => {
   // ── Breadcrumb ──────────────────────────────────────────────
   const TAB_LABELS = {
     dashboard: 'Dashboard', pdt: 'PDT', locations: 'Locations',
-    boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
-    transport: 'Transport', fuel: 'Fuel', labour: 'Labor',
-    guards: 'Guards', fnb: 'Catering', budget: 'Budget', admin: 'Admin',
+    fleet: 'Fleet', boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
+    transport: 'Transport', fuel: 'Fuel', crew: 'Crew', labour: 'Labor',
+    guards: 'Guards', fnb: 'Catering', budget: 'Budget',
+    today: 'Today', documents: 'Documents', timeline: 'Timeline', admin: 'Admin',
   };
 
   function _updateBreadcrumb(view, entity) {
@@ -12786,6 +13191,15 @@ const App = (() => {
     toggleTheme,
     // Dashboard
     renderDashboard,
+    // Fleet unified
+    fleetSetSubTab, renderFleetUnified,
+    // Crew unified
+    crewSetSubTab, renderCrewUnified,
+    // Today
+    renderToday, _todayPrev, _todayNext, _todayGoToday, _todayPickDate,
+    // Documents
+    renderDocuments, _docShowUpload, _docSubmitUpload, _docToggleVersions,
+    _docSetStatus, _docDelete, _docUploadVersion, _docSubmitVersion,
     // Alerts (AXE 7.3)
     toggleAlertsPanel, filterAlerts, loadAlerts,
     // Search
