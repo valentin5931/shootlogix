@@ -1,11 +1,28 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [P0] ~~Checklist tab completely non-functional~~ FIXED (2026-03-22)
 - **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
+- **Fixed**: 2026-03-22 — Branch `fix/2026-03-22-checklist-tab-broken`
+- **Root cause**: `state.production` used instead of `state.prodId` in 3 checklist functions
+- **Files involved**: `static/app-monolith.js` (lines 12999-13022)
+
+## [P1] Timeline tab has no render implementation
+- **Discovered**: 2026-03-22
+- **Symptoms**: Clicking the Timeline tab shows an empty panel. `App.renderTimeline` function doesn't exist. The `setTab` handler has a `typeof` guard that prevents errors but the tab does nothing.
+- **Files involved**: `static/app-monolith.js` (line 1338)
+- **Estimated effort**: Medium — need to implement timeline rendering (Gantt-style view of shooting schedule)
+
+## [P1] Transport vehicles exist (14) but transport list was reported empty
+- **Discovered**: 2026-03-22 (updated)
+- **Symptoms**: Transport tab actually works — 14 vehicles are in the database and API returns them. Previous report was incorrect (tested without auth token).
+- **Status**: NOT AN ISSUE — transport works correctly
+
+## [P2] Fleet/Crew sub-tab nav element moves between DOM panels
+- **Discovered**: 2026-03-22
+- **Symptoms**: The fleet sub-nav is injected via `prepend()` and moved between panels on each sub-tab switch, which may cause layout shifts. However, event handlers and rendering all work correctly.
+- **Likely cause**: The sub-nav DOM element is moved between view panels rather than being kept in a fixed position.
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Estimated effort**: Quick fix — cosmetic improvement
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
@@ -14,12 +31,12 @@
 - **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
 - **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
 
-## [P1] Transport and Helpers lists are empty
+## [P1] Helpers (Labour) list is empty but 73 helper-assignments exist
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
+- **Symptoms**: `/api/productions/1/helpers` returns `[]` but `helper_assignments` table has 73 entries with `helper_id=NULL`. Workers were never created — assignments are "anonymous" cost entries linked to boat_functions with context=labour.
+- **Likely cause**: Data migration from BATEAUX created labour-context boat_functions and helper_assignments but never created helper records. Users need to create workers through the UI.
 - **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+- **Estimated effort**: Quick — user needs to add workers through the Labour tab UI
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22

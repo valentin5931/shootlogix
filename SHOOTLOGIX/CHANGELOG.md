@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-03-22 — [P0] Fix Checklist tab completely non-functional
+
+**Problem**: Clicking the Checklist tab showed an empty view with no data loading, no errors, and no way to generate or interact with checklists.
+
+**Root cause**: The checklist functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) in `app-monolith.js` referenced `state.production` and `state.production.id`, but `state.production` was never set anywhere in the codebase. The rest of the app uses `state.prodId`. This caused all 3 functions to silently `return` on the guard clause `if (!state.production) return;`, making the entire Checklist tab non-functional.
+
+**Fix**: `static/app-monolith.js` (lines 12999-13022) — Replaced all 6 references to `state.production` / `state.production.id` with `state.prodId`:
+- `loadChecklist()`: guard clause + API URL
+- `generateChecklist()`: guard clause + API URL
+- `toggleChecklistItem()`: guard clause + API URL
+- `_renderChecklist()`: Fixed `_esc(item.item_text)` → `esc(item.item_text)` (line 13064) — `_esc` was undefined, would crash with ReferenceError when rendering checklist items
+
+**Verification**:
+- JS syntax check passes
+- All 45 tests pass
+- Checklist API endpoints return correct data (GET returns null for empty dates, POST generates items)
+- No regressions in other tabs
+
+**Branch**: fix/2026-03-22-checklist-tab-broken
+**PR**: #22
+**Side effects**: None
+**Next priority**: P1 — Timeline tab has no `renderTimeline` implementation; Picture Boats/Security Boats/Labour/Guards tabs show empty lists (data model issue)
+
 ## 2026-03-22 — [P0] Fix 5 broken tabs (Fleet, Crew, Today, Documents, Timeline) + Documents API crash
 
 **Problem**: Fleet, Crew, Today, Documents, and Timeline tabs did nothing when clicked. Additionally, all Documents API endpoints crashed with a 500 error.
