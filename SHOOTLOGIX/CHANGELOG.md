@@ -18,7 +18,7 @@
 - Python syntax check passes
 
 **Branch**: fix/2026-03-22-populate-picture-boats-from-fleet
-**PR**: (pending)
+**PR**: #19
 **Side effects**: None
 **Next priority**: Security Boats tab is empty (no source data to migrate — may need manual entry or a similar migration when data becomes available); Transport vehicles seeding (14 vehicles defined in data_loader but table is empty)
 
