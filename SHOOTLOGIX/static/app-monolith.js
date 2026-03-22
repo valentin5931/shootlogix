@@ -932,6 +932,11 @@ const App = (() => {
     if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
     if (tab === 'checklist')       loadChecklist();
+    if (tab === 'fleet')           _renderFleetTab();
+    if (tab === 'crew')            _renderCrewTab();
+    if (tab === 'today')           _renderTodayTab();
+    if (tab === 'documents')       _renderDocumentsTab();
+    if (tab === 'timeline')        { if (typeof Timeline !== 'undefined') Timeline.init(); }
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
     _updateBreadcrumb();
@@ -942,6 +947,7 @@ const App = (() => {
   const TAB_LABELS = {
     dashboard: 'Dashboard', pdt: 'PDT', locations: 'Locations',
     boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
+    fleet: 'Fleet', crew: 'Crew', today: 'Today', documents: 'Documents', timeline: 'Timeline',
     transport: 'Transport', fuel: 'Fuel', labour: 'Labor',
     guards: 'Guards', fnb: 'Catering', budget: 'Budget', admin: 'Admin',
   };
@@ -12664,6 +12670,257 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ── Fleet unified tab ────────────────────────────────────────
+  let _fleetSubTab = 'boats';
+
+  async function _renderFleetTab() {
+    const subNav = $('fleet-sub-nav');
+    const cards = $('fleet-cards');
+    if (!subNav || !cards) return;
+
+    subNav.innerHTML = `
+      <div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
+        <button class="filter-pill${_fleetSubTab === 'boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('boats')">Boats</button>
+        <button class="filter-pill${_fleetSubTab === 'picture' ? ' active' : ''}" onclick="App.fleetSetSubTab('picture')">Picture Boats</button>
+        <button class="filter-pill${_fleetSubTab === 'security' ? ' active' : ''}" onclick="App.fleetSetSubTab('security')">Security Boats</button>
+      </div>`;
+
+    cards.innerHTML = '<div style="padding:2rem;color:var(--text-3)">Loading...</div>';
+
+    try {
+      if (_fleetSubTab === 'boats') {
+        await loadBoatsData();
+        const boats = state.boats || [];
+        const assignedIds = new Set((state.assignments || []).filter(a => a.boat_id).map(a => a.boat_id));
+        cards.innerHTML = _fleetCardGrid(boats, assignedIds, 'boat');
+      } else if (_fleetSubTab === 'picture') {
+        await loadPictureBoatsData();
+        const boats = state.pictureBoats || [];
+        const assignedIds = new Set((state.pictureAssignments || []).filter(a => a.picture_boat_id).map(a => a.picture_boat_id));
+        cards.innerHTML = _fleetCardGrid(boats, assignedIds, 'picture_boat');
+      } else if (_fleetSubTab === 'security') {
+        const [boats, functions, assignments] = await Promise.all([
+          api('GET', `/api/productions/${state.prodId}/security-boats`),
+          api('GET', `/api/productions/${state.prodId}/boat-functions?context=security`),
+          api('GET', `/api/productions/${state.prodId}/security-boat-assignments`),
+        ]);
+        state.securityBoats = boats;
+        state.securityFunctions = functions;
+        state.securityAssignments = assignments;
+        const assignedIds = new Set((assignments || []).filter(a => a.security_boat_id).map(a => a.security_boat_id));
+        cards.innerHTML = _fleetCardGrid(boats, assignedIds, 'security_boat');
+      }
+    } catch (e) {
+      cards.innerHTML = `<div style="padding:2rem;color:#EF4444">Error loading fleet data: ${_esc(e.message)}</div>`;
+    }
+  }
+
+  function _fleetCardGrid(boats, assignedIds, type) {
+    if (!boats.length) return '<div style="padding:2rem;color:var(--text-3)">No vessels found.</div>';
+    const idKey = type === 'boat' ? 'id' : type === 'picture_boat' ? 'id' : 'id';
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1rem;padding:1rem">';
+    for (const b of boats) {
+      const assigned = assignedIds.has(b.id);
+      const statusColor = assigned ? '#22C55E' : '#94A3B8';
+      const statusLabel = assigned ? 'Assigned' : 'Available';
+      const name = _esc(b.name || b.boat_name || b.vessel_name || '—');
+      const rate = b.daily_rate != null ? '$' + Number(b.daily_rate).toLocaleString('en-US') : '';
+      const tabMap = { boat: 'boats', picture_boat: 'picture-boats', security_boat: 'security-boats' };
+      const detailTab = tabMap[type] || 'boats';
+      html += `
+        <div class="card" style="cursor:pointer;padding:1rem;border-left:3px solid ${statusColor}" onclick="App.setTab('${detailTab}')">
+          <div style="font-weight:600;margin-bottom:.3rem">${name}</div>
+          <div style="font-size:.8rem;color:var(--text-3);display:flex;justify-content:space-between">
+            <span style="color:${statusColor}">${statusLabel}</span>
+            <span>${rate}</span>
+          </div>
+        </div>`;
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function fleetSetSubTab(sub) {
+    _fleetSubTab = sub;
+    _renderFleetTab();
+  }
+
+  // ── Crew unified tab ──────────────────────────────────────────
+  let _crewSubTab = 'labour';
+
+  async function _renderCrewTab() {
+    const labourPanel = $('crew-labour-panel');
+    const guardsPanel = $('crew-guards-panel');
+    if (!labourPanel || !guardsPanel) return;
+
+    if (_crewSubTab === 'labour') {
+      labourPanel.classList.remove('hidden');
+      guardsPanel.classList.add('hidden');
+      labourPanel.innerHTML = '<div style="padding:2rem;color:var(--text-3)">Loading labour...</div>';
+      try {
+        const [helpers, functions, assignments] = await Promise.all([
+          api('GET', `/api/productions/${state.prodId}/helpers`),
+          api('GET', `/api/productions/${state.prodId}/helpers/schedules`),
+          api('GET', `/api/productions/${state.prodId}/helper-assignments`),
+        ]);
+        state.helpers = helpers;
+        state.helperAssignments = assignments;
+        const count = (helpers || []).length;
+        const assignedCount = new Set((assignments || []).filter(a => a.helper_id).map(a => a.helper_id)).size;
+        labourPanel.innerHTML = `
+          <div style="padding:1rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+              <h3 style="margin:0">Labor — ${count} workers</h3>
+              <button class="btn btn-primary btn-sm" onclick="App.setTab('labour')">Open full view</button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.8rem">
+              ${(helpers || []).map(h => `
+                <div class="card" style="padding:.8rem">
+                  <div style="font-weight:600">${_esc(h.name || h.helper_name || '—')}</div>
+                  <div style="font-size:.8rem;color:var(--text-3)">${_esc(h.function_name || h.role || '')}</div>
+                </div>`).join('')}
+            </div>
+          </div>`;
+      } catch (e) {
+        labourPanel.innerHTML = `<div style="padding:2rem;color:#EF4444">Error: ${_esc(e.message)}</div>`;
+      }
+    } else {
+      labourPanel.classList.add('hidden');
+      guardsPanel.classList.remove('hidden');
+      guardsPanel.innerHTML = '<div style="padding:2rem;color:var(--text-3)">Loading guards...</div>';
+      try {
+        const [posts, schedules] = await Promise.all([
+          api('GET', `/api/productions/${state.prodId}/guard-posts`),
+          api('GET', `/api/productions/${state.prodId}/guard-schedules`),
+        ]);
+        state.guardPosts = posts;
+        state.guardSchedules = schedules;
+        const count = (posts || []).length;
+        guardsPanel.innerHTML = `
+          <div style="padding:1rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+              <h3 style="margin:0">Guards — ${count} posts</h3>
+              <button class="btn btn-primary btn-sm" onclick="App.setTab('guards')">Open full view</button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.8rem">
+              ${(posts || []).map(p => `
+                <div class="card" style="padding:.8rem">
+                  <div style="font-weight:600">${_esc(p.name || p.post_name || '—')}</div>
+                  <div style="font-size:.8rem;color:var(--text-3)">Guards: ${p.guards_film || p.num_guards || '—'}</div>
+                </div>`).join('')}
+            </div>
+          </div>`;
+      } catch (e) {
+        guardsPanel.innerHTML = `<div style="padding:2rem;color:#EF4444">Error: ${_esc(e.message)}</div>`;
+      }
+    }
+
+    // Update pill active state
+    const lBtn = $('crew-subtab-labour');
+    const gBtn = $('crew-subtab-guards');
+    if (lBtn) lBtn.classList.toggle('active', _crewSubTab === 'labour');
+    if (gBtn) gBtn.classList.toggle('active', _crewSubTab === 'guards');
+  }
+
+  function crewSetSubTab(sub) {
+    _crewSubTab = sub;
+    _renderCrewTab();
+  }
+
+  // ── Today tab ────────────────────────────────────────────────
+  async function _renderTodayTab() {
+    const container = $('today-content');
+    if (!container) return;
+    container.innerHTML = '<div style="padding:2rem;color:var(--text-3)">Loading today\'s overview...</div>';
+
+    try {
+      const data = await api('GET', `/api/productions/${state.prodId}/today`);
+      const date = data.date || new Date().toISOString().slice(0, 10);
+      const dayInfo = data.shooting_day;
+
+      let html = '<div style="padding:1rem">';
+      html += `<h2 style="margin:0 0 1rem">Today — ${date}</h2>`;
+
+      if (dayInfo) {
+        html += `<div class="card" style="padding:1rem;margin-bottom:1rem;border-left:3px solid #3B82F6">
+          <div style="font-weight:600;font-size:1.1rem">Day ${dayInfo.day_number || '—'}</div>
+          <div style="color:var(--text-3)">${_esc(dayInfo.location || '')} ${dayInfo.game ? '— ' + _esc(dayInfo.game) : ''}</div>
+          ${dayInfo.event_type ? `<span class="badge" style="margin-top:.4rem">${_esc(dayInfo.event_type)}</span>` : ''}
+        </div>`;
+      } else {
+        html += '<div class="card" style="padding:1rem;margin-bottom:1rem;color:var(--text-3)">No shooting day scheduled for today.</div>';
+      }
+
+      // Active resources summary
+      const sections = [
+        { key: 'boats', label: 'Boats', icon: '\u26F5' },
+        { key: 'picture_boats', label: 'Picture Boats', icon: '\uD83C\uDFA5' },
+        { key: 'security_boats', label: 'Security Boats', icon: '\uD83D\uDEE1\uFE0F' },
+        { key: 'vehicles', label: 'Vehicles', icon: '\uD83D\uDE9A' },
+        { key: 'helpers', label: 'Labour', icon: '\uD83D\uDC77' },
+        { key: 'guards', label: 'Guards', icon: '\uD83D\uDC82' },
+      ];
+
+      for (const sec of sections) {
+        const items = data[sec.key] || [];
+        if (items.length) {
+          html += `<h3 style="margin:1rem 0 .5rem">${sec.icon} ${sec.label} (${items.length})</h3>`;
+          html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.6rem">';
+          for (const item of items) {
+            const name = _esc(item.name || item.boat_name || item.vessel_name || item.helper_name || '—');
+            const fn = item.function_name ? _esc(item.function_name) : '';
+            html += `<div class="card" style="padding:.6rem .8rem">
+              <div style="font-weight:500">${name}</div>
+              ${fn ? `<div style="font-size:.8rem;color:var(--text-3)">${fn}</div>` : ''}
+            </div>`;
+          }
+          html += '</div>';
+        }
+      }
+
+      html += '</div>';
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = `<div style="padding:2rem;color:#EF4444">Error loading today's data: ${_esc(e.message)}</div>`;
+    }
+  }
+
+  // ── Documents tab ────────────────────────────────────────────
+  async function _renderDocumentsTab() {
+    const container = $('documents-content');
+    if (!container) return;
+    container.innerHTML = '<div style="padding:2rem;color:var(--text-3)">Loading documents...</div>';
+
+    try {
+      const docs = await api('GET', `/api/productions/${state.prodId}/documents`);
+      let html = '<div style="padding:1rem">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">';
+      html += '<h2 style="margin:0">Documents</h2>';
+      html += '</div>';
+
+      if (!docs || !docs.length) {
+        html += '<div style="color:var(--text-3)">No documents yet.</div>';
+      } else {
+        html += '<div style="display:flex;flex-direction:column;gap:.6rem">';
+        for (const doc of docs) {
+          const statusColor = doc.status === 'approved' ? '#22C55E' : doc.status === 'draft' ? '#F59E0B' : '#94A3B8';
+          html += `<div class="card" style="padding:.8rem 1rem;display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="font-weight:600">${_esc(doc.name || doc.title || '—')}</div>
+              <div style="font-size:.8rem;color:var(--text-3)">${_esc(doc.category || '')} ${doc.updated_at ? '— ' + doc.updated_at.slice(0, 10) : ''}</div>
+            </div>
+            <span style="font-size:.75rem;padding:.2rem .5rem;border-radius:4px;background:${statusColor}20;color:${statusColor}">${_esc(doc.status || 'draft')}</span>
+          </div>`;
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = `<div style="padding:2rem;color:#EF4444">Error loading documents: ${_esc(e.message)}</div>`;
+    }
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -12786,6 +13043,8 @@ const App = (() => {
     toggleTheme,
     // Dashboard
     renderDashboard,
+    // Fleet / Crew / Today / Documents unified tabs
+    fleetSetSubTab, crewSetSubTab,
     // Alerts (AXE 7.3)
     toggleAlertsPanel, filterAlerts, loadAlerts,
     // Search
