@@ -931,6 +931,9 @@ const App = (() => {
     if (tab === 'locations')       { state.locationSchedules = null; renderLocations(); }
     if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
+    if (tab === 'fleet')           _loadAndRenderFleet();
+    if (tab === 'crew')            _renderCrewTab();
+    if (tab === 'today')           _loadAndRenderToday();
     if (tab === 'checklist')       loadChecklist();
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
@@ -940,7 +943,8 @@ const App = (() => {
 
   // ── Breadcrumb ──────────────────────────────────────────────
   const TAB_LABELS = {
-    dashboard: 'Dashboard', pdt: 'PDT', locations: 'Locations',
+    today: 'Today', dashboard: 'Dashboard', pdt: 'PDT', locations: 'Locations',
+    fleet: 'Fleet', crew: 'Crew',
     boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
     transport: 'Transport', fuel: 'Fuel', labour: 'Labor',
     guards: 'Guards', fnb: 'Catering', budget: 'Budget', admin: 'Admin',
@@ -12558,6 +12562,257 @@ const App = (() => {
     }, { passive: true });
   }
 
+  // ── Fleet tab (unified Boats / Picture Boats / Security Boats) ────
+  let _fleetSubTab = 'boats';
+
+  async function _loadAndRenderFleet() {
+    const nav = $('fleet-sub-nav');
+    const cards = $('fleet-cards');
+    if (!nav || !cards) return;
+
+    // Render sub-navigation pills
+    nav.innerHTML = `
+      <div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
+        <button class="filter-pill ${_fleetSubTab === 'boats' ? 'active' : ''}" onclick="App.fleetSetSubTab('boats')">Boats</button>
+        <button class="filter-pill ${_fleetSubTab === 'picture' ? 'active' : ''}" onclick="App.fleetSetSubTab('picture')">Picture Boats</button>
+        <button class="filter-pill ${_fleetSubTab === 'security' ? 'active' : ''}" onclick="App.fleetSetSubTab('security')">Security Boats</button>
+      </div>`;
+
+    cards.innerHTML = '<p style="text-align:center;padding:2rem;color:var(--text-3)">Loading...</p>';
+
+    try {
+      const prodId = state.prodId;
+      const [boats, pictureBoats, securityBoats] = await Promise.all([
+        api('GET', `/api/productions/${prodId}/boats`).catch(() => []),
+        api('GET', `/api/productions/${prodId}/picture-boats`).catch(() => []),
+        api('GET', `/api/productions/${prodId}/security-boats`).catch(() => []),
+      ]);
+
+      let items = [];
+      if (_fleetSubTab === 'boats')    items = boats.map(b => ({ ...b, _type: 'boat' }));
+      if (_fleetSubTab === 'picture')  items = pictureBoats.map(b => ({ ...b, _type: 'picture' }));
+      if (_fleetSubTab === 'security') items = securityBoats.map(b => ({ ...b, _type: 'security' }));
+
+      if (items.length === 0) {
+        cards.innerHTML = '<p style="text-align:center;padding:2rem;color:var(--text-3)">No vessels found.</p>';
+        return;
+      }
+
+      const typeLabel = { boat: 'Boat', picture: 'Picture Boat', security: 'Security Boat' };
+      const typeColor = { boat: '#0EA5E9', picture: '#8B5CF6', security: '#EF4444' };
+
+      cards.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.8rem;padding:1rem">
+        ${items.map(v => {
+          const color = typeColor[v._type] || '#64748B';
+          return `<div class="card" style="border-left:3px solid ${color};padding:.8rem;cursor:pointer"
+                       onclick="App.setTab('${v._type === 'boat' ? 'boats' : v._type === 'picture' ? 'picture-boats' : 'security-boats'}')">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <strong>${esc(v.name || 'Unnamed')}</strong>
+              <span style="font-size:.7rem;padding:.15rem .4rem;border-radius:4px;background:${color}20;color:${color}">${typeLabel[v._type]}</span>
+            </div>
+            <div style="font-size:.8rem;color:var(--text-3);margin-top:.3rem">${esc(v.vendor || v.captain || '')}</div>
+            ${v.daily_rate ? `<div style="font-size:.8rem;margin-top:.2rem">$${Number(v.daily_rate).toFixed(0)}/day</div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>`;
+    } catch (e) {
+      cards.innerHTML = `<p style="color:var(--text-error);padding:1rem">Error loading fleet: ${esc(e.message)}</p>`;
+    }
+  }
+
+  function fleetSetSubTab(sub) {
+    _fleetSubTab = sub;
+    _loadAndRenderFleet();
+  }
+
+  // ── Crew tab (unified Labour / Guards) ──────────────────────
+  let _crewSubTab = 'labour';
+
+  function _renderCrewTab() {
+    const labourPanel = $('crew-labour-panel');
+    const guardsPanel = $('crew-guards-panel');
+    const labourBtn = $('crew-subtab-labour');
+    const guardsBtn = $('crew-subtab-guards');
+
+    if (labourBtn) labourBtn.classList.toggle('active', _crewSubTab === 'labour');
+    if (guardsBtn) guardsBtn.classList.toggle('active', _crewSubTab === 'guards');
+
+    if (_crewSubTab === 'labour') {
+      if (labourPanel) labourPanel.classList.remove('hidden');
+      if (guardsPanel) guardsPanel.classList.add('hidden');
+      _crewRenderLabour();
+    } else {
+      if (labourPanel) labourPanel.classList.add('hidden');
+      if (guardsPanel) guardsPanel.classList.remove('hidden');
+      _crewRenderGuards();
+    }
+  }
+
+  async function _crewRenderLabour() {
+    const panel = $('crew-labour-panel');
+    if (!panel) return;
+    panel.innerHTML = '<p style="text-align:center;padding:2rem;color:var(--text-3)">Loading labour...</p>';
+    try {
+      const prodId = state.prodId;
+      const helpers = await api('GET', `/api/productions/${prodId}/helpers`).catch(() => []);
+      if (helpers.length === 0) {
+        panel.innerHTML = '<p style="text-align:center;padding:2rem;color:var(--text-3)">No workers found. <button class="btn btn-sm btn-primary" onclick="App.setTab(\'labour\')">Go to Labour tab</button></p>';
+        return;
+      }
+      panel.innerHTML = `<div style="padding:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
+          <span class="section-title" style="margin:0">Workers (${helpers.length})</span>
+          <button class="btn btn-sm btn-secondary" onclick="App.setTab('labour')">Open full view</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.6rem">
+        ${helpers.map(h => `<div class="card" style="padding:.6rem;border-left:3px solid #F59E0B;cursor:pointer" onclick="App.setTab('labour')">
+          <strong>${esc(h.name || 'Unnamed')}</strong>
+          <div style="font-size:.8rem;color:var(--text-3)">${esc(h.role || '')}</div>
+          ${h.daily_rate ? `<div style="font-size:.8rem">$${Number(h.daily_rate).toFixed(0)}/day</div>` : ''}
+        </div>`).join('')}
+        </div>
+      </div>`;
+    } catch (e) {
+      panel.innerHTML = `<p style="color:var(--text-error);padding:1rem">Error: ${esc(e.message)}</p>`;
+    }
+  }
+
+  async function _crewRenderGuards() {
+    const panel = $('crew-guards-panel');
+    if (!panel) return;
+    panel.innerHTML = '<p style="text-align:center;padding:2rem;color:var(--text-3)">Loading guards...</p>';
+    try {
+      const prodId = state.prodId;
+      const guards = await api('GET', `/api/productions/${prodId}/guard-camp-workers`).catch(() => []);
+      if (guards.length === 0) {
+        panel.innerHTML = '<p style="text-align:center;padding:2rem;color:var(--text-3)">No guards found. <button class="btn btn-sm btn-primary" onclick="App.setTab(\'guards\')">Go to Guards tab</button></p>';
+        return;
+      }
+      panel.innerHTML = `<div style="padding:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
+          <span class="section-title" style="margin:0">Guards (${guards.length})</span>
+          <button class="btn btn-sm btn-secondary" onclick="App.setTab('guards')">Open full view</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.6rem">
+        ${guards.map(g => `<div class="card" style="padding:.6rem;border-left:3px solid #EF4444;cursor:pointer" onclick="App.setTab('guards')">
+          <strong>${esc(g.name || 'Unnamed')}</strong>
+          <div style="font-size:.8rem;color:var(--text-3)">${esc(g.role || '')}</div>
+          ${g.daily_rate ? `<div style="font-size:.8rem">$${Number(g.daily_rate).toFixed(0)}/day</div>` : ''}
+        </div>`).join('')}
+        </div>
+      </div>`;
+    } catch (e) {
+      panel.innerHTML = `<p style="color:var(--text-error);padding:1rem">Error: ${esc(e.message)}</p>`;
+    }
+  }
+
+  function crewSetSubTab(sub) {
+    _crewSubTab = sub;
+    _renderCrewTab();
+  }
+
+  // ── Today tab ───────────────────────────────────────────────
+  let _todayDate = new Date().toISOString().slice(0, 10);
+
+  async function _loadAndRenderToday() {
+    const container = $('today-content');
+    if (!container) return;
+    container.innerHTML = '<p style="text-align:center;padding:2rem;color:var(--text-3)">Loading...</p>';
+
+    try {
+      const data = await api('GET', `/api/productions/${state.prodId}/today?date=${_todayDate}`);
+
+      const boats = data.boats || [];
+      const pictureBoats = data.picture_boats || [];
+      const securityBoats = data.security_boats || [];
+      const transport = data.transport || [];
+      const helpers = data.helpers || [];
+      const guards = data.guard_camp || data.guards || [];
+      const schedule = data.schedule || data.shooting_day || null;
+
+      let html = `
+        <div style="padding:1rem">
+          <div style="display:flex;align-items:center;gap:.8rem;margin-bottom:1rem;flex-wrap:wrap">
+            <button class="btn btn-sm btn-secondary" onclick="App.todayPrev()">◀</button>
+            <input type="date" value="${_todayDate}" onchange="App.todayPickDate(event)" style="font-size:.9rem;padding:.3rem .5rem;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-1)">
+            <button class="btn btn-sm btn-secondary" onclick="App.todayNext()">▶</button>
+            <button class="btn btn-sm btn-primary" onclick="App.todayGoToday()">Today</button>
+            <span style="font-size:.85rem;color:var(--text-3)">${new Date(_todayDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
+          </div>`;
+
+      // Schedule info
+      if (schedule) {
+        html += `<div class="card" style="padding:.8rem;margin-bottom:1rem;border-left:3px solid #3B82F6">
+          <strong>Day ${schedule.day_number || '?'}</strong> — ${esc(schedule.location || '')}
+          ${schedule.game_name ? ` — ${esc(schedule.game_name)}` : ''}
+          ${schedule.status ? ` <span style="font-size:.75rem;padding:.1rem .3rem;border-radius:4px;background:#3B82F620;color:#3B82F6">${esc(schedule.status)}</span>` : ''}
+        </div>`;
+      }
+
+      function renderSection(title, items, color, icon) {
+        if (!items.length) return '';
+        return `<div style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.5rem">
+            <span style="color:${color}">${icon}</span>
+            <strong>${title}</strong>
+            <span style="font-size:.75rem;padding:.1rem .4rem;border-radius:10px;background:${color}20;color:${color}">${items.length}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.5rem">
+            ${items.map(item => `<div class="card" style="padding:.6rem;border-left:3px solid ${item.color || color}">
+              <div style="display:flex;justify-content:space-between">
+                <strong style="font-size:.85rem">${esc(item.function_name || item.name || 'N/A')}</strong>
+                ${item.status ? `<span style="font-size:.7rem;padding:.1rem .3rem;border-radius:4px;background:${color}20;color:${color}">${esc(item.status)}</span>` : ''}
+              </div>
+              <div style="font-size:.8rem;color:var(--text-3)">${esc(item.boat_name || item.vehicle_name || item.worker_name || item.name || '')}</div>
+              ${item.notes ? `<div style="font-size:.75rem;color:var(--text-3);margin-top:.2rem">${esc(item.notes)}</div>` : ''}
+            </div>`).join('')}
+          </div>
+        </div>`;
+      }
+
+      html += renderSection('Boats', boats, '#0EA5E9', '\u26F5');
+      html += renderSection('Picture Boats', pictureBoats, '#8B5CF6', '\uD83C\uDFA5');
+      html += renderSection('Security Boats', securityBoats, '#EF4444', '\uD83D\uDEE1\uFE0F');
+      html += renderSection('Transport', transport, '#22C55E', '\uD83D\uDE9A');
+      html += renderSection('Labour', helpers, '#F59E0B', '\uD83D\uDC77');
+      html += renderSection('Guards', guards, '#F97316', '\uD83D\uDC82');
+
+      const totalActive = boats.length + pictureBoats.length + securityBoats.length + transport.length + helpers.length + guards.length;
+      if (totalActive === 0) {
+        html += '<p style="text-align:center;padding:2rem;color:var(--text-3)">No active resources for this date.</p>';
+      }
+
+      html += '</div>';
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = `<p style="color:var(--text-error);padding:1rem">Error loading today view: ${esc(e.message)}</p>`;
+    }
+  }
+
+  function todayPrev() {
+    const d = new Date(_todayDate);
+    d.setDate(d.getDate() - 1);
+    _todayDate = d.toISOString().slice(0, 10);
+    _loadAndRenderToday();
+  }
+
+  function todayNext() {
+    const d = new Date(_todayDate);
+    d.setDate(d.getDate() + 1);
+    _todayDate = d.toISOString().slice(0, 10);
+    _loadAndRenderToday();
+  }
+
+  function todayGoToday() {
+    _todayDate = new Date().toISOString().slice(0, 10);
+    _loadAndRenderToday();
+  }
+
+  function todayPickDate(e) {
+    _todayDate = e.target.value;
+    _loadAndRenderToday();
+  }
+
   async function _reloadCurrentTab() {
     const tab = state.tab;
     try {
@@ -12573,6 +12828,9 @@ const App = (() => {
       else if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
       else if (tab === 'budget')          { renderBudget(); }
       else if (tab === 'dashboard')       { renderDashboard(); }
+      else if (tab === 'fleet')           { _loadAndRenderFleet(); }
+      else if (tab === 'crew')            { _renderCrewTab(); }
+      else if (tab === 'today')           { _loadAndRenderToday(); }
     } catch(e) { toast('Refresh failed: ' + e.message, 'error'); }
   }
 
@@ -12784,6 +13042,10 @@ const App = (() => {
     adminRenameProject, adminArchiveProject,
     adminChangeRole, adminRemoveMember,
     toggleTheme,
+    // Fleet / Crew / Today unified tabs
+    fleetSetSubTab, crewSetSubTab,
+    todayPrev, todayNext, todayGoToday, todayPickDate,
+    _renderCrewTab, _loadAndRenderFleet, _loadAndRenderToday,
     // Dashboard
     renderDashboard,
     // Alerts (AXE 7.3)
