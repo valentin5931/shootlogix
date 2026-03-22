@@ -1,6 +1,6 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## ~~[P0] Timeline API 500 crash — `no such column: site`~~ FIXED (2026-03-22, PR #15)
+## ~~[P0] Timeline API 500 crash — `no such column: site`~~ FIXED (2026-03-22, PR #18)
 
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22

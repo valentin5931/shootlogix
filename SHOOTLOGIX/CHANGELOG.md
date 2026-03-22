@@ -21,7 +21,7 @@
 - Python syntax check passes
 
 **Branch**: fix/2026-03-22-timeline-api-crash-missing-columns
-**PR**: #15
+**PR**: #18
 **Side effects**: None
 **Next priority**: P1 — Picture Boats and Security Boats lists are empty (data model investigation needed)
 
