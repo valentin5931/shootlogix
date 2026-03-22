@@ -1,5 +1,31 @@
 # CHANGELOG — ShootLogix
 
+## 2026-03-22 — [P0] Fix Fleet/Crew sub-tab panel switching — previous panel not hidden
+
+**Problem**: When switching between Fleet sub-tabs (Boats → Picture Boats → Security Boats) or Crew sub-tabs (Labor → Guards), the previous sub-tab's panel remained visible behind the new one. Additionally, clicking Fleet or Crew caused a brief flash as the placeholder panel was shown then immediately hidden.
+
+**Root cause**:
+1. `renderFleetUnified()` only hid `view-fleet` before showing the target panel, leaving the previous sub-tab panel (e.g., `view-boats`) still active.
+2. Same issue in `renderCrewUnified()` — only `view-crew` was hidden, not the previous sub-tab panel.
+3. `setTab()` activated `view-fleet`/`view-crew` placeholder panels which were immediately overridden by the render functions, causing a visual flash.
+
+**Fix**:
+- `static/app-monolith.js` (`renderFleetUnified`): Hide ALL fleet-related panels (`view-fleet`, `view-boats`, `view-picture-boats`, `view-security-boats`) before showing the target
+- `static/app-monolith.js` (`renderCrewUnified`): Hide ALL crew-related panels (`view-crew`, `view-labour`, `view-guards`) before showing the target
+- `static/app-monolith.js` (`setTab`): Skip activating placeholder panels for fleet/crew tabs since their render functions manage panel visibility
+
+**Verification**:
+- Fleet sub-tab switching shows only the active sub-tab panel
+- Crew sub-tab switching shows only the active sub-tab panel
+- No flash/flicker when switching to Fleet or Crew tabs
+- All other tabs still work (no regressions)
+- JS syntax check passes (braces balanced)
+
+**Branch**: fix/2026-03-22-fleet-crew-subtab-panel-switching
+**PR**: TBD
+**Side effects**: None
+**Next priority**: P1 items — investigate empty picture_boats/security_boats tables and whether data should be migrated from boats table
+
 ## 2026-03-22 — [P0] Fix 5 broken tabs (Fleet, Crew, Today, Documents, Timeline) + Documents API crash
 
 **Problem**: Fleet, Crew, Today, Documents, and Timeline tabs did nothing when clicked. Additionally, all Documents API endpoints crashed with a 500 error.

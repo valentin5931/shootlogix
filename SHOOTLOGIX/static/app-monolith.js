@@ -918,9 +918,9 @@ const App = (() => {
     const tabMap = { 'boats': 'boats', 'picture-boats': 'picture-boats', 'security-boats': 'security-boats' };
     const target = tabMap[_fleetSubTab] || 'boats';
 
-    // Hide the fleet panel, show the sub-tab panel instead
-    const fleetPanel = $('view-fleet');
-    if (fleetPanel) fleetPanel.classList.remove('active');
+    // Hide ALL fleet-related panels first, then show only the target
+    const fleetPanels = ['view-fleet', 'view-boats', 'view-picture-boats', 'view-security-boats'];
+    fleetPanels.forEach(id => { const p = $(id); if (p) p.classList.remove('active'); });
     const targetPanel = $(`view-${target}`);
     if (targetPanel) targetPanel.classList.add('active');
 
@@ -964,9 +964,9 @@ const App = (() => {
     const tabMap = { 'labour': 'labour', 'guards': 'guards' };
     const target = tabMap[_crewSubTab] || 'labour';
 
-    // Hide crew panel, show sub-tab panel
-    const crewPanel = $('view-crew');
-    if (crewPanel) crewPanel.classList.remove('active');
+    // Hide ALL crew-related panels first, then show only the target
+    const crewPanels = ['view-crew', 'view-labour', 'view-guards'];
+    crewPanels.forEach(id => { const p = $(id); if (p) p.classList.remove('active'); });
     const targetPanel = $(`view-${target}`);
     if (targetPanel) targetPanel.classList.add('active');
 
@@ -1315,8 +1315,11 @@ const App = (() => {
       btn.classList.toggle('active', btn.dataset.tab === tab);
     });
     document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
-    const panel = $(`view-${tab}`);
-    if (panel) panel.classList.add('active');
+    // Fleet and Crew tabs manage their own sub-panels; don't activate their placeholder panel
+    if (tab !== 'fleet' && tab !== 'crew') {
+      const panel = $(`view-${tab}`);
+      if (panel) panel.classList.add('active');
+    }
 
     if (tab === 'dashboard')       renderDashboard();
     if (tab === 'pdt')             { if (_pdtView === 'calendar') { _initCalMonth(); renderPDTCalendar(); } else renderPDT(); }
