@@ -22,7 +22,7 @@
 - JS syntax check passes (braces balanced)
 
 **Branch**: fix/2026-03-22-fleet-crew-subtab-panel-switching
-**PR**: TBD
+**PR**: #20
 **Side effects**: None
 **Next priority**: P1 items — investigate empty picture_boats/security_boats tables and whether data should be migrated from boats table
 
