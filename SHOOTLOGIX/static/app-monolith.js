@@ -910,26 +910,102 @@ const App = (() => {
   }
 
   // ── Tab navigation ─────────────────────────────────────────
+  // ── Parent-tab → sub-tab mappings ─────────────────────────
+  const _FLEET_SUBS = ['boats', 'picture-boats', 'security-boats'];
+  const _CREW_SUBS  = ['labour', 'guards'];
+  let _fleetSubTab = 'boats';
+  let _crewSubTab  = 'labour';
+
+  function _renderFleetSubNav() {
+    // Remove any existing fleet sub-nav from all fleet sub-panels
+    document.querySelectorAll('.fleet-subnav-bar').forEach(el => el.remove());
+    // Inject sub-nav at the top of the active sub-panel
+    const panel = $(`view-${_fleetSubTab}`);
+    if (!panel) return;
+    const labels = { boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats' };
+    const navHtml = `<div class="fleet-subnav-bar" style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">${
+      _FLEET_SUBS.map(st =>
+        `<button class="filter-pill ${st === _fleetSubTab ? 'active' : ''}" onclick="App.fleetSetSubTab('${st}')">${labels[st]}</button>`
+      ).join('')
+    }</div>`;
+    panel.insertAdjacentHTML('afterbegin', navHtml);
+  }
+
+  function fleetSetSubTab(sub) {
+    _fleetSubTab = sub;
+    setTab('fleet');
+  }
+
+  function _renderCrewSubNav() {
+    // Remove any existing crew sub-nav from all crew sub-panels
+    document.querySelectorAll('.crew-subnav-bar').forEach(el => el.remove());
+    // Inject sub-nav at the top of the active sub-panel
+    const panel = $(`view-${_crewSubTab}`);
+    if (!panel) return;
+    const labels = { labour: 'Labor', guards: 'Guards' };
+    const navHtml = `<div class="crew-subnav-bar" style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">${
+      _CREW_SUBS.map(st =>
+        `<button class="filter-pill ${st === _crewSubTab ? 'active' : ''}" onclick="App.crewSetSubTab('${st}')">${labels[st]}</button>`
+      ).join('')
+    }</div>`;
+    panel.insertAdjacentHTML('afterbegin', navHtml);
+  }
+
+  function crewSetSubTab(sub) {
+    _crewSubTab = sub;
+    setTab('crew');
+  }
+
   function setTab(tab) {
+    // Parent-tab redirect: fleet → show sub-tab panel, crew → show sub-tab content
+    let parentTab = tab;
+    let actualTab = tab;
+
+    if (tab === 'fleet') {
+      actualTab = _fleetSubTab;
+    }
+    if (tab === 'crew') {
+      actualTab = _crewSubTab;
+    }
+
     state.tab = tab;
+    // Highlight the parent tab button (fleet/crew) even when showing a sub-tab panel
     document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.tab === tab);
+      const dt = btn.dataset.tab;
+      btn.classList.toggle('active', dt === tab || (tab === 'fleet' && dt === 'fleet') || (tab === 'crew' && dt === 'crew'));
     });
     document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
-    const panel = $(`view-${tab}`);
-    if (panel) panel.classList.add('active');
+
+    if (tab === 'fleet') {
+      // Show the sub-tab panel directly (boats / picture-boats / security-boats)
+      const subPanel = $(`view-${actualTab}`);
+      if (subPanel) subPanel.classList.add('active');
+      _renderFleetSubNav();
+    } else if (tab === 'crew') {
+      // Show the sub-tab panel directly (view-labour or view-guards)
+      const subPanel = $(`view-${actualTab}`);
+      if (subPanel) subPanel.classList.add('active');
+      _renderCrewSubNav();
+    } else if (tab === 'today') {
+      const todayPanel = $('view-today');
+      if (todayPanel) todayPanel.classList.add('active');
+      _renderToday();
+    } else {
+      const panel = $(`view-${tab}`);
+      if (panel) panel.classList.add('active');
+    }
 
     if (tab === 'dashboard')       renderDashboard();
     if (tab === 'pdt')             { if (_pdtView === 'calendar') { _initCalMonth(); renderPDTCalendar(); } else renderPDT(); }
-    if (tab === 'boats')           { _tabCtx = 'boats';     renderBoats(); }
-    if (tab === 'picture-boats')   { _tabCtx = 'picture';   renderPictureBoats(); }
+    if (actualTab === 'boats')           { _tabCtx = 'boats';     renderBoats(); }
+    if (actualTab === 'picture-boats')   { _tabCtx = 'picture';   renderPictureBoats(); }
     if (tab === 'transport')       { _tabCtx = 'transport'; _loadAndRenderTransport(); }
     if (tab === 'fuel')            _loadAndRenderFuel();
     if (tab === 'budget')          renderBudget();
-    if (tab === 'labour')          { _tabCtx = 'labour'; _loadAndRenderLabour(); }
-    if (tab === 'security-boats')  _loadAndRenderSecurityBoats();
+    if (actualTab === 'labour')          { _tabCtx = 'labour'; _loadAndRenderLabour(); }
+    if (actualTab === 'security-boats')  _loadAndRenderSecurityBoats();
     if (tab === 'locations')       { state.locationSchedules = null; renderLocations(); }
-    if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
+    if (actualTab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
     if (tab === 'checklist')       loadChecklist();
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
@@ -940,9 +1016,9 @@ const App = (() => {
 
   // ── Breadcrumb ──────────────────────────────────────────────
   const TAB_LABELS = {
-    dashboard: 'Dashboard', pdt: 'PDT', locations: 'Locations',
-    boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
-    transport: 'Transport', fuel: 'Fuel', labour: 'Labor',
+    dashboard: 'Dashboard', today: 'Today', pdt: 'PDT', locations: 'Locations',
+    fleet: 'Fleet', boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
+    transport: 'Transport', fuel: 'Fuel', crew: 'Crew', labour: 'Labor',
     guards: 'Guards', fnb: 'Catering', budget: 'Budget', admin: 'Admin',
   };
 
@@ -11330,6 +11406,53 @@ const App = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════
+  //  TODAY VIEW — shows today's shooting day summary
+  // ═══════════════════════════════════════════════════════════
+
+  async function _renderToday() {
+    const container = $('today-content');
+    if (!container) return;
+    container.innerHTML = '<div style="padding:1rem;color:var(--text-3)">Loading today\'s schedule...</div>';
+    try {
+      const days = state.days || [];
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayDay = days.find(d => d.date === todayStr);
+      if (!todayDay) {
+        container.innerHTML = `<div style="padding:2rem;text-align:center">
+          <h2 style="margin-bottom:.5rem">Today — ${todayStr}</h2>
+          <p style="color:var(--text-3)">No shooting day scheduled for today.</p>
+          <p style="color:var(--text-3);font-size:.85rem;margin-top:1rem">Next shooting days:</p>
+          <div style="margin-top:.5rem">${days.filter(d => d.date >= todayStr).slice(0, 3).map(d =>
+            `<div style="padding:.3rem 0;font-size:.9rem"><strong>D${d.day_number}</strong> — ${d.date} ${d.location || ''}</div>`
+          ).join('') || '<span style="color:var(--text-3)">None</span>'}</div>
+        </div>`;
+        return;
+      }
+      const events = await api('GET', `/api/productions/${state.prodId}/shooting-days/${todayDay.id}/events`);
+      container.innerHTML = `<div style="padding:1.5rem">
+        <h2 style="margin-bottom:.5rem">Today — D${todayDay.day_number} — ${todayDay.date}</h2>
+        <div style="display:grid;gap:.5rem;margin-top:1rem">
+          <div class="card" style="padding:.8rem"><strong>Event:</strong> ${todayDay.event_type || '—'}</div>
+          <div class="card" style="padding:.8rem"><strong>Location:</strong> ${todayDay.location || '—'}</div>
+          <div class="card" style="padding:.8rem"><strong>Game / Activity:</strong> ${todayDay.game || '—'}</div>
+          ${todayDay.notes ? `<div class="card" style="padding:.8rem"><strong>Notes:</strong> ${todayDay.notes}</div>` : ''}
+          ${events.length ? `<div class="card" style="padding:.8rem">
+            <strong>Events (${events.length}):</strong>
+            <ul style="margin:.3rem 0 0 1rem">${events.map(e =>
+              `<li>${e.time || ''} ${e.title || e.description || ''}</li>`
+            ).join('')}</ul>
+          </div>` : ''}
+        </div>
+      </div>`;
+    } catch (e) {
+      container.innerHTML = `<div style="padding:2rem;text-align:center;color:var(--text-3)">
+        <h2>Today</h2>
+        <p>Could not load today's data.</p>
+      </div>`;
+    }
+  }
+
   //  DASHBOARD VIEW
   // ═══════════════════════════════════════════════════════════
 
@@ -12666,7 +12789,7 @@ const App = (() => {
 
   // ── Public API ─────────────────────────────────────────────
   return {
-    setTab,
+    setTab, fleetSetSubTab, crewSetSubTab,
     parsePDT, triggerPDTUpload, handlePDTFileUpload,
     setPDTView, pdtCalPrev, pdtCalNext, pdtCalToggleDay,
     addDay, editDay, closeDayModal, saveDay, deleteDay,
