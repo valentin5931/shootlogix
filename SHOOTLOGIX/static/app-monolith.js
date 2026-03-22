@@ -539,15 +539,18 @@ const App = (() => {
 
   // ── Auth: permissions & UI restrictions ──────────────────
   const ROLE_ALLOWED_TABS = {
-    ADMIN:   ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
-    UNIT:    ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
-    TRANSPO: ['dashboard','boats','picture-boats','security-boats','transport','fuel'],
-    READER:  ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
+    ADMIN:   ['dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist'],
+    UNIT:    ['dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist'],
+    TRANSPO: ['dashboard','fleet','boats','picture-boats','security-boats','transport','fuel'],
+    READER:  ['dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist'],
   };
 
   function _canViewTab(tab) {
     const role = authState.currentRole || 'READER';
     if (role === 'ADMIN') return true;
+    // Composite tabs: fleet = boats | picture-boats | security-boats; crew = labour | guards
+    if (tab === 'fleet') return _canViewTab('boats') || _canViewTab('picture-boats') || _canViewTab('security-boats');
+    if (tab === 'crew') return _canViewTab('labour') || _canViewTab('guards');
     return (ROLE_ALLOWED_TABS[role] || []).includes(tab);
   }
 
@@ -909,6 +912,101 @@ const App = (() => {
     state.pictureAssignments = assignments;
   }
 
+  // ── Fleet tab (unified vessels overview) ─────────────────────
+  async function _loadAndRenderFleet() {
+    const container = $('fleet-cards');
+    const navEl = $('fleet-sub-nav');
+    if (!container) return;
+
+    // Show loading
+    container.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-3)">Loading fleet…</div>';
+
+    const prodId = state.prodId;
+    if (!prodId) return;
+
+    // Fetch all vessel types in parallel
+    const [boats, pictureBoats, securityBoats] = await Promise.all([
+      api('GET', `/api/productions/${prodId}/boats`).catch(() => []),
+      api('GET', `/api/productions/${prodId}/picture-boats`).catch(() => []),
+      api('GET', `/api/productions/${prodId}/security-boats`).catch(() => []),
+    ]);
+
+    // Render sub-nav
+    if (navEl) {
+      navEl.innerHTML = `<div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
+        <span style="font-weight:600;font-size:.85rem;color:var(--text-2);padding:.3rem .6rem">Fleet Overview</span>
+      </div>`;
+    }
+
+    // Build cards HTML
+    const sections = [
+      { label: 'Boats', items: boats, tab: 'boats', icon: '🚤', color: '#3B82F6' },
+      { label: 'Picture Boats', items: pictureBoats, tab: 'picture-boats', icon: '📷', color: '#8B5CF6' },
+      { label: 'Security Boats', items: securityBoats, tab: 'security-boats', icon: '🛡️', color: '#EF4444' },
+    ];
+
+    let html = '<div style="padding:1rem;display:flex;flex-wrap:wrap;gap:1rem">';
+    for (const s of sections) {
+      const active = s.items.filter(b => !b.deleted_at);
+      html += `<div onclick="App.setTab('${s.tab}')" style="cursor:pointer;flex:1;min-width:220px;background:var(--bg-2);border:1px solid var(--border);border-radius:12px;padding:1.2rem;transition:transform .15s,box-shadow .15s" onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(0,0,0,.1)'" onmouseleave="this.style.transform='';this.style.boxShadow=''">
+        <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.8rem">
+          <span style="font-size:1.5rem">${s.icon}</span>
+          <span style="font-weight:700;font-size:1.1rem;color:var(--text-0)">${s.label}</span>
+        </div>
+        <div style="font-size:2rem;font-weight:800;color:${s.color}">${active.length}</div>
+        <div style="font-size:.75rem;color:var(--text-3);margin-top:.2rem">active vessel${active.length !== 1 ? 's' : ''}</div>
+        <div style="margin-top:.8rem;display:flex;flex-wrap:wrap;gap:.3rem">
+          ${active.slice(0, 5).map(b => `<span style="font-size:.7rem;background:var(--bg-3);padding:.15rem .4rem;border-radius:4px;color:var(--text-2)">${esc(b.name)}</span>`).join('')}
+          ${active.length > 5 ? `<span style="font-size:.7rem;color:var(--text-3)">+${active.length - 5} more</span>` : ''}
+        </div>
+      </div>`;
+    }
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  // ── Crew tab (Labour + Guards sub-tabs) ─────────────────────
+  // The crew tab is a container that shows labour or guards content.
+  // Sub-tab buttons in view-crew switch between the actual labour/guards panels.
+  let _crewSubTab = 'labour';
+
+  function crewSetSubTab(sub) {
+    _crewSubTab = sub;
+    // Update sub-tab button styles
+    const labourBtn = $('crew-subtab-labour');
+    const guardsBtn = $('crew-subtab-guards');
+    if (labourBtn) labourBtn.classList.toggle('active', sub === 'labour');
+    if (guardsBtn) guardsBtn.classList.toggle('active', sub === 'guards');
+
+    // Hide all view-panels, then show crew panel + the selected sub-panel
+    document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+    const crewPanel = $('view-crew');
+    if (crewPanel) crewPanel.classList.add('active');
+
+    // Show/hide the actual labour and guards panels as siblings
+    const labourView = $('view-labour');
+    const guardsView = $('view-guards');
+    if (labourView) labourView.classList.toggle('active', sub === 'labour');
+    if (guardsView) guardsView.classList.toggle('active', sub === 'guards');
+
+    // Trigger rendering
+    if (sub === 'labour') {
+      _tabCtx = 'labour';
+      _loadAndRenderLabour();
+    } else {
+      state.guardSchedules = null;
+      state.locationSchedules = null;
+      state.locationSites = null;
+      renderGuards();
+    }
+    _updateFab();
+    _updateBreadcrumb(sub === 'labour' ? 'Labor' : 'Guards');
+  }
+
+  function _renderCrewSubTab() {
+    crewSetSubTab(_crewSubTab);
+  }
+
   // ── Tab navigation ─────────────────────────────────────────
   function setTab(tab) {
     state.tab = tab;
@@ -921,11 +1019,13 @@ const App = (() => {
 
     if (tab === 'dashboard')       renderDashboard();
     if (tab === 'pdt')             { if (_pdtView === 'calendar') { _initCalMonth(); renderPDTCalendar(); } else renderPDT(); }
+    if (tab === 'fleet')           _loadAndRenderFleet();
     if (tab === 'boats')           { _tabCtx = 'boats';     renderBoats(); }
     if (tab === 'picture-boats')   { _tabCtx = 'picture';   renderPictureBoats(); }
     if (tab === 'transport')       { _tabCtx = 'transport'; _loadAndRenderTransport(); }
     if (tab === 'fuel')            _loadAndRenderFuel();
     if (tab === 'budget')          renderBudget();
+    if (tab === 'crew')            _renderCrewSubTab();
     if (tab === 'labour')          { _tabCtx = 'labour'; _loadAndRenderLabour(); }
     if (tab === 'security-boats')  _loadAndRenderSecurityBoats();
     if (tab === 'locations')       { state.locationSchedules = null; renderLocations(); }
@@ -941,9 +1041,10 @@ const App = (() => {
   // ── Breadcrumb ──────────────────────────────────────────────
   const TAB_LABELS = {
     dashboard: 'Dashboard', pdt: 'PDT', locations: 'Locations',
-    boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
-    transport: 'Transport', fuel: 'Fuel', labour: 'Labor',
+    fleet: 'Fleet', boats: 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
+    transport: 'Transport', fuel: 'Fuel', crew: 'Crew', labour: 'Labor',
     guards: 'Guards', fnb: 'Catering', budget: 'Budget', admin: 'Admin',
+    checklist: 'Checklist',
   };
 
   function _updateBreadcrumb(view, entity) {
@@ -12796,6 +12897,8 @@ const App = (() => {
     fabAction,
     // Bottom nav & breadcrumb & shortcuts
     toggleBottomNavMore, _updateBreadcrumb,
+    // Fleet & Crew unified tabs
+    crewSetSubTab, _renderCrewSubTab,
     openShortcutsPanel, closeShortcutsPanel,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
