@@ -937,6 +937,8 @@ const App = (() => {
       if (targetPanel) {
         targetPanel.prepend(nav);
         nav.style.display = 'block';
+        // Update CSS var so layout divs account for the sub-nav height
+        document.documentElement.style.setProperty('--subnav-bar-h', nav.offsetHeight + 'px');
       }
     }
 
@@ -949,11 +951,14 @@ const App = (() => {
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tab === 'fleet');
     });
+
   }
 
   function fleetSetSubTab(sub) {
     _fleetSubTab = sub;
     renderFleetUnified();
+    const _fleetLabels = { 'boats': 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats' };
+    _updateBreadcrumb(_fleetLabels[sub] || sub);
   }
 
   // ── Crew unified tab ──────────────────────────────────────
@@ -987,7 +992,11 @@ const App = (() => {
         <button class="filter-pill${_crewSubTab === 'labour' ? ' active' : ''}" onclick="App.crewSetSubTab('labour')">Labor</button>
         <button class="filter-pill${_crewSubTab === 'guards' ? ' active' : ''}" onclick="App.crewSetSubTab('guards')">Guards</button>
       </div>`;
-    if (targetPanel) targetPanel.prepend(subNav);
+    if (targetPanel) {
+      targetPanel.prepend(subNav);
+      // Update CSS var so layout divs account for the sub-nav height
+      document.documentElement.style.setProperty('--subnav-bar-h', subNav.offsetHeight + 'px');
+    }
 
     // Trigger the sub-tab's render function
     if (target === 'labour') { _tabCtx = 'labour'; _loadAndRenderLabour(); }
@@ -997,11 +1006,14 @@ const App = (() => {
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tab === 'crew');
     });
+
   }
 
   function crewSetSubTab(sub) {
     _crewSubTab = sub;
     renderCrewUnified();
+    const _crewLabels = { 'labour': 'Labor', 'guards': 'Guards' };
+    _updateBreadcrumb(_crewLabels[sub] || sub);
   }
 
   // ── Today tab ─────────────────────────────────────────────
@@ -1318,6 +1330,11 @@ const App = (() => {
     const panel = $(`view-${tab}`);
     if (panel) panel.classList.add('active');
 
+    // Reset sub-nav height offset when leaving fleet/crew tabs
+    if (tab !== 'fleet' && tab !== 'crew') {
+      document.documentElement.style.setProperty('--subnav-bar-h', '0px');
+    }
+
     if (tab === 'dashboard')       renderDashboard();
     if (tab === 'pdt')             { if (_pdtView === 'calendar') { _initCalMonth(); renderPDTCalendar(); } else renderPDT(); }
     if (tab === 'boats')           { _tabCtx = 'boats';     renderBoats(); }
@@ -1338,7 +1355,16 @@ const App = (() => {
     if (tab === 'timeline')        { if (typeof App.renderTimeline === 'function') App.renderTimeline(); }
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
-    _updateBreadcrumb();
+    // For fleet/crew, show the active sub-tab in the breadcrumb
+    if (tab === 'fleet') {
+      const _fleetLabels = { 'boats': 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats' };
+      _updateBreadcrumb(_fleetLabels[_fleetSubTab] || 'Boats');
+    } else if (tab === 'crew') {
+      const _crewLabels = { 'labour': 'Labor', 'guards': 'Guards' };
+      _updateBreadcrumb(_crewLabels[_crewSubTab] || 'Labor');
+    } else {
+      _updateBreadcrumb();
+    }
     _updateBottomNav();
   }
 
