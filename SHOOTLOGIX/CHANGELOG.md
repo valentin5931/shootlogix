@@ -19,7 +19,7 @@
 - No regressions on GET endpoints
 
 **Branch**: fix/2026-03-23-integrity-error-handler
-**PR**: TBD
+**PR**: #25
 **Side effects**: None — only affects error responses, not success paths
 **Next priority**: P1 — Picture Boats and Security Boats tables empty (data seeding issue); Labour worker list empty (helpers table not populated)
 
