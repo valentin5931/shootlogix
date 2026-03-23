@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import os
+import sqlite3
 import tempfile
 import threading
 from flask import Flask, jsonify, request, render_template, abort, Response, g, make_response
@@ -269,6 +270,16 @@ def api_export_download(job_id):
 @app.errorhandler(ValidationError)
 def handle_validation_error(e):
     return jsonify({"error": "Validation failed", "fields": e.errors}), 422
+
+
+@app.errorhandler(sqlite3.IntegrityError)
+def handle_integrity_error(e):
+    msg = str(e)
+    if "FOREIGN KEY" in msg.upper():
+        return jsonify({"error": "Referenced entity does not exist"}), 422
+    if "UNIQUE" in msg.upper():
+        return jsonify({"error": "A record with this value already exists"}), 409
+    return jsonify({"error": "Data integrity error"}), 422
 
 
 def jsonify_cached(data):

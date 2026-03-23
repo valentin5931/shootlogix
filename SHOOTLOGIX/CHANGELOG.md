@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-03-23 — [P1] Add global error handler for database integrity errors
+
+**Problem**: Any database integrity violation (invalid foreign key, duplicate unique value) caused a 500 Internal Server Error with a full Python traceback exposed to the client. This affected all CRUD endpoints — creating assignments with invalid boat/vehicle/function IDs, duplicate entries, etc. resulted in unhelpful error pages instead of clean JSON error messages.
+
+**Root cause**: No global error handler for `sqlite3.IntegrityError`. The `create_*` functions in `database.py` don't catch exceptions, so integrity errors propagated to Flask's default 500 handler, leaking internal stack traces.
+
+**Fix**:
+- `app.py`: Added `import sqlite3` and a `@app.errorhandler(sqlite3.IntegrityError)` that returns clean JSON:
+  - FK violations → 422 `{"error": "Referenced entity does not exist"}`
+  - Unique violations → 409 `{"error": "A record with this value already exists"}`
+  - Other → 422 `{"error": "Data integrity error"}`
+
+**Verification**:
+- FK violation (invalid boat_id=9999) returns 422 JSON (was 500 traceback)
+- All 5 assignment endpoints tested: boats, picture-boats, security-boats, transport, helpers
+- Valid CRUD operations still return 201/200 as expected
+- No regressions on GET endpoints
+
+**Branch**: fix/2026-03-23-integrity-error-handler
+**PR**: TBD
+**Side effects**: None — only affects error responses, not success paths
+**Next priority**: P1 — Picture Boats and Security Boats tables empty (data seeding issue); Labour worker list empty (helpers table not populated)
+
 ## 2026-03-22 — [P0] Fix 5 broken tabs (Fleet, Crew, Today, Documents, Timeline) + Documents API crash
 
 **Problem**: Fleet, Crew, Today, Documents, and Timeline tabs did nothing when clicked. Additionally, all Documents API endpoints crashed with a 500 error.
