@@ -539,10 +539,11 @@ const App = (() => {
 
   // ── Auth: permissions & UI restrictions ──────────────────
   const ROLE_ALLOWED_TABS = {
-    ADMIN:   ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
-    UNIT:    ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
-    TRANSPO: ['dashboard','boats','picture-boats','security-boats','transport','fuel'],
-    READER:  ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
+    // Include both unified tabs (fleet/crew) and their sub-tabs for keyboard-shortcut compat
+    ADMIN:   ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline'],
+    UNIT:    ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline'],
+    TRANSPO: ['today','dashboard','fleet','boats','picture-boats','security-boats','transport','fuel'],
+    READER:  ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline'],
   };
 
   function _canViewTab(tab) {
@@ -572,10 +573,14 @@ const App = (() => {
   function _applyUIRestrictions() {
     const role = authState.currentRole || 'READER';
 
+    // Tabs that are intentionally hidden in the topbar (accessed via fleet/crew unified views)
+    // These must NEVER be shown regardless of role — they have no onclick handler
+    const TOPBAR_HIDDEN_TABS = new Set(['boats', 'picture-boats', 'security-boats', 'labour', 'guards', 'dashboard']);
+
     // 1. Hide/show tabs in topbar based on role
     document.querySelectorAll('#topbar .tab-btn').forEach(btn => {
       const tab = btn.getAttribute('data-tab');
-      if (!tab) return;
+      if (!tab || TOPBAR_HIDDEN_TABS.has(tab)) return; // Skip intentionally-hidden nav buttons
       btn.style.display = _canViewTab(tab) ? '' : 'none';
     });
 
@@ -589,7 +594,7 @@ const App = (() => {
         lastWasVisible = false;
       } else if (el.classList.contains('tab-btn')) {
         const tab = el.getAttribute('data-tab');
-        const visible = !tab || _canViewTab(tab);
+        const visible = !tab || (!TOPBAR_HIDDEN_TABS.has(tab) && _canViewTab(tab));
         el.style.display = visible ? '' : 'none';
         if (visible) lastWasVisible = true;
       }
@@ -601,7 +606,7 @@ const App = (() => {
 
     // 3. If current tab is not allowed, switch to first allowed tab
     if (!_canViewTab(state.tab)) {
-      const allowed = ROLE_ALLOWED_TABS[role] || ['boats'];
+      const allowed = ROLE_ALLOWED_TABS[role] || ['pdt'];
       setTab(allowed[0]);
     }
 
