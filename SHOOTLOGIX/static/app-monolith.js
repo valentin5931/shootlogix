@@ -539,10 +539,11 @@ const App = (() => {
 
   // ── Auth: permissions & UI restrictions ──────────────────
   const ROLE_ALLOWED_TABS = {
-    ADMIN:   ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
-    UNIT:    ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
-    TRANSPO: ['dashboard','boats','picture-boats','security-boats','transport','fuel'],
-    READER:  ['dashboard','pdt','locations','boats','picture-boats','security-boats','transport','fuel','labour','guards','fnb','budget'],
+    // Include both unified tabs (fleet/crew) and their sub-tabs for keyboard-shortcut compat
+    ADMIN:   ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline'],
+    UNIT:    ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline'],
+    TRANSPO: ['today','dashboard','fleet','boats','picture-boats','security-boats','transport','fuel'],
+    READER:  ['today','dashboard','pdt','locations','fleet','boats','picture-boats','security-boats','transport','fuel','crew','labour','guards','fnb','budget','checklist','documents','timeline'],
   };
 
   function _canViewTab(tab) {
@@ -572,10 +573,14 @@ const App = (() => {
   function _applyUIRestrictions() {
     const role = authState.currentRole || 'READER';
 
+    // Tabs that are intentionally hidden in the topbar (accessed via fleet/crew unified views)
+    // These must NEVER be shown regardless of role — they have no onclick handler
+    const TOPBAR_HIDDEN_TABS = new Set(['boats', 'picture-boats', 'security-boats', 'labour', 'guards', 'dashboard']);
+
     // 1. Hide/show tabs in topbar based on role
     document.querySelectorAll('#topbar .tab-btn').forEach(btn => {
       const tab = btn.getAttribute('data-tab');
-      if (!tab) return;
+      if (!tab || TOPBAR_HIDDEN_TABS.has(tab)) return; // Skip intentionally-hidden nav buttons
       btn.style.display = _canViewTab(tab) ? '' : 'none';
     });
 
@@ -589,7 +594,7 @@ const App = (() => {
         lastWasVisible = false;
       } else if (el.classList.contains('tab-btn')) {
         const tab = el.getAttribute('data-tab');
-        const visible = !tab || _canViewTab(tab);
+        const visible = !tab || (!TOPBAR_HIDDEN_TABS.has(tab) && _canViewTab(tab));
         el.style.display = visible ? '' : 'none';
         if (visible) lastWasVisible = true;
       }
@@ -601,7 +606,7 @@ const App = (() => {
 
     // 3. If current tab is not allowed, switch to first allowed tab
     if (!_canViewTab(state.tab)) {
-      const allowed = ROLE_ALLOWED_TABS[role] || ['boats'];
+      const allowed = ROLE_ALLOWED_TABS[role] || ['pdt'];
       setTab(allowed[0]);
     }
 
@@ -937,6 +942,8 @@ const App = (() => {
       if (targetPanel) {
         targetPanel.prepend(nav);
         nav.style.display = 'block';
+        // Update CSS var so layout divs account for the sub-nav height
+        document.documentElement.style.setProperty('--subnav-bar-h', nav.offsetHeight + 'px');
       }
     }
 
@@ -949,11 +956,14 @@ const App = (() => {
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tab === 'fleet');
     });
+
   }
 
   function fleetSetSubTab(sub) {
     _fleetSubTab = sub;
     renderFleetUnified();
+    const _fleetLabels = { 'boats': 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats' };
+    _updateBreadcrumb(_fleetLabels[sub] || sub);
   }
 
   // ── Crew unified tab ──────────────────────────────────────
@@ -987,7 +997,11 @@ const App = (() => {
         <button class="filter-pill${_crewSubTab === 'labour' ? ' active' : ''}" onclick="App.crewSetSubTab('labour')">Labor</button>
         <button class="filter-pill${_crewSubTab === 'guards' ? ' active' : ''}" onclick="App.crewSetSubTab('guards')">Guards</button>
       </div>`;
-    if (targetPanel) targetPanel.prepend(subNav);
+    if (targetPanel) {
+      targetPanel.prepend(subNav);
+      // Update CSS var so layout divs account for the sub-nav height
+      document.documentElement.style.setProperty('--subnav-bar-h', subNav.offsetHeight + 'px');
+    }
 
     // Trigger the sub-tab's render function
     if (target === 'labour') { _tabCtx = 'labour'; _loadAndRenderLabour(); }
@@ -997,11 +1011,14 @@ const App = (() => {
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tab === 'crew');
     });
+
   }
 
   function crewSetSubTab(sub) {
     _crewSubTab = sub;
     renderCrewUnified();
+    const _crewLabels = { 'labour': 'Labor', 'guards': 'Guards' };
+    _updateBreadcrumb(_crewLabels[sub] || sub);
   }
 
   // ── Today tab ─────────────────────────────────────────────
@@ -1318,6 +1335,11 @@ const App = (() => {
     const panel = $(`view-${tab}`);
     if (panel) panel.classList.add('active');
 
+    // Reset sub-nav height offset when leaving fleet/crew tabs
+    if (tab !== 'fleet' && tab !== 'crew') {
+      document.documentElement.style.setProperty('--subnav-bar-h', '0px');
+    }
+
     if (tab === 'dashboard')       renderDashboard();
     if (tab === 'pdt')             { if (_pdtView === 'calendar') { _initCalMonth(); renderPDTCalendar(); } else renderPDT(); }
     if (tab === 'boats')           { _tabCtx = 'boats';     renderBoats(); }
@@ -1338,7 +1360,16 @@ const App = (() => {
     if (tab === 'timeline')        { if (typeof App.renderTimeline === 'function') App.renderTimeline(); }
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
-    _updateBreadcrumb();
+    // For fleet/crew, show the active sub-tab in the breadcrumb
+    if (tab === 'fleet') {
+      const _fleetLabels = { 'boats': 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats' };
+      _updateBreadcrumb(_fleetLabels[_fleetSubTab] || 'Boats');
+    } else if (tab === 'crew') {
+      const _crewLabels = { 'labour': 'Labor', 'guards': 'Guards' };
+      _updateBreadcrumb(_crewLabels[_crewSubTab] || 'Labor');
+    } else {
+      _updateBreadcrumb();
+    }
     _updateBottomNav();
   }
 

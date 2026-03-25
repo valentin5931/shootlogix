@@ -27,6 +27,9 @@
   --orange:     #F97316;
   --shadow-color: rgba(0,0,0,.4);
   --overlay-bg: rgba(0,0,0,.6);
+  --subnav-bar-h: 0px;
+  --bg-2:       #131929;
+  --blue:       #3B82F6;
 }
 
 [data-theme="light"] {
@@ -43,6 +46,8 @@
   --text-4:     #CBD5E1;
   --shadow-color: rgba(0,0,0,.1);
   --overlay-bg: rgba(0,0,0,.35);
+  --bg-2:       #F1F5F9;
+  --blue:       #3B82F6;
 }
 
 html, body {
@@ -526,7 +531,7 @@ select.form-control { cursor: pointer; }
   display: grid;
   grid-template-columns: 260px 1fr;
   gap: 1rem;
-  height: calc(100vh - 48px - 2.5rem);
+  height: calc(100vh - 48px - 2.5rem - var(--subnav-bar-h));
 }
 
 #boat-sidebar {
@@ -545,7 +550,7 @@ select.form-control { cursor: pointer; }
   display: grid;
   grid-template-columns: 260px 1fr;
   gap: 1rem;
-  height: calc(100vh - 48px - 2.5rem);
+  height: calc(100vh - 48px - 2.5rem - var(--subnav-bar-h));
 }
 
 #pb-boat-sidebar {
@@ -563,7 +568,7 @@ select.form-control { cursor: pointer; }
   display: grid;
   grid-template-columns: 260px 1fr;
   gap: 1rem;
-  height: calc(100vh - 48px - 2.5rem);
+  height: calc(100vh - 48px - 2.5rem - var(--subnav-bar-h));
 }
 
 #sb-boat-sidebar {
@@ -581,11 +586,11 @@ select.form-control { cursor: pointer; }
 #tb-sidebar       { display:flex; flex-direction:column; gap:.5rem; overflow-y:auto; }
 #tb-main          { overflow-y:auto; }
 
-#lb-layout        { display:grid; grid-template-columns:260px 1fr; gap:1rem; height:calc(100vh - 48px - 2.5rem); }
+#lb-layout        { display:grid; grid-template-columns:260px 1fr; gap:1rem; height:calc(100vh - 48px - 2.5rem - var(--subnav-bar-h)); }
 #lb-sidebar       { display:flex; flex-direction:column; gap:.5rem; overflow-y:auto; }
 #lb-main          { overflow-y:auto; }
 
-#gc-layout        { display:grid; grid-template-columns:260px 1fr; gap:1rem; height:calc(100vh - 48px - 2.5rem - 36px); }
+#gc-layout        { display:grid; grid-template-columns:260px 1fr; gap:1rem; height:calc(100vh - 48px - 2.5rem - 36px - var(--subnav-bar-h)); }
 #gc-sidebar       { display:flex; flex-direction:column; gap:.5rem; overflow-y:auto; }
 #gc-main          { overflow-y:auto; }
 
