@@ -1,5 +1,9 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## ~~[P0] Timeline tab broken — API crash + no frontend render~~ ✅ FIXED 2026-03-29
+- **Fixed in branch**: fix/2026-03-29-timeline-tab-broken
+- **Summary**: Backend SQL referenced non-existent columns; frontend renderTimeline was never implemented. Both fixed.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

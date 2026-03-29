@@ -1357,7 +1357,7 @@ const App = (() => {
     if (tab === 'crew')            renderCrewUnified();
     if (tab === 'today')           renderToday();
     if (tab === 'documents')       renderDocuments();
-    if (tab === 'timeline')        { if (typeof App.renderTimeline === 'function') App.renderTimeline(); }
+    if (tab === 'timeline')        renderTimeline();
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
     // For fleet/crew, show the active sub-tab in the breadcrumb
@@ -13100,6 +13100,219 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  TIMELINE (Gantt) VIEW
+  // ═══════════════════════════════════════════════════════════
+
+  let _timelineData = null;
+  let _timelineFilter = 'all'; // 'all', 'boat', 'vehicle', 'location', 'labour', 'guard'
+
+  async function renderTimeline() {
+    const container = $('timeline-content');
+    if (!container) return;
+    container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">Loading timeline...</div>';
+
+    try {
+      _timelineData = await api('GET', `/api/productions/${state.prodId}/timeline`);
+    } catch (e) {
+      container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--danger)">Failed to load timeline data.</div>';
+      return;
+    }
+
+    _renderTimelineView();
+  }
+
+  function _renderTimelineView() {
+    const container = $('timeline-content');
+    if (!container || !_timelineData) return;
+
+    const data = _timelineData;
+    const startDate = data.start_date;
+    const endDate = data.end_date;
+
+    if (!startDate || !endDate) {
+      container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">No production date range set.</div>';
+      return;
+    }
+
+    // Build date range
+    const dates = [];
+    const d0 = new Date(startDate + 'T00:00:00');
+    const d1 = new Date(endDate + 'T00:00:00');
+    for (let d = new Date(d0); d <= d1; d.setDate(d.getDate() + 1)) {
+      dates.push(new Date(d));
+    }
+
+    if (!dates.length) {
+      container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">Invalid date range.</div>';
+      return;
+    }
+
+    // Build function lookup
+    const funcMap = {};
+    (data.functions || []).forEach(f => { funcMap[f.id] = f.name; });
+
+    // Build shooting day lookup (date -> day info)
+    const dayMap = {};
+    (data.shooting_days || []).forEach(sd => { dayMap[sd.date] = sd; });
+
+    // Filter resources
+    let resources = data.resources || [];
+    if (_timelineFilter !== 'all') {
+      resources = resources.filter(r => r.type === _timelineFilter);
+    }
+
+    // Group resources
+    const groups = {};
+    resources.forEach(r => {
+      const g = r.group || 'Other';
+      if (!groups[g]) groups[g] = [];
+      groups[g].push(r);
+    });
+
+    // Type colors
+    const typeColors = {
+      boat: '#0EA5E9',
+      picture_boat: '#06B6D4',
+      security_boat: '#8B5CF6',
+      vehicle: '#22C55E',
+      location: '#F59E0B',
+      labour: '#F97316',
+      guard: '#EF4444',
+    };
+
+    const COL_W = 28; // px per day column
+    const ROW_H = 28;
+    const LABEL_W = 180;
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    // Header: filters
+    let html = `<div style="display:flex;align-items:center;gap:.5rem;padding:.6rem 1rem;border-bottom:1px solid var(--border);flex-wrap:wrap">
+      <h2 style="margin:0;font-size:1.1rem;white-space:nowrap">Timeline</h2>
+      <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-left:auto">`;
+
+    const filters = [
+      ['all', 'All'],
+      ['boat', 'Boats'],
+      ['vehicle', 'Vehicles'],
+      ['location', 'Locations'],
+      ['labour', 'Labour'],
+      ['guard', 'Guards'],
+    ];
+    filters.forEach(([val, label]) => {
+      const active = _timelineFilter === val;
+      html += `<button class="btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}" onclick="App._timelineSetFilter('${val}')">${label}</button>`;
+    });
+    html += '</div></div>';
+
+    // Stats bar
+    const totalResources = resources.length;
+    const totalAssignments = resources.reduce((s, r) => s + (r.assignments || []).length, 0);
+    html += `<div style="padding:.4rem 1rem;font-size:.75rem;color:var(--text-3);border-bottom:1px solid var(--border)">
+      ${totalResources} resource${totalResources !== 1 ? 's' : ''} &middot; ${totalAssignments} assignment${totalAssignments !== 1 ? 's' : ''} &middot; ${dates.length} days (${fmtDate(startDate)} → ${fmtDate(endDate)})
+    </div>`;
+
+    if (!resources.length) {
+      html += '<div style="padding:2rem;text-align:center;color:var(--text-3)">No resources found for this filter.</div>';
+      container.innerHTML = html;
+      return;
+    }
+
+    // Build Gantt table
+    html += `<div style="overflow:auto;max-height:calc(100vh - 48px - 2.5rem - var(--subnav-bar-h, 0px) - 100px)">`;
+    html += `<table style="border-collapse:collapse;font-size:.7rem;white-space:nowrap">`;
+
+    // Date header row
+    html += '<thead><tr>';
+    html += `<th style="position:sticky;left:0;z-index:3;background:var(--bg-1);min-width:${LABEL_W}px;padding:0 .5rem;text-align:left;border-bottom:1px solid var(--border);border-right:1px solid var(--border)">Resource</th>`;
+    dates.forEach(date => {
+      const ds = date.toISOString().slice(0, 10);
+      const isToday = ds === todayStr;
+      const isSunday = date.getDay() === 0;
+      const isShootDay = !!dayMap[ds];
+      const dd = date.getDate();
+      const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][date.getMonth()];
+      const dayLabel = dd === 1 ? `${mon} ${dd}` : dd;
+      let bgStyle = '';
+      if (isToday) bgStyle = 'background:#3B82F6;color:#fff;';
+      else if (isSunday) bgStyle = 'background:var(--bg-2);color:var(--text-3);';
+      else if (isShootDay) bgStyle = 'background:rgba(34,197,94,0.1);';
+      html += `<th style="min-width:${COL_W}px;max-width:${COL_W}px;padding:2px;text-align:center;border-bottom:1px solid var(--border);border-right:1px solid rgba(255,255,255,0.05);font-weight:normal;${bgStyle}" title="${ds}${isShootDay ? ' (D' + dayMap[ds].day_number + ')' : ''}">${dayLabel}</th>`;
+    });
+    html += '</tr></thead><tbody>';
+
+    // Rows by group
+    const groupOrder = ['Boats', 'Vehicles', 'Crew', 'Locations'];
+    const sortedGroups = Object.keys(groups).sort((a, b) => {
+      const ia = groupOrder.indexOf(a);
+      const ib = groupOrder.indexOf(b);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+
+    sortedGroups.forEach(groupName => {
+      // Group header row
+      html += `<tr><td colspan="${1 + dates.length}" style="padding:.3rem .5rem;font-weight:700;font-size:.75rem;background:var(--bg-2);border-bottom:1px solid var(--border);position:sticky;left:0">${esc(groupName)} (${groups[groupName].length})</td></tr>`;
+
+      groups[groupName].forEach(resource => {
+        const color = typeColors[resource.type] || '#94A3B8';
+        html += '<tr>';
+        html += `<td style="position:sticky;left:0;z-index:2;background:var(--bg-1);padding:2px .5rem;border-bottom:1px solid rgba(255,255,255,0.03);border-right:1px solid var(--border);max-width:${LABEL_W}px;overflow:hidden;text-overflow:ellipsis" title="${esc(resource.name)}">${esc(resource.name)}</td>`;
+
+        // Precompute assignment coverage for this resource
+        const coverage = {};
+        (resource.assignments || []).forEach(a => {
+          if (!a.start_date || !a.end_date) return;
+          const aStart = new Date(a.start_date + 'T00:00:00');
+          const aEnd = new Date(a.end_date + 'T00:00:00');
+          for (let ad = new Date(aStart); ad <= aEnd; ad.setDate(ad.getDate() + 1)) {
+            const adStr = ad.toISOString().slice(0, 10);
+            coverage[adStr] = a;
+          }
+        });
+
+        dates.forEach(date => {
+          const ds = date.toISOString().slice(0, 10);
+          const isSunday = date.getDay() === 0;
+          const isToday = ds === todayStr;
+          const a = coverage[ds];
+          let cellBg = '';
+          let cellContent = '';
+          if (a) {
+            const funcName = a.function_id ? (funcMap[a.function_id] || '') : '';
+            const phases = a.phases || '';
+            cellBg = `background:${color};opacity:0.85;`;
+            cellContent = phases || '';
+            if (funcName && !phases) cellContent = funcName.slice(0, 3);
+          } else if (isToday) {
+            cellBg = 'background:rgba(59,130,246,0.08);';
+          } else if (isSunday) {
+            cellBg = 'background:rgba(255,255,255,0.02);';
+          }
+          html += `<td style="min-width:${COL_W}px;max-width:${COL_W}px;height:${ROW_H}px;padding:0;text-align:center;border-bottom:1px solid rgba(255,255,255,0.03);border-right:1px solid rgba(255,255,255,0.03);${cellBg}color:#fff;font-size:.6rem;line-height:${ROW_H}px;overflow:hidden" title="${ds}${a ? (' — ' + (a.function_id ? (funcMap[a.function_id] || 'Assigned') : (a.phases || 'Assigned'))) : ''}">${cellContent}</td>`;
+        });
+        html += '</tr>';
+      });
+    });
+
+    html += '</tbody></table></div>';
+
+    container.innerHTML = html;
+
+    // Auto-scroll to today column
+    const tableWrapper = container.querySelector('div[style*="overflow:auto"]');
+    if (tableWrapper) {
+      const todayIndex = dates.findIndex(d => d.toISOString().slice(0, 10) === todayStr);
+      if (todayIndex > 5) {
+        tableWrapper.scrollLeft = (todayIndex - 3) * COL_W;
+      }
+    }
+  }
+
+  function _timelineSetFilter(filter) {
+    _timelineFilter = filter;
+    _renderTimelineView();
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13231,6 +13444,8 @@ const App = (() => {
     // Documents
     renderDocuments, _docShowUpload, _docSubmitUpload, _docToggleVersions,
     _docSetStatus, _docDelete, _docUploadVersion, _docSubmitVersion,
+    // Timeline
+    renderTimeline, _timelineSetFilter,
     // Alerts (AXE 7.3)
     toggleAlertsPanel, filterAlerts, loadAlerts,
     // Search
