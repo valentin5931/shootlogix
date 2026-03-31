@@ -7,6 +7,10 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
+## [P1] ~~Missing seeders on existing-DB startup~~ FIXED 2026-03-31
+- **Discovered**: 2026-03-31
+- **Fixed**: 2026-03-31 — Added `_seed_helpers`, `_seed_security_boats`, `_seed_transport` to existing-DB startup path in `data_loader.py`
+
 ## [P1] ~~Picture Boats and Security Boats lists are empty~~ FIXED 2026-03-31
 - **Discovered**: 2026-03-22
 - **Fixed**: 2026-03-31

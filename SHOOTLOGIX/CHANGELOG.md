@@ -1,5 +1,19 @@
 # CHANGELOG — ShootLogix
 
+## 2026-03-31 — [P1] Add missing seeders to existing-DB startup path
+
+**Problem**: On existing databases (e.g. Railway deployment), the `_seed_helpers`, `_seed_security_boats`, and `_seed_transport` functions were only called during first-time bootstrap but NOT on subsequent startups. This meant if a fresh DB was initialized without these seeds (e.g. DB restored from backup missing this data), helpers, security boat functions, and transport vehicles/functions would never be created.
+
+**Root cause**: The existing-DB startup path in `bootstrap()` (line 355-365) only called `_seed_picture_boats`, `_seed_picture_boat_entries`, `_seed_security_boat_entries`, and downstream seeders. The `_seed_helpers`, `_seed_security_boats`, and `_seed_transport` calls were only in the first-time bootstrap path (line 396-409).
+
+**Fix**: `data_loader.py` — Added `_seed_helpers(prod_id)`, `_seed_security_boats(prod_id)`, and `_seed_transport(prod_id)` to the existing-DB startup path, matching the first-time bootstrap path. All seeders are idempotent (skip if data already exists).
+
+**Verification**: App restarts correctly with all seeders running; no duplicate data created on subsequent restarts.
+
+**Branch**: fix/2026-03-31-seed-picture-security-boats
+**Side effects**: None — all seeders check for existing data before inserting
+**Next priority**: Merge open PRs (#17-#29) to unblock further P1/P2 work
+
 ## 2026-03-31 — [P1] Seed picture boats and security boats data
 
 **Problem**: Picture Boats and Security Boats tabs under Fleet showed empty lists ("No picture boats" / "No security boats"). The `picture_boats` and `security_boats` database tables were never populated — the data loader only created boat functions (YELLOW/RED/NEUTRAL/EXILE for picture, SAFETY GAMES/COUNCIL/ARENA/EVAC/MEDICAL/STANDBY for security) but no actual boat entries.
