@@ -1,5 +1,19 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~Checklist tab completely broken~~ FIXED 2026-03-31
+- **Discovered**: 2026-03-31
+- **Symptoms**: Checklist tab shows empty content. Load, generate, and toggle all silently fail.
+- **Root cause**: `state.production.id` used instead of `state.prodId` — `state.production` is undefined so guard clauses return early.
+- **Fix**: Replaced all 6 references in `loadChecklist()`, `generateChecklist()`, `toggleChecklistItem()`.
+- **Branch**: fix/2026-03-31-checklist-tab-broken
+
+## [P1] Legacy `/api/productions/{id}/transport` endpoint queries wrong table
+- **Discovered**: 2026-03-31
+- **Symptoms**: `GET /api/productions/1/transport` returns `[]` even though 14 vehicles exist in `transport_vehicles` table.
+- **Likely cause**: `get_transport_schedules()` in `database.py:3052` queries `vehicles` table (empty) instead of `transport_vehicles`. This is a legacy endpoint — the Transport tab JS correctly uses `/transport-vehicles`.
+- **Files involved**: `database.py` (line 3052)
+- **Estimated effort**: Quick fix — update SQL query or remove legacy endpoint
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
