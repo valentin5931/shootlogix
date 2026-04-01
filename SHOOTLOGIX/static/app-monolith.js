@@ -13100,6 +13100,521 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  Missing UI functions (added 2026-04-01)
+  // ═══════════════════════════════════════════════════════════
+
+  // ── Mobile menu ────────────────────────────────────────────
+  function toggleMobileMenu() {
+    const menu = $('mobile-menu');
+    if (!menu) return;
+    const isOpen = !menu.classList.contains('hidden');
+    if (isOpen) {
+      menu.classList.add('hidden');
+      document.body.style.overflow = '';
+    } else {
+      menu.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      menu.querySelectorAll('.mobile-menu-item[data-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === state.tab);
+      });
+    }
+  }
+
+  // ── Notifications panel ────────────────────────────────────
+  let _notifPanelOpen = false;
+  let _notifData = [];
+  let _unreadCount = 0;
+
+  async function _loadNotifications() {
+    const list = $('notif-list');
+    if (!list) return;
+    try {
+      _notifData = await api('GET', `/api/notifications`);
+      _unreadCount = _notifData.filter(n => !n.is_read).length;
+      _updateNotifBadge();
+      if (!_notifData.length) {
+        list.innerHTML = '<p style="color:var(--text-3);text-align:center;padding:1rem">No notifications</p>';
+        return;
+      }
+      list.innerHTML = _notifData.map(n => `
+        <div class="notif-item${n.is_read ? '' : ' unread'}" onclick="App._markNotifRead(${n.id})" style="padding:.5rem .75rem;border-bottom:1px solid var(--border);cursor:pointer;${n.is_read ? 'opacity:.6' : ''}">
+          <div style="font-size:.8rem;font-weight:${n.is_read ? '400' : '600'}">${_esc(n.message || n.body || '')}</div>
+          <div style="font-size:.65rem;color:var(--text-3);margin-top:.15rem">${n.created_at || ''}</div>
+        </div>
+      `).join('');
+    } catch (e) {
+      list.innerHTML = '<p style="color:var(--danger);padding:.5rem">Failed to load notifications</p>';
+    }
+  }
+
+  function _updateNotifBadge() {
+    const badge = document.querySelector('#notif-bell .notif-badge, #notif-bell .badge');
+    if (badge) {
+      badge.textContent = _unreadCount;
+      badge.style.display = _unreadCount > 0 ? '' : 'none';
+    }
+  }
+
+  async function _markNotifRead(notifId) {
+    try {
+      await api('POST', `/api/notifications/${notifId}/read`);
+      const n = _notifData.find(x => x.id === notifId);
+      if (n) { n.is_read = 1; _unreadCount = Math.max(0, _unreadCount - 1); }
+      _updateNotifBadge();
+      await _loadNotifications();
+    } catch (e) { /* ignore */ }
+  }
+
+  async function toggleNotifPanel() {
+    _notifPanelOpen = !_notifPanelOpen;
+    const panel = $('notif-panel');
+    if (!panel) return;
+    panel.classList.toggle('hidden', !_notifPanelOpen);
+    if (_notifPanelOpen) await _loadNotifications();
+  }
+
+  function closeNotifPanel() {
+    _notifPanelOpen = false;
+    const panel = $('notif-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function markAllNotificationsRead() {
+    try {
+      await api('POST', `/api/notifications/read-all`);
+      _notifData.forEach(n => n.is_read = 1);
+      _unreadCount = 0;
+      _updateNotifBadge();
+      await _loadNotifications();
+      toast('All notifications marked as read', 'success');
+    } catch (e) {
+      toast('Failed to mark all as read', 'error');
+    }
+  }
+
+  // ── Activity panel ─────────────────────────────────────────
+  let _activityOpen = false;
+  let _activityPage = 0;
+  let _activityData = [];
+
+  async function _fetchActivity() {
+    const feed = $('activity-feed');
+    if (!feed) return;
+    try {
+      const module = $('activity-filter-module')?.value || '';
+      const user = $('activity-filter-user')?.value || '';
+      const action = $('activity-filter-action')?.value || '';
+      const from = $('activity-filter-from')?.value || '';
+      const to = $('activity-filter-to')?.value || '';
+      const qs = new URLSearchParams();
+      if (module) qs.set('module', module);
+      if (user) qs.set('user_id', user);
+      if (action) qs.set('action', action);
+      if (from) qs.set('from', from);
+      if (to) qs.set('to', to);
+      qs.set('page', _activityPage);
+      qs.set('limit', 50);
+      const data = await api('GET', `/api/productions/${state.prodId}/history?${qs}`);
+      if (_activityPage === 0) _activityData = data;
+      else _activityData = _activityData.concat(data);
+      _renderActivity();
+      const loadMore = $('activity-load-more');
+      if (loadMore) loadMore.style.display = data.length >= 50 ? '' : 'none';
+    } catch (e) {
+      feed.innerHTML = '<p style="color:var(--danger);padding:.5rem">Failed to load activity</p>';
+    }
+  }
+
+  function _renderActivity() {
+    const feed = $('activity-feed');
+    if (!feed) return;
+    if (!_activityData.length) {
+      feed.innerHTML = '<p style="color:var(--text-3);text-align:center;padding:1rem">No activity found</p>';
+      return;
+    }
+    feed.innerHTML = _activityData.map(h => `
+      <div class="activity-item" style="padding:.5rem .75rem;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:.8rem;font-weight:500">${_esc(h.human_description || h.description || h.action || '')}</span>
+          <span style="font-size:.65rem;color:var(--text-3)">${h.created_at || ''}</span>
+        </div>
+        <div style="font-size:.7rem;color:var(--text-3)">${_esc(h.user_nickname || '')} · ${_esc(h.module || '')}</div>
+      </div>
+    `).join('');
+  }
+
+  async function toggleActivityPanel() {
+    if (_activityOpen) { closeActivityPanel(); return; }
+    _activityOpen = true;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+    await loadActivity();
+  }
+
+  function closeActivityPanel() {
+    _activityOpen = false;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  async function loadActivity() {
+    _activityPage = 0;
+    _activityData = [];
+    const feed = $('activity-feed');
+    if (feed) feed.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--text-3)">Loading...</div>';
+    await _fetchActivity();
+  }
+
+  function loadMoreActivity() {
+    _activityPage++;
+    _fetchActivity();
+  }
+
+  // ── Comments panel ─────────────────────────────────────────
+  let _commentsPanelOpen = false;
+  let _commentsEntity = { type: '', id: 0 };
+
+  async function _loadComments() {
+    const list = $('comments-list');
+    if (!list) return;
+    try {
+      const data = await api('GET', `/api/productions/${state.prodId}/comments?entity_type=${_commentsEntity.type}&entity_id=${_commentsEntity.id}`);
+      if (!data.length) {
+        list.innerHTML = '<p style="color:var(--text-3);text-align:center;padding:1rem">No comments yet</p>';
+        return;
+      }
+      list.innerHTML = data.map(c => `
+        <div class="comment-item" style="padding:.5rem .75rem;border-bottom:1px solid var(--border)">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:.78rem;font-weight:500">${_esc(c.user_nickname || 'User')}</span>
+            <span style="font-size:.65rem;color:var(--text-3)">${c.created_at || ''}</span>
+          </div>
+          <div style="font-size:.8rem;margin-top:.2rem">${_esc(c.body || '')}</div>
+        </div>
+      `).join('');
+    } catch (e) {
+      list.innerHTML = '<p style="color:var(--danger);padding:.5rem">Failed to load comments</p>';
+    }
+  }
+
+  async function submitComment() {
+    const input = $('comments-input');
+    const body = (input?.value || '').trim();
+    if (!body) return;
+    input.disabled = true;
+    try {
+      await api('POST', `/api/productions/${state.prodId}/comments`, {
+        entity_type: _commentsEntity.type,
+        entity_id: _commentsEntity.id,
+        body
+      });
+      input.value = '';
+      await _loadComments();
+      toast('Comment added', 'success');
+    } catch (e) {
+      toast(e.message || 'Failed to add comment', 'error');
+    } finally {
+      input.disabled = false;
+      input.focus();
+    }
+  }
+
+  function closeCommentsPanel() {
+    _commentsPanelOpen = false;
+    const panel = $('comments-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  function handleCommentKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitComment();
+    }
+  }
+
+  // ── Auto-fill tides ────────────────────────────────────────
+  async function autoFillTides() {
+    const days = state.shootingDays;
+    if (!days || !days.length) { toast('No shooting days to fill', 'error'); return; }
+    const dates = days.map(d => d.date).filter(Boolean).sort();
+    if (!dates.length) { toast('No dates found', 'error'); return; }
+    const start = dates[0];
+    const end = dates[dates.length - 1];
+    toast('Fetching tide data...');
+    try {
+      const tideData = await api('GET', `/api/tides?lat=8.35&lng=-79.05&start=${start}&end=${end}`);
+      const tideMap = {};
+      (Array.isArray(tideData) ? tideData : []).forEach(t => { tideMap[t.date] = t; });
+      let updated = 0;
+      for (const day of days) {
+        const td = tideMap[day.date];
+        if (!td || td.height == null) continue;
+        if (day.maree_hauteur != null) continue;
+        try {
+          await api('PUT', `/api/productions/${state.prodId}/shooting-days/${day.id}`, {
+            maree_hauteur: td.height,
+            maree_statut: td.status
+          });
+          day.maree_hauteur = td.height;
+          day.maree_statut = td.status;
+          updated++;
+        } catch (e) { /* skip individual failures */ }
+      }
+      renderPDT();
+      toast(`Tides filled for ${updated} day${updated !== 1 ? 's' : ''} (${dates.length - updated} skipped)`);
+    } catch (e) {
+      toast('Error fetching tides: ' + (e.message || e), 'error');
+    }
+  }
+
+  // ── Save function (create or edit) ─────────────────────────
+  async function saveFunction() {
+    const editId = $('nf-edit-id')?.value;
+    if (editId) {
+      // Edit mode — update existing function
+      const name = $('nf-name').value.trim();
+      if (!name) { toast('Name is required', 'error'); return; }
+      const data = {
+        name,
+        function_group: $('nf-group').value,
+        color: $('nf-color').value,
+        default_start: $('nf-start').value || null,
+        default_end: $('nf-end').value || null,
+        specs: $('nf-specs').value.trim() || null,
+      };
+      try {
+        const updated = await api('PUT', `/api/boat-functions/${editId}`, data);
+        // Update in all state arrays
+        for (const arr of [state.functions, state.pictureFunctions, state.transportFunctions, state.securityFunctions, state.labourFunctions, state.gcFunctions]) {
+          if (!arr) continue;
+          const idx = arr.findIndex(f => f.id == editId);
+          if (idx >= 0) Object.assign(arr[idx], updated);
+        }
+        closeAddFunctionModal();
+        toast(`Function "${name}" updated`);
+        // Re-render current tab
+        setTab(state.tab);
+      } catch (e) {
+        toast('Error: ' + e.message, 'error');
+      }
+    } else {
+      // Create mode — delegate to existing createFunction
+      createFunction();
+    }
+  }
+
+  // ── Export date modal ──────────────────────────────────────
+  let _exportDateCallback = null;
+  let _exportDateModule = null;
+
+  function closeExportDateModal() {
+    const overlay = $('export-date-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    _exportDateCallback = null;
+    _exportDateModule = null;
+  }
+
+  function openExportDateModal(module, callback) {
+    _exportDateModule = module;
+    _exportDateCallback = callback;
+    const overlay = $('export-date-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+  }
+
+  async function confirmExportDate() {
+    const dateFrom = $('export-date-from')?.value || '';
+    const dateTo = $('export-date-to')?.value || '';
+    closeExportDateModal();
+    if (_exportDateCallback) {
+      _exportDateCallback(dateFrom, dateTo);
+    }
+  }
+
+  function exportDateShortcut(type) {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    if (!fromEl || !toEl) return;
+    const now = new Date();
+    const fmt = d => d.toISOString().slice(0, 10);
+    if (type === 'week') {
+      const day = now.getDay();
+      const mon = new Date(now); mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+      fromEl.value = fmt(mon); toEl.value = fmt(sun);
+    } else if (type === 'last-week') {
+      const day = now.getDay();
+      const mon = new Date(now); mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1) - 7);
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+      fromEl.value = fmt(mon); toEl.value = fmt(sun);
+    } else if (type === 'all') {
+      fromEl.value = '';
+      toEl.value = '';
+    }
+  }
+
+  // ── Price override handler ─────────────────────────────────
+  function onPriceOverrideChange() {
+    const poInput = $('am-price-override');
+    const orGroup = $('am-override-reason-group');
+    if (!poInput || !orGroup) return;
+    const val = parseFloat(poInput.value);
+    orGroup.style.display = (val > 0) ? '' : 'none';
+  }
+
+  // ── FAB context menu ───────────────────────────────────────
+  let _fabMenuOpen = false;
+
+  function _toggleFabMenu() {
+    if (_fabMenuOpen) { _closeFabMenu(); return; }
+    _fabMenuOpen = true;
+    let menu = $('fab-context-menu');
+    if (!menu) {
+      menu = document.createElement('div');
+      menu.id = 'fab-context-menu';
+      menu.className = 'fab-context-menu';
+      document.body.appendChild(menu);
+    }
+    menu.classList.remove('hidden');
+  }
+
+  function _closeFabMenu() {
+    _fabMenuOpen = false;
+    const menu = $('fab-context-menu');
+    if (menu) menu.classList.add('hidden');
+  }
+
+  // ── Admin: Entity Permissions ──────────────────────────────
+  let _epPerms = [];
+
+  async function adminEpLoadPerms() {
+    const userId = $('admin-ep-user')?.value;
+    if (!userId) return;
+    const entityType = $('admin-ep-type')?.value || '';
+    try {
+      const qs = entityType ? `?entity_type=${entityType}` : '';
+      const data = await api('GET', `/api/admin/users/${userId}/entity-permissions${qs}`);
+      _epPerms = data.permissions || data || [];
+      const list = $('admin-ep-list');
+      if (list) {
+        if (!_epPerms.length) {
+          list.innerHTML = '<p style="color:var(--text-3)">No entity permissions.</p>';
+        } else {
+          list.innerHTML = _epPerms.map(p =>
+            `<div style="padding:.3rem 0;font-size:.8rem;border-bottom:1px solid var(--border)">${_esc(p.entity_type)}:${p.entity_id} — ${_esc(p.permission)}</div>`
+          ).join('');
+        }
+      }
+    } catch (e) { toast(e.message || 'Failed to load permissions', 'error'); }
+  }
+
+  async function adminEpAdd() {
+    const userId = $('admin-ep-user')?.value;
+    if (!userId) return;
+    const entityType = $('admin-ep-add-type')?.value;
+    const entityId = $('admin-ep-add-id')?.value;
+    const permission = $('admin-ep-add-perm')?.value || 'read';
+    if (!entityType || !entityId) { toast('Fill entity type and ID', 'error'); return; }
+    try {
+      await api('POST', `/api/admin/users/${userId}/entity-permissions`, {
+        entity_type: entityType, entity_id: parseInt(entityId), permission
+      });
+      toast('Entity permission added');
+      if ($('admin-ep-add-id')) $('admin-ep-add-id').value = '';
+      adminEpLoadPerms();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function adminLoadAccessLogs() {
+    const userId = $('admin-logs-user')?.value || '';
+    const date = $('admin-logs-date')?.value || '';
+    const endpoint = $('admin-logs-endpoint')?.value || '';
+    const list = $('admin-logs-list');
+    if (!list) return;
+    try {
+      const qs = new URLSearchParams();
+      if (userId) qs.set('user_id', userId);
+      if (date) qs.set('date', date);
+      if (endpoint) qs.set('endpoint', endpoint);
+      const data = await api('GET', `/api/admin/access-logs?${qs}`);
+      const logs = Array.isArray(data) ? data : data.logs || [];
+      if (!logs.length) {
+        list.innerHTML = '<p style="color:var(--text-3)">No logs found.</p>';
+        return;
+      }
+      list.innerHTML = logs.map(l =>
+        `<div style="padding:.3rem 0;font-size:.75rem;border-bottom:1px solid var(--border);display:flex;gap:.5rem">
+          <span style="color:var(--text-3);min-width:130px">${l.timestamp || l.created_at || ''}</span>
+          <span style="font-weight:500;min-width:80px">${_esc(l.nickname || l.user_nickname || '')}</span>
+          <span>${_esc(l.method || '')} ${_esc(l.endpoint || l.path || '')}</span>
+          <span style="color:var(--text-3)">${l.status_code || ''}</span>
+        </div>`
+      ).join('');
+    } catch (e) { toast('Failed to load logs', 'error'); }
+  }
+
+  function adminExportAccessLogs() {
+    const userId = $('admin-logs-user')?.value || '';
+    const date = $('admin-logs-date')?.value || '';
+    const qs = new URLSearchParams();
+    if (userId) qs.set('user_id', userId);
+    if (date) qs.set('date', date);
+    authDownload(`/api/admin/access-logs/export-csv?${qs}`);
+  }
+
+  async function adminPermLoadMembers() {
+    const sel = $('admin-perm-project');
+    if (!sel || !sel.value) return;
+    try {
+      const members = await api('GET', `/api/admin/projects/${sel.value}/members`);
+      const userSel = $('admin-perm-user');
+      if (userSel) {
+        userSel.innerHTML = (Array.isArray(members) ? members : []).map(m =>
+          `<option value="${m.user_id}">${_esc(m.nickname)}${m.is_admin ? ' (ADMIN)' : ''}</option>`
+        ).join('');
+      }
+      await adminPermLoadPerms();
+    } catch (e) { toast('Failed to load members: ' + e.message, 'error'); }
+  }
+
+  async function adminPermLoadPerms() {
+    const projSel = $('admin-perm-project');
+    const userSel = $('admin-perm-user');
+    if (!projSel?.value || !userSel?.value) {
+      const grid = $('admin-perm-grid');
+      if (grid) grid.innerHTML = '';
+      return;
+    }
+    try {
+      const data = await api('GET', `/api/admin/projects/${projSel.value}/members/${userSel.value}/permissions`);
+      const grid = $('admin-perm-grid');
+      if (grid) {
+        const perms = Array.isArray(data) ? data : data.permissions || [];
+        grid.innerHTML = perms.map(p =>
+          `<div style="padding:.3rem 0;font-size:.8rem;border-bottom:1px solid var(--border)">${_esc(p.module || p.permission || '')} — ${p.can_view ? 'View' : ''} ${p.can_edit ? 'Edit' : ''}</div>`
+        ).join('') || '<p style="color:var(--text-3)">No permissions set.</p>';
+      }
+    } catch (e) { toast('Failed to load permissions: ' + e.message, 'error'); }
+  }
+
+  function adminShowSaveTemplate() {
+    const action = 'save-template';
+    const title = $('admin-modal-title');
+    const body = $('admin-modal-body');
+    const okBtn = $('admin-modal-ok');
+    if (title) title.textContent = 'Save as Template';
+    if (body) body.innerHTML = `
+      <div class="form-group"><label class="form-label">Template Name</label>
+        <input type="text" id="adm-tpl-name" class="form-control" placeholder="e.g. Survival Show Standard"></div>
+      <div class="form-group"><label class="form-label">Description (optional)</label>
+        <input type="text" id="adm-tpl-desc" class="form-control" placeholder="Functions, catering categories, guard posts..."></div>
+      <p style="color:var(--text-3);font-size:.75rem;margin-top:.5rem">Saves: boat functions, catering categories/items, guard posts, location sites from current project.</p>
+    `;
+    if (okBtn) okBtn.textContent = 'Save Template';
+    const overlay = $('admin-modal-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13244,6 +13759,20 @@ const App = (() => {
     openShortcutsPanel, closeShortcutsPanel,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
+    // Missing UI functions (2026-04-01)
+    toggleMobileMenu,
+    toggleNotifPanel, closeNotifPanel, markAllNotificationsRead, _markNotifRead,
+    toggleActivityPanel, closeActivityPanel, loadActivity, loadMoreActivity,
+    submitComment, closeCommentsPanel, handleCommentKeydown,
+    autoFillTides,
+    saveFunction,
+    openExportDateModal, closeExportDateModal, confirmExportDate, exportDateShortcut,
+    onPriceOverrideChange,
+    _toggleFabMenu,
+    adminEpLoadPerms, adminEpAdd,
+    adminLoadAccessLogs, adminExportAccessLogs,
+    adminPermLoadMembers, adminPermLoadPerms,
+    adminShowSaveTemplate,
     init,
   };
 })();

@@ -1,5 +1,34 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P0] Implement 25 missing UI functions causing JS errors on click
+
+**Problem**: 25 functions called from `index.html` via `App.xxx()` were never implemented in `app-monolith.js`. Clicking the notification bell, mobile burger menu, activity panel, comment submit, create function confirm, export date modal, auto-fill tides, and several admin features all threw `App.xxx is not a function` errors. These functions existed in dead module files (`static/modules/`) that are never loaded.
+
+**Root cause**: When the app was migrated from a modular architecture to the monolith (`app-monolith.js`), these 25 functions were never ported over. The HTML template still referenced them via `onclick="App.xxx()"`.
+
+**Fix** (`static/app-monolith.js`):
+Added all 25 missing functions and exported them:
+- **Mobile**: `toggleMobileMenu` — burger menu was completely broken on mobile
+- **Notifications**: `toggleNotifPanel`, `closeNotifPanel`, `markAllNotificationsRead` — bell icon was broken
+- **Activity panel**: `toggleActivityPanel`, `closeActivityPanel`, `loadActivity`, `loadMoreActivity` — history panel was broken
+- **Comments**: `submitComment`, `closeCommentsPanel`, `handleCommentKeydown` — contextual comments were broken
+- **PDT**: `autoFillTides` — tide auto-fill button was broken
+- **Functions**: `saveFunction` — create/edit function modal confirm button was broken
+- **Export dates**: `closeExportDateModal`, `confirmExportDate`, `exportDateShortcut` — date range export was broken
+- **Price override**: `onPriceOverrideChange` — price override input handler was missing
+- **FAB**: `_toggleFabMenu` — floating action button context menu was broken
+- **Admin** (7 functions): `adminEpLoadPerms`, `adminEpAdd`, `adminLoadAccessLogs`, `adminExportAccessLogs`, `adminPermLoadMembers`, `adminPermLoadPerms`, `adminShowSaveTemplate`
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- All 25 functions now appear in the monolith's export block
+- No HTML `App.xxx()` calls remain unmatched
+- All existing API endpoints still respond correctly (no regressions)
+
+**Branch**: fix/2026-04-01-missing-monolith-functions
+**Side effects**: None
+**Next priority**: P1 — Picture boats and security boats tables are empty (data model investigation)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
