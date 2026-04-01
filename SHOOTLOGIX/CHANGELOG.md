@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P1] Fix global search broken for workers/helpers and transport vehicle types
+
+**Problem**: The global search (Cmd+K / Ctrl+K) could never find any workers/helpers, and transport vehicles were not searchable by type. Searching for "PICKUP" would match vehicle names but not the vehicle type "PICK UP".
+
+**Root cause**: Two incorrect property references in the `_doSearch()` function in `app-monolith.js`:
+1. Line 12253: `state.lbWorkers` was used but the correct state variable is `state.labourWorkers` (as used in all 15+ other references throughout the codebase)
+2. Line 12247: `v.vehicle_type` was used but the actual API field name is `v.type` (confirmed by the transport-vehicles API response schema)
+
+**Fix**:
+- `static/app-monolith.js` line 12253: Changed `state.lbWorkers` → `state.labourWorkers`
+- `static/app-monolith.js` line 12247-12248: Changed `v.vehicle_type` → `v.type` (both in the filter condition and the result detail)
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- All 36 API endpoints return 200 OK
+- No server-side errors
+- State variable name confirmed consistent with the rest of the codebase
+
+**Branch**: fix/2026-04-01-global-search-broken-workers-transport
+**Side effects**: None
+**Next priority**: P1 — Missing confirmation dialogs on 9 destructive actions (assignment removal, fuel entries deletion, FNB entries deletion)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

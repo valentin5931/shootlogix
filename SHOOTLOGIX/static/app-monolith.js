@@ -12244,13 +12244,13 @@ const App = (() => {
 
     // Search transport vehicles
     (state.transportVehicles || []).forEach(v => {
-      if ((v.name || '').toLowerCase().includes(q) || (v.vehicle_type || '').toLowerCase().includes(q)) {
-        results.push({ type: 'Vehicle', name: v.name, detail: v.vehicle_type || '', tab: 'transport', id: v.id });
+      if ((v.name || '').toLowerCase().includes(q) || (v.type || '').toLowerCase().includes(q)) {
+        results.push({ type: 'Vehicle', name: v.name, detail: v.type || '', tab: 'transport', id: v.id });
       }
     });
 
     // Search helpers/labour
-    (state.lbWorkers || []).forEach(h => {
+    (state.labourWorkers || []).forEach(h => {
       if ((h.name || '').toLowerCase().includes(q) || (h.role || '').toLowerCase().includes(q)) {
         results.push({ type: 'Worker', name: h.name, detail: h.role || '', tab: 'labour', id: h.id });
       }

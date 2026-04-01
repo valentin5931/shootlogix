@@ -1,5 +1,19 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] Global search broken for workers/helpers and transport vehicle types — FIXED 2026-04-01
+- **Discovered**: 2026-04-01
+- **Symptoms**: Global search (Cmd+K) never returns workers/helpers results; transport vehicles not searchable by type
+- **Root cause**: `_doSearch()` used `state.lbWorkers` instead of `state.labourWorkers`, and `v.vehicle_type` instead of `v.type`
+- **Fix**: Corrected property references in `static/app-monolith.js` lines 12247-12253
+- **Status**: FIXED in branch `fix/2026-04-01-global-search-broken-workers-transport`
+
+## [P1] Missing confirmation dialogs on 9 destructive actions
+- **Discovered**: 2026-04-01
+- **Symptoms**: Deleting assignments (boats, picture boats, transport, security boats, helpers), fuel entries, and FNB entries happens immediately without confirmation
+- **Likely cause**: These delete handlers call `api('DELETE', ...)` directly without wrapping in `showConfirm()`
+- **Files involved**: `static/app-monolith.js` — functions: `removeAssignmentById`, `pbRemoveAssignmentById`, `tbRemoveAssignmentById`, `sbRemoveAssignmentById`, `lbRemoveAssignmentById`, `fnbCellClick`, `fnbCellClear`, `deleteEventFromDay`, `fuelToggleDayLock`
+- **Estimated effort**: Medium — need to add `showConfirm()` wrappers to 9 functions, some may need UX consideration (assignment removal from schedule should be quick)
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
