@@ -1,5 +1,33 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P1] Fix missing delete confirmations + idempotent seed on existing bootstrap path
+
+**Problem**:
+1. Four assignment remove functions (boats, picture-boats, transport, security-boats) lacked confirmation dialogs — users could accidentally delete assignments by clicking the ✕ button with no way to undo.
+2. The existing bootstrap path in `data_loader.py` was missing calls to `_seed_helpers`, `_seed_security_boats`, and `_seed_transport`, meaning these wouldn't be seeded on redeployments.
+3. The `_seed_helpers` function checked for `context='helpers'` but the migration renames that to `'labour'`, causing duplicate seeding on every restart (73 new functions each time).
+
+**Root cause**:
+- Assignment remove functions (`removeAssignmentById`, `pbRemoveAssignmentById`, `tbRemoveAssignmentById`, `sbRemoveAssignmentById`) called `api('DELETE', ...)` directly without wrapping in `showConfirm()`.
+- The existing-production bootstrap path (lines 303-312 in `data_loader.py`) only called 5 of 8 seed functions, omitting helpers, security boats, and transport.
+- `_seed_helpers` idempotency check used `context='helpers'` which no longer exists after the `helpers->labour` migration.
+
+**Fix**:
+- `static/app-monolith.js`: Wrapped all 4 assignment remove functions in `showConfirm('Remove this assignment?', ...)` to match the existing pattern used by `lbRemoveAssignmentById`.
+- `data_loader.py`: Added `_seed_helpers`, `_seed_security_boats`, `_seed_transport` to the existing-production bootstrap path. Fixed `_seed_helpers` idempotency check to use `context IN ('helpers','labour')`.
+- Cleaned up 219 duplicate `boat_functions` and 219 duplicate `helper_assignments` created by the broken seed.
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- Python syntax check passes
+- App restarts without re-seeding (no "Seeding 73 helper functions" on restart)
+- All API endpoints return correct data (46 boats, 32 shooting days, 73 labour functions, 73 helper assignments)
+- All entity delete operations now have confirmation dialogs
+
+**Branch**: fix/2026-04-01-missing-delete-confirmations
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (need data migration or user-created entries)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
