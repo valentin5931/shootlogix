@@ -1,5 +1,32 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P1] Fix global search: broken worker lookup + lazy-load all modules
+
+**Problem**: The global search (Ctrl+K / Cmd+K) had two issues:
+1. Searching for workers/helpers never returned results because the code referenced `state.lbWorkers` which doesn't exist — the correct variable is `state.labourWorkers`.
+2. Search only found entities from tabs the user had already visited. Security boats, transport vehicles, helpers, guard workers, guard posts, and locations were invisible to search if their tabs hadn't been opened yet.
+
+**Root cause**:
+1. Typo in search function: `state.lbWorkers` instead of `state.labourWorkers` (line 12251)
+2. Search function was synchronous and only searched data already loaded into state. Several modules (transport, labour, guards, security boats, locations) lazy-load their data on first tab visit.
+
+**Fix**:
+- `static/app-monolith.js`:
+  - Fixed `state.lbWorkers` → `state.labourWorkers` in `_doSearch()`
+  - Converted `_doSearch()` from sync to async
+  - Added lazy-loading of unvisited module data (security boats, transport vehicles, helpers, guard camp workers, guard posts, locations) when search is first used
+  - Used `_*SearchLoaded` flags to prevent redundant API calls for modules initialized with empty arrays
+
+**Verification**:
+- JS syntax check passes
+- All API endpoints still return correct data
+- Search now loads missing module data on first use
+- Worker search now correctly references `state.labourWorkers`
+
+**Branch**: fix/2026-04-01-confirm-delete-dialogs
+**Side effects**: First search after app load may take slightly longer due to lazy-loading API calls (all run in parallel)
+**Next priority**: P1 — Empty data in picture_boats, security_boats tables (data model issue, not code bug); form validation gaps; mobile responsiveness
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

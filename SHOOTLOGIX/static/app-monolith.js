@@ -5566,6 +5566,7 @@ const App = (() => {
       state.transportVehicles    = vehicles;
       state.transportFunctions   = functions;
       state.transportAssignments = assignments;
+      state._transportSearchLoaded = true;
     } catch(e) { toast('Error loading transport: ' + e.message, 'error'); }
     renderTransport();
   }
@@ -7221,6 +7222,7 @@ const App = (() => {
       state.labourWorkers     = workers;
       state.labourFunctions   = functions;
       state.labourAssignments = assignments;
+      state._labourSearchLoaded = true;
     } catch(e) { toast('Error loading labour: ' + e.message, 'error'); }
     renderLabour();
   }
@@ -10201,6 +10203,7 @@ const App = (() => {
       state.gcWorkers     = workers;
       state.gcFunctions   = functions;
       state.gcAssignments = assignments;
+      state._gcSearchLoaded = true;
       _updateGcBadge();
     } catch(e) { toast('Error loading base camp guards: ' + e.message, 'error'); }
     renderGuardCamp();
@@ -12215,13 +12218,23 @@ const App = (() => {
     }
   }
 
-  function _doSearch(query) {
+  async function _doSearch(query) {
     const container = $('search-results');
     if (!container) return;
     if (!query || query.length < 2) {
       container.innerHTML = '<div style="color:var(--text-4);padding:1rem;text-align:center;font-size:.8rem">Start typing to search...</div>';
       return;
     }
+
+    // Lazy-load data for modules not yet visited (so search works across all tabs)
+    const loadPromises = [];
+    if (!state.securityBoats) loadPromises.push(api('GET', `/api/productions/${state.prodId}/security-boats`).then(d => { state.securityBoats = d; }).catch(() => {}));
+    if (!state._transportSearchLoaded) loadPromises.push(api('GET', `/api/productions/${state.prodId}/transport-vehicles`).then(d => { state.transportVehicles = d; state._transportSearchLoaded = true; }).catch(() => {}));
+    if (!state._labourSearchLoaded) loadPromises.push(api('GET', `/api/productions/${state.prodId}/helpers`).then(d => { state.labourWorkers = d; state._labourSearchLoaded = true; }).catch(() => {}));
+    if (!state._gcSearchLoaded) loadPromises.push(api('GET', `/api/productions/${state.prodId}/guard-camp-workers`).then(d => { state.gcWorkers = d; state._gcSearchLoaded = true; }).catch(() => {}));
+    if (!state.guardPosts) loadPromises.push(api('GET', `/api/productions/${state.prodId}/guard-posts`).then(d => { state.guardPosts = d; }).catch(() => {}));
+    if (!state.locationSites) loadPromises.push(api('GET', `/api/productions/${state.prodId}/locations`).then(d => { state.locationSites = d; }).catch(() => {}));
+    if (loadPromises.length > 0) await Promise.all(loadPromises);
 
     const q = query.toLowerCase();
     const results = [];
@@ -12248,7 +12261,7 @@ const App = (() => {
     });
 
     // Search helpers/labour
-    (state.lbWorkers || []).forEach(h => {
+    (state.labourWorkers || []).forEach(h => {
       if ((h.name || '').toLowerCase().includes(q) || (h.role || '').toLowerCase().includes(q)) {
         results.push({ type: 'Worker', name: h.name, detail: h.role || '', tab: 'labour', id: h.id });
       }
