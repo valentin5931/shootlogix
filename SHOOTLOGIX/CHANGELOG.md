@@ -1,5 +1,23 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P1] Populate Picture Boats tab with fleet data
+
+**Problem**: The Fleet > Picture Boats sub-tab showed an empty list (0 boats) even though 46 boats existed in the database with category "picture". The Picture Boats tab reads from the `picture_boats` table, but all boats were originally imported into the main `boats` table only.
+
+**Root cause**: The `data_loader.py` bootstrap function seeded boat functions for the picture boat scheduling system (`boat_functions` with context='picture'), but never populated the `picture_boats` entity table. The `migrate_from_bateaux()` function inserted all boats into the `boats` table with `category='picture'` — the separate `picture_boats` table was left empty.
+
+**Fix**: Added `_seed_picture_boats_entities()` migration in `data_loader.py` that copies boats from the `boats` table (where `category='picture'`) into the `picture_boats` table, preserving all shared columns (name, capacity, rates, vendor, captain, etc.). The migration is idempotent via the `picture_boats_entity_seed_v1` setting flag, and skips boats that already exist in `picture_boats` by name.
+
+**Verification**:
+- `/api/productions/1/picture-boats` now returns 46 boats (was 0)
+- All other endpoints unchanged (boats: 47, locations: 21, shooting-days: 32, etc.)
+- `boat_assignments` table intact (26 assignments, no foreign key issues)
+- App starts without errors, Python syntax check passes
+
+**Branch**: fix/2026-04-01-seed-picture-boats-table
+**Side effects**: None — original `boats` table data preserved, no deletions
+**Next priority**: Security Boats tab is still empty (no security-category boats exist in the data). Transport, Guards, Helpers, and Fuel tabs also have empty entity lists (P1 — data needs to be created by users or seeded).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

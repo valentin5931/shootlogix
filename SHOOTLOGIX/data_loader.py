@@ -238,6 +238,59 @@ def _seed_picture_boats(prod_id):
         print(f"  Seeded 4 Picture Boats functions (YELLOW/RED/NEUTRAL/EXILE)")
 
 
+def _seed_picture_boats_entities(prod_id):
+    """Copy boats with category='picture' into the picture_boats table.
+
+    The data_loader originally inserted all fleet boats into the `boats` table
+    with category='picture', but the Picture Boats sub-tab reads from the
+    separate `picture_boats` table.  This migration copies the data across so
+    the Picture Boats tab is populated.  Idempotent via setting flag.
+    """
+    if get_setting("picture_boats_entity_seed_v1"):
+        return
+
+    SHARED_COLS = [
+        "production_id", "boat_nr", "name", "capacity", "night_ok",
+        "wave_rating", "captain", "vendor", "group_name", "notes",
+        "daily_rate_estimate", "daily_rate_actual", "image_path",
+        "sort_order", "physical_vessel_id", "version", "deleted_at", "currency",
+    ]
+
+    with get_db() as conn:
+        boats = conn.execute(
+            "SELECT * FROM boats WHERE production_id=? AND category='picture' AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchall()
+
+        if not boats:
+            print("  picture_boats entity seed: no picture-category boats to copy")
+            set_setting("picture_boats_entity_seed_v1", "1")
+            return
+
+        col_list = ", ".join(SHARED_COLS)
+        placeholders = ", ".join("?" * len(SHARED_COLS))
+        copied = 0
+        for b in boats:
+            row = dict(b)
+            # Skip if a picture_boat with the same name already exists
+            existing = conn.execute(
+                "SELECT id FROM picture_boats WHERE production_id=? AND name=?",
+                (prod_id, row["name"])
+            ).fetchone()
+            if existing:
+                continue
+            vals = [row.get(c) for c in SHARED_COLS]
+            conn.execute(
+                f"INSERT INTO picture_boats ({col_list}) VALUES ({placeholders})",
+                vals,
+            )
+            copied += 1
+
+        print(f"  picture_boats entity seed: copied {copied} boats from boats table")
+
+    set_setting("picture_boats_entity_seed_v1", "1")
+
+
 def _backup_db():
     """Create a timestamped backup of the database before destructive migrations.
     Keeps the 5 most recent backups."""
@@ -301,6 +354,7 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _seed_picture_boats_entities(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -340,6 +394,7 @@ def bootstrap():
               f"delta={bv.get('delta')}")
 
     _seed_picture_boats(prod_id)
+    _seed_picture_boats_entities(prod_id)
     _seed_helpers(prod_id)
     _seed_security_boats(prod_id)
     _seed_transport(prod_id)
