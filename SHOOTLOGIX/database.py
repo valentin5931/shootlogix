@@ -1059,6 +1059,18 @@ def _migrate_db():
         ).rowcount
         if renamed:
             print(f"Migration: renamed {renamed} boat_functions context helpers -> labour")
+        # Clean up duplicate boat_functions (caused by helpers/labour context mismatch in seeder)
+        dup_deleted = conn.execute("""
+            DELETE FROM boat_functions
+            WHERE context = 'labour'
+            AND id NOT IN (
+                SELECT MIN(id) FROM boat_functions
+                WHERE context = 'labour'
+                GROUP BY production_id, name
+            )
+        """).rowcount
+        if dup_deleted:
+            print(f"Migration: removed {dup_deleted} duplicate labour boat_functions")
         # locations.location_type
         loc_cols = get_table_columns(conn, 'locations')
         if 'location_type' not in loc_cols:

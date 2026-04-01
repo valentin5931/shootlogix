@@ -7,12 +7,11 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
-## [P1] Picture Boats and Security Boats lists are empty
+## [P1] Picture Boats and Security Boats lists are empty — FIXED 2026-04-01
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`. All boats are in the main boats table with category "picture".
-- **Likely cause**: The data loader may not be seeding picture_boats and security_boats tables separately, or the boats were all created in the main `boats` table regardless of intended category.
-- **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
-- **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
+- **Fixed**: 2026-04-01 — Seeded 8 picture boats and 7 security boats in `data_loader.py`
+- **Root cause**: `_seed_picture_boats()` and `_seed_security_boats()` only created function groups, not actual boat records. The `picture_boats` and `security_boats` tables are separate from `boats` by design.
+- **Branch**: fix/2026-04-01-seed-picture-security-boats
 
 ## [P1] Transport and Helpers lists are empty
 - **Discovered**: 2026-03-22
@@ -34,6 +33,12 @@
 - **Likely cause**: Guards need to be created separately from guard posts
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
+
+## [P1] Duplicate boat_functions rows from helpers/labour context mismatch — FIXED 2026-04-01
+- **Discovered**: 2026-04-01
+- **Fixed**: 2026-04-01 — Fixed `_seed_helpers()` context check and added dedup migration in `database.py`
+- **Root cause**: `_seed_helpers()` checked for `context='helpers'` but a DB migration renames to `context='labour'`. The check always found 0 results and re-seeded 73 functions on every restart, causing 500+ duplicate rows.
+- **Branch**: fix/2026-04-01-seed-picture-security-boats
 
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22
