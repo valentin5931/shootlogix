@@ -1,5 +1,33 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P0] Fix Timeline endpoint crash (500 error — 6 column/schema mismatches)
+
+**Problem**: The Timeline tab (/api/productions/:id/timeline) crashed with a 500 error: `sqlite3.OperationalError: no such column: site`. The entire Gantt timeline view was completely broken.
+
+**Root cause**: The `api_timeline()` function in `app.py` had 6 bugs caused by column/table schema mismatches:
+1. `locations` query referenced non-existent `site` column (should be `location_type`)
+2. `location_schedules` query used `WHERE location_id=?` but table has no `location_id` — uses `location_name` + `production_id` instead
+3. `location_schedules` query selected `prep, filming, wrap` columns that don't exist — table uses a single `status` column ('P'/'F'/'W') with one row per status
+4. Phase aggregation logic assumed boolean columns instead of grouped status rows
+5. Template referenced `loc['site']` instead of `loc['location_type']` for subgroup
+6. `guard_camp_assignments` query used `WHERE worker_id=?` but table column is `helper_id`
+
+**Fix**:
+- `app.py` line 7893: Changed `SELECT id, name, site` → `SELECT id, name, location_type`
+- `app.py` lines 7895-7914: Rewrote location schedules query to use `WHERE production_id=? AND location_name=?`, select `status` column, and group phases by date
+- `app.py` line 7912: Changed `loc['site']` → `loc['location_type']`
+- `app.py` line 7883: Changed `WHERE worker_id=?` → `WHERE helper_id=?`
+
+**Verification**:
+- Timeline endpoint returns 200 (was 500)
+- Returns 83 resources (47 boats, 14 vehicles, 1 labour, 21 locations), 32 shooting days, 121 functions
+- All other endpoints still return 200 (no regressions)
+- Python syntax check passes
+
+**Branch**: fix/2026-04-01-timeline-endpoint-crash
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats empty lists (data model issue)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
