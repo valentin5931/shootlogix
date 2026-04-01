@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P1] Fix seed helpers idempotency + add missing seeds to re-run path
+
+**Problem**: On existing databases (re-run bootstrap path), `_seed_helpers()`, `_seed_security_boats()`, and `_seed_transport()` were never called. This meant transport vehicles, helper functions, and security boat functions were missing. Additionally, `_seed_helpers()` had a broken idempotency check: it looked for `context='helpers'` but a migration renames these to `context='labour'`, so it would never find existing records and could create duplicates.
+
+**Root cause**:
+1. The re-run bootstrap path (line ~303) was missing 3 seed calls that were present in the first-time path (line ~343-345).
+2. `_seed_helpers()` checked for `context='helpers'` but the DB migration renames all to `context='labour'`.
+3. `_seed_helpers()` also created new functions with `context='helpers'`, requiring the migration to run again.
+
+**Fix**: In `data_loader.py`:
+- Added `_seed_helpers(prod_id)`, `_seed_security_boats(prod_id)`, `_seed_transport(prod_id)` to the re-run bootstrap path (after `_seed_picture_boats`)
+- Changed idempotency check from `context='helpers'` to `context='labour'`
+- Changed seed creation from `context='helpers'` to `context='labour'` (eliminates need for migration rename)
+
+**Verification**:
+- Fresh DB: 73 labour functions, 6 security functions, 13 transport functions, 14 transport vehicles all seeded correctly
+- Second startup: no duplicate seeding (idempotency confirmed)
+- All API endpoints return 200
+- Python syntax check passes
+
+**Branch**: fix/2026-04-01-seed-helpers-idempotency
+**Side effects**: None
+**Next priority**: P1 — Picture Boats/Security Boats/Helpers entity tables are empty (seed functions create functions but not entities)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

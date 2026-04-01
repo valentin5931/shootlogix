@@ -1,5 +1,11 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [FIXED] _seed_helpers idempotency check uses wrong context name
+- **Discovered**: 2026-04-01
+- **Fixed**: 2026-04-01 (branch: fix/2026-04-01-seed-helpers-idempotency)
+- **Root cause**: `_seed_helpers()` checked `context='helpers'` but migration renames to `context='labour'`. Also `_seed_helpers`, `_seed_security_boats`, `_seed_transport` were missing from the re-run bootstrap path.
+- **Fix**: Changed idempotency check and seed context to `context='labour'`, added 3 missing seed calls to re-run path.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
@@ -7,19 +13,19 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
-## [P1] Picture Boats and Security Boats lists are empty
-- **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`. All boats are in the main boats table with category "picture".
-- **Likely cause**: The data loader may not be seeding picture_boats and security_boats tables separately, or the boats were all created in the main `boats` table regardless of intended category.
-- **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
-- **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
+## [P1] Picture Boats and Security Boats entity lists are empty
+- **Discovered**: 2026-03-22, updated 2026-04-01
+- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`.
+- **Likely cause**: Seed functions only create boat_functions (roles), not actual entity records in picture_boats/security_boats tables. Users need to create these via the UI, or additional seed data is needed.
+- **Files involved**: `data_loader.py`, `database.py`
+- **Estimated effort**: Medium — need entity seeding or user data entry
 
-## [P1] Transport and Helpers lists are empty
-- **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
-- **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+## [P1] Helpers entity list is empty
+- **Discovered**: 2026-04-01
+- **Symptoms**: `/api/productions/1/helpers` returns `[]` even though 73 helper functions are seeded.
+- **Likely cause**: `_seed_helpers()` creates boat_functions and helper_assignments but no `helpers` entity records.
+- **Files involved**: `data_loader.py` (`_seed_helpers`)
+- **Estimated effort**: Medium
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22
