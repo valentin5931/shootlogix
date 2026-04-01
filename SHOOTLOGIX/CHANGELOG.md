@@ -1,5 +1,31 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P1] Fix global search broken for workers + improve search navigation
+
+**Problem**:
+1. Global search (Ctrl+K / Cmd+K) never found any workers/helpers because the search function used the wrong state property name (`state.lbWorkers` instead of `state.labourWorkers`).
+2. Clicking a search result only navigated to the tab without opening the specific entity, making search less useful.
+3. Search results for Fleet sub-tabs (Boats, Picture Boats, Security Boats) and Crew sub-tabs (Labour, Guards) navigated directly to the hidden individual tabs instead of going through the Fleet/Crew unified views.
+
+**Root cause**:
+- The `_doSearch` function referenced `state.lbWorkers` which doesn't exist — the property is `state.labourWorkers` (set in `_loadAndRenderLabour()`).
+- Search result click handlers called `App.setTab(tab)` with no entity-specific navigation.
+
+**Fix**:
+- `static/app-monolith.js`: Changed `state.lbWorkers` to `state.labourWorkers` in the search function.
+- Added `_searchNavigate()` function that: (a) routes Fleet/Crew sub-tabs through the unified views, (b) opens the detail panel for the clicked entity (boat, vehicle, worker, guard) after navigation.
+- Exposed `_searchNavigate` in the App object exports.
+
+**Verification**:
+- JS syntax check passes.
+- All API endpoints still return correct data (no regressions).
+- Search now correctly matches workers by name/role.
+- Clicking a search result navigates to the correct unified tab and opens the entity detail.
+
+**Branch**: fix/2026-04-01-search-broken-worker-lookup
+**Side effects**: None
+**Next priority**: P1 — Picture Boats / Security Boats empty data tables (data model investigation)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

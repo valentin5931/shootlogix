@@ -12217,6 +12217,32 @@ const App = (() => {
     }
   }
 
+  function _searchNavigate(tab, type, id) {
+    _closeSearch();
+    // For fleet sub-tabs, navigate via Fleet unified view
+    if (tab === 'boats')           { _fleetSubTab = 'boats';           setTab('fleet'); }
+    else if (tab === 'picture-boats')   { _fleetSubTab = 'picture-boats';   setTab('fleet'); }
+    else if (tab === 'security-boats')  { _fleetSubTab = 'security-boats';  setTab('fleet'); }
+    // For crew sub-tabs, navigate via Crew unified view
+    else if (tab === 'labour')          { _crewSubTab = 'labour';           setTab('crew'); }
+    else if (tab === 'guards')          { _crewSubTab = 'guards';           setTab('crew'); }
+    else { setTab(tab); }
+
+    // Open the detail view for the entity after a brief delay to let the tab render
+    setTimeout(() => {
+      if (type === 'Boat')           openBoatDetail(id);
+      else if (type === 'Picture Boat')   openPictureBoatDetail(id);
+      else if (type === 'Vehicle')        openTransportVehicleDetail(id);
+      else if (type === 'Worker')         openWorkerDetail(id);
+      else if (type === 'Guard')          gcOpenWorkerDetail(id);
+      // For Day, Function, Location, Guard Post — scroll to the card if possible
+      else {
+        const card = document.getElementById(`boat-card-${id}`) || document.getElementById(`card-${id}`);
+        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 200);
+  }
+
   function _doSearch(query) {
     const container = $('search-results');
     if (!container) return;
@@ -12250,7 +12276,7 @@ const App = (() => {
     });
 
     // Search helpers/labour
-    (state.lbWorkers || []).forEach(h => {
+    (state.labourWorkers || []).forEach(h => {
       if ((h.name || '').toLowerCase().includes(q) || (h.role || '').toLowerCase().includes(q)) {
         results.push({ type: 'Worker', name: h.name, detail: h.role || '', tab: 'labour', id: h.id });
       }
@@ -12305,7 +12331,7 @@ const App = (() => {
     }
 
     container.innerHTML = results.slice(0, 20).map(r => `
-      <div class="search-result-item" onclick="App.setTab('${r.tab}');App._closeSearch()">
+      <div class="search-result-item" onclick="App._searchNavigate('${r.tab}','${r.type}',${r.id})">
         <span class="search-result-type">${esc(r.type)}</span>
         <span class="search-result-name">${esc(r.name)}</span>
         <span class="search-result-detail">${esc(r.detail)}</span>
@@ -13236,7 +13262,7 @@ const App = (() => {
     // Alerts (AXE 7.3)
     toggleAlertsPanel, filterAlerts, loadAlerts,
     // Search
-    _openSearch, _closeSearch,
+    _openSearch, _closeSearch, _searchNavigate,
     // History undo
     _undoFromToast,
     // FAB

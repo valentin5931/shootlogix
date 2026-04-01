@@ -1,6 +1,10 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## ~~[P1] Global search broken for workers/helpers~~ FIXED 2026-04-01
+- **Fix**: `state.lbWorkers` → `state.labourWorkers` in `_doSearch()`. Also added `_searchNavigate()` for entity-level navigation.
+- **Branch**: fix/2026-04-01-search-broken-worker-lookup
+
+## ~~[P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM~~ FIXED 2026-03-23
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
 - **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
@@ -14,12 +18,8 @@
 - **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
 - **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
 
-## [P1] Transport and Helpers lists are empty
-- **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
-- **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+## ~~[P1] Transport and Helpers lists are empty~~ RESOLVED 2026-04-01
+- **Note**: Transport vehicles exist (14 in DB) and are served correctly via `/api/productions/1/transport-vehicles`. The original diagnostic used the wrong endpoint (`/transport` which returns schedules, not vehicles). Helper assignments (73) exist. No code fix needed — data is accessible through the correct endpoints.
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22
