@@ -12215,6 +12215,21 @@ const App = (() => {
     }
   }
 
+  // Route sub-tabs through their unified parent navigation so sub-nav bar appears
+  function _navigateToTab(tab) {
+    const fleetSubs = ['boats', 'picture-boats', 'security-boats'];
+    const crewSubs  = ['labour', 'guards'];
+    if (fleetSubs.includes(tab)) {
+      _fleetSubTab = tab;
+      setTab('fleet');
+    } else if (crewSubs.includes(tab)) {
+      _crewSubTab = tab;
+      setTab('crew');
+    } else {
+      setTab(tab);
+    }
+  }
+
   function _doSearch(query) {
     const container = $('search-results');
     if (!container) return;
@@ -12303,7 +12318,7 @@ const App = (() => {
     }
 
     container.innerHTML = results.slice(0, 20).map(r => `
-      <div class="search-result-item" onclick="App.setTab('${r.tab}');App._closeSearch()">
+      <div class="search-result-item" onclick="App._navigateToTab('${r.tab}');App._closeSearch()">
         <span class="search-result-type">${esc(r.type)}</span>
         <span class="search-result-name">${esc(r.name)}</span>
         <span class="search-result-detail">${esc(r.detail)}</span>
@@ -12449,12 +12464,23 @@ const App = (() => {
         openShortcutsPanel();
       }
       // Number keys 1-0 for quick tab navigation (not in inputs)
+      // Fleet sub-tabs (4/5/6) route through unified fleet nav; crew sub-tabs (9/0) through crew nav
       if (!isInput && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const numTabs = ['dashboard', 'pdt', 'locations', 'boats', 'picture-boats', 'security-boats', 'transport', 'fuel', 'labour', 'guards'];
-        const idx = '1234567890'.indexOf(e.key);
-        if (idx >= 0 && idx < numTabs.length) {
+        const numActions = {
+          '1': () => setTab('today'),
+          '2': () => setTab('pdt'),
+          '3': () => setTab('locations'),
+          '4': () => { _fleetSubTab = 'boats';          setTab('fleet'); },
+          '5': () => { _fleetSubTab = 'picture-boats';  setTab('fleet'); },
+          '6': () => { _fleetSubTab = 'security-boats'; setTab('fleet'); },
+          '7': () => setTab('transport'),
+          '8': () => setTab('fuel'),
+          '9': () => { _crewSubTab = 'labour'; setTab('crew'); },
+          '0': () => { _crewSubTab = 'guards'; setTab('crew'); },
+        };
+        if (numActions[e.key]) {
           e.preventDefault();
-          setTab(numTabs[idx]);
+          numActions[e.key]();
         }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -13234,7 +13260,7 @@ const App = (() => {
     // Alerts (AXE 7.3)
     toggleAlertsPanel, filterAlerts, loadAlerts,
     // Search
-    _openSearch, _closeSearch,
+    _openSearch, _closeSearch, _navigateToTab,
     // History undo
     _undoFromToast,
     // FAB
