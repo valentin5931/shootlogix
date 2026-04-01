@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P1] Fix Picture Boats tab showing empty list
+
+**Problem**: The Picture Boats tab (Fleet > Picture Boats) displayed "No picture boats" despite 46 boats existing in the database. The Security Boats tab had the same structural issue.
+
+**Root cause**: All boats were stored in the `boats` table with `category='picture'`, but the `get_picture_boats()` and `get_security_boats()` functions only queried the empty `picture_boats` and `security_boats` dedicated tables. These dedicated tables were never populated during data loading — all boat data went into the main `boats` table.
+
+**Fix**:
+- `database.py`: Added fallback logic to `get_picture_boats()` and `get_security_boats()` — they now query the `boats` table filtered by category when the dedicated tables are empty. Added `get_picture_boat_by_id()` and `get_security_boat_by_id()` helper functions with the same fallback. Added `_resolve_picture_boat_table()` and `_resolve_security_boat_table()` so `update_*` and `delete_*` operate on the correct table. Updated assignment JOINs to COALESCE from both tables.
+- `app.py`: Replaced all inline `SELECT * FROM picture_boats WHERE id=?` and `SELECT * FROM security_boats WHERE id=?` queries with the new helper functions. Updated image scanning and timeline endpoints to also fall back to the `boats` table.
+
+**Verification**:
+- `/api/productions/1/picture-boats` now returns 46 boats (was 0)
+- `/api/productions/1/security-boats` returns 0 (correct — no boats with category 'security' exist yet)
+- Single boat GET, PUT, DELETE operations work on fallback boats
+- Boats main tab still returns 46 items (no regression)
+- All assignments, budget, and export endpoints still work
+- No Python syntax errors, no Flask runtime errors
+
+**Branch**: fix/2026-04-01-picture-security-boats-empty
+**Side effects**: None — the fallback only activates when dedicated tables are empty
+**Next priority**: Users should re-categorize boats as 'security' for those that are safety/security boats (EVAC, SAFETY boats). Also: Guards and Helpers tables remain empty (P1).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

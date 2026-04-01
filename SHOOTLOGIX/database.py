@@ -2044,12 +2044,31 @@ def delete_boat_assignment(assignment_id):
 
 def get_picture_boats(prod_id, include_deleted=False):
     with get_db() as conn:
+        # Try dedicated table first
         sql = "SELECT * FROM picture_boats WHERE production_id=?"
         if not include_deleted:
             sql += " AND deleted_at IS NULL"
         sql += " ORDER BY sort_order, boat_nr, name"
         rows = conn.execute(sql, (prod_id,)).fetchall()
+        if rows:
+            return [dict(r) for r in rows]
+        # Fallback: return boats with category='picture' from main boats table
+        sql = "SELECT * FROM boats WHERE production_id=? AND category='picture'"
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        sql += " ORDER BY sort_order, boat_nr, name"
+        rows = conn.execute(sql, (prod_id,)).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_picture_boat_by_id(pb_id):
+    """Get a single picture boat by ID, falling back to boats table."""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM picture_boats WHERE id=?", (pb_id,)).fetchone()
+        if row:
+            return dict(row)
+        row = conn.execute("SELECT * FROM boats WHERE id=? AND category='picture'", (pb_id,)).fetchone()
+        return dict(row) if row else None
 
 
 def create_picture_boat(data):
@@ -2065,6 +2084,12 @@ def create_picture_boat(data):
             list(fields.values())
         )
         return cur.lastrowid
+
+
+def _resolve_picture_boat_table(conn, pb_id):
+    """Determine which table a picture boat lives in."""
+    row = conn.execute("SELECT id FROM picture_boats WHERE id=?", (pb_id,)).fetchone()
+    return "picture_boats" if row else "boats"
 
 
 def update_picture_boat(pb_id, data):
@@ -2083,7 +2108,8 @@ def update_picture_boat(pb_id, data):
         where += " AND version=?"
         vals.append(version)
     with get_db() as conn:
-        cur = conn.execute(f"UPDATE picture_boats SET {sets} {where}", vals)
+        tbl = _resolve_picture_boat_table(conn, pb_id)
+        cur = conn.execute(f"UPDATE {tbl} SET {sets} {where}", vals)
         if version is not None and cur.rowcount == 0:
             return False
     return True
@@ -2091,7 +2117,8 @@ def update_picture_boat(pb_id, data):
 
 def delete_picture_boat(pb_id):
     with get_db() as conn:
-        conn.execute("UPDATE picture_boats SET deleted_at = datetime('now') WHERE id=?", (pb_id,))
+        tbl = _resolve_picture_boat_table(conn, pb_id)
+        conn.execute(f"UPDATE {tbl} SET deleted_at = datetime('now') WHERE id=?", (pb_id,))
 
 
 # ─── Picture Boat Assignments ─────────────────────────────────────────────────
@@ -2101,21 +2128,22 @@ def get_picture_boat_assignments(prod_id):
     with get_db() as conn:
         rows = conn.execute("""
             SELECT pba.*,
-                   pb.name  AS boat_name,
-                   pb.capacity AS boat_capacity,
-                   pb.captain,
-                   pb.wave_rating,
-                   pb.image_path,
-                   pb.boat_nr,
-                   pb.daily_rate_estimate AS boat_daily_rate_estimate,
-                   pb.daily_rate_actual   AS boat_daily_rate_actual,
-                   pb.vendor,
-                   pb.currency AS entity_currency,
+                   COALESCE(pb.name, b.name)  AS boat_name,
+                   COALESCE(pb.capacity, b.capacity) AS boat_capacity,
+                   COALESCE(pb.captain, b.captain) AS captain,
+                   COALESCE(pb.wave_rating, b.wave_rating) AS wave_rating,
+                   COALESCE(pb.image_path, b.image_path) AS image_path,
+                   COALESCE(pb.boat_nr, b.boat_nr) AS boat_nr,
+                   COALESCE(pb.daily_rate_estimate, b.daily_rate_estimate) AS boat_daily_rate_estimate,
+                   COALESCE(pb.daily_rate_actual, b.daily_rate_actual)   AS boat_daily_rate_actual,
+                   COALESCE(pb.vendor, b.vendor) AS vendor,
+                   COALESCE(pb.currency, b.currency) AS entity_currency,
                    bf.name  AS function_name,
                    bf.function_group,
                    bf.color
             FROM picture_boat_assignments pba
             LEFT JOIN picture_boats pb ON pba.picture_boat_id = pb.id
+            LEFT JOIN boats b ON pba.picture_boat_id = b.id AND pb.id IS NULL
             LEFT JOIN boat_functions bf ON pba.boat_function_id = bf.id
             WHERE bf.production_id = ?
             ORDER BY bf.sort_order, bf.id
@@ -2846,12 +2874,31 @@ def delete_guard_camp_assignment_by_function(func_id):
 
 def get_security_boats(prod_id, include_deleted=False):
     with get_db() as conn:
+        # Try dedicated table first
         sql = "SELECT * FROM security_boats WHERE production_id=?"
         if not include_deleted:
             sql += " AND deleted_at IS NULL"
         sql += " ORDER BY sort_order, boat_nr, name"
         rows = conn.execute(sql, (prod_id,)).fetchall()
+        if rows:
+            return [dict(r) for r in rows]
+        # Fallback: return boats with category='security' from main boats table
+        sql = "SELECT * FROM boats WHERE production_id=? AND category='security'"
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        sql += " ORDER BY sort_order, boat_nr, name"
+        rows = conn.execute(sql, (prod_id,)).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_security_boat_by_id(sb_id):
+    """Get a single security boat by ID, falling back to boats table."""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM security_boats WHERE id=?", (sb_id,)).fetchone()
+        if row:
+            return dict(row)
+        row = conn.execute("SELECT * FROM boats WHERE id=? AND category='security'", (sb_id,)).fetchone()
+        return dict(row) if row else None
 
 
 def create_security_boat(data):
@@ -2867,6 +2914,12 @@ def create_security_boat(data):
             list(fields.values())
         )
         return cur.lastrowid
+
+
+def _resolve_security_boat_table(conn, sb_id):
+    """Determine which table a security boat lives in."""
+    row = conn.execute("SELECT id FROM security_boats WHERE id=?", (sb_id,)).fetchone()
+    return "security_boats" if row else "boats"
 
 
 def update_security_boat(sb_id, data):
@@ -2885,7 +2938,8 @@ def update_security_boat(sb_id, data):
         where += " AND version=?"
         vals.append(version)
     with get_db() as conn:
-        cur = conn.execute(f"UPDATE security_boats SET {sets} {where}", vals)
+        tbl = _resolve_security_boat_table(conn, sb_id)
+        cur = conn.execute(f"UPDATE {tbl} SET {sets} {where}", vals)
         if version is not None and cur.rowcount == 0:
             return False
     return True
@@ -2893,28 +2947,30 @@ def update_security_boat(sb_id, data):
 
 def delete_security_boat(sb_id):
     with get_db() as conn:
-        conn.execute("UPDATE security_boats SET deleted_at = datetime('now') WHERE id=?", (sb_id,))
+        tbl = _resolve_security_boat_table(conn, sb_id)
+        conn.execute(f"UPDATE {tbl} SET deleted_at = datetime('now') WHERE id=?", (sb_id,))
 
 
 def get_security_boat_assignments(prod_id):
     with get_db() as conn:
         rows = conn.execute("""
             SELECT sba.*,
-                   sb.name  AS boat_name,
-                   sb.capacity AS boat_capacity,
-                   sb.captain,
-                   sb.wave_rating,
-                   sb.image_path,
-                   sb.boat_nr,
-                   sb.daily_rate_estimate AS boat_daily_rate_estimate,
-                   sb.daily_rate_actual   AS boat_daily_rate_actual,
-                   sb.vendor,
-                   sb.currency AS entity_currency,
+                   COALESCE(sb.name, b.name)  AS boat_name,
+                   COALESCE(sb.capacity, b.capacity) AS boat_capacity,
+                   COALESCE(sb.captain, b.captain) AS captain,
+                   COALESCE(sb.wave_rating, b.wave_rating) AS wave_rating,
+                   COALESCE(sb.image_path, b.image_path) AS image_path,
+                   COALESCE(sb.boat_nr, b.boat_nr) AS boat_nr,
+                   COALESCE(sb.daily_rate_estimate, b.daily_rate_estimate) AS boat_daily_rate_estimate,
+                   COALESCE(sb.daily_rate_actual, b.daily_rate_actual)   AS boat_daily_rate_actual,
+                   COALESCE(sb.vendor, b.vendor) AS vendor,
+                   COALESCE(sb.currency, b.currency) AS entity_currency,
                    bf.name  AS function_name,
                    bf.function_group,
                    bf.color
             FROM security_boat_assignments sba
             LEFT JOIN security_boats sb ON sba.security_boat_id = sb.id
+            LEFT JOIN boats b ON sba.security_boat_id = b.id AND sb.id IS NULL
             LEFT JOIN boat_functions bf ON sba.boat_function_id = bf.id
             WHERE bf.production_id = ?
             ORDER BY bf.sort_order, bf.id
