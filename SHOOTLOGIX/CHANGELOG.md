@@ -1,5 +1,32 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P0] Fix Timeline tab — API crash + missing frontend render function
+
+**Problem**: The Timeline tab was completely broken:
+1. Backend API crash: `/api/productions/{id}/timeline` returned 500 due to two SQL errors — referencing non-existent columns `site` (in `locations` table) and `prep`/`filming`/`wrap` (in `location_schedules` table).
+2. Frontend missing: `renderTimeline()` function was never implemented — the `setTab` handler checked `typeof App.renderTimeline === 'function'` but it was never defined, so clicking Timeline showed an empty panel.
+
+**Root cause**:
+- The `api_timeline()` function in `app.py` was written against an assumed schema that didn't match the actual database. The `locations` table has `location_type` not `site`, and `location_schedules` uses `location_name` + `status` (P/F/W) instead of `location_id` + `prep`/`filming`/`wrap` booleans.
+- The `renderTimeline` function was never added to `app-monolith.js` when the tab and API were created.
+
+**Fix**:
+- `app.py` (line 7893): Changed `SELECT id, name, site` to `SELECT id, name, location_type`. Changed `loc['site']` to `loc['location_type']`.
+- `app.py` (lines 7895-7914): Rewrote location schedules query to use `location_name` and `status` columns, grouping by date to combine P/F/W phases.
+- `static/app-monolith.js`: Added full `renderTimeline()` function — Gantt-style table with date columns, resource rows grouped by category (Boats, Transport, Crew, Locations), color-coded assignment bars, shooting day highlighting, type filter pills, and a color legend.
+- Updated `setTab` handler to call `renderTimeline()` directly instead of checking `typeof`.
+- Exported `renderTimeline` and `_timelineSetFilter` in App public interface.
+
+**Verification**:
+- Timeline API returns 200 with 81 resources, 32 shooting days
+- All other endpoints still return 200 (no regressions)
+- JS brace/paren/bracket balance verified
+- Frontend renders a Gantt chart with resource rows and date columns
+
+**Branch**: fix/2026-04-01-timeline-tab-broken
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats empty lists (data model investigation)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

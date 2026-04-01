@@ -1,5 +1,10 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [RESOLVED] Timeline tab completely broken (API crash + no render function)
+- **Discovered**: 2026-04-01
+- **Resolved**: 2026-04-01 (branch: fix/2026-04-01-timeline-tab-broken)
+- **Details**: Timeline API crashed with 500 (wrong column names in SQL), and `renderTimeline()` was never implemented in `app-monolith.js`. Fixed both backend SQL and added full Gantt-style frontend.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

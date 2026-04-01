@@ -1357,7 +1357,7 @@ const App = (() => {
     if (tab === 'crew')            renderCrewUnified();
     if (tab === 'today')           renderToday();
     if (tab === 'documents')       renderDocuments();
-    if (tab === 'timeline')        { if (typeof App.renderTimeline === 'function') App.renderTimeline(); }
+    if (tab === 'timeline')        renderTimeline();
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
     // For fleet/crew, show the active sub-tab in the breadcrumb
@@ -13012,6 +13012,153 @@ const App = (() => {
     } catch(e) { toast('Refresh failed: ' + e.message, 'error'); }
   }
 
+  // ── Timeline (Gantt) ──────────────────────────────────────────
+
+  let _timelineFilter = 'all'; // 'all' | 'boat' | 'vehicle' | 'labour' | 'guard' | 'location'
+
+  async function renderTimeline() {
+    const container = $('timeline-content');
+    if (!container) return;
+    container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">Loading timeline...</div>';
+
+    let data;
+    try {
+      data = await api('GET', `/api/productions/${state.prodId}/timeline`);
+    } catch(e) {
+      container.innerHTML = '<div style="padding:2rem;text-align:center;color:#EF4444">Failed to load timeline</div>';
+      return;
+    }
+
+    const resources = data.resources || [];
+    const days = data.shooting_days || [];
+    const startDate = data.start_date;
+    const endDate = data.end_date;
+
+    if (!startDate || !endDate) {
+      container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">No production date range set</div>';
+      return;
+    }
+
+    // Build date columns
+    const dates = [];
+    const cur = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    while (cur <= end) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    // Build shooting day lookup
+    const dayMap = {};
+    days.forEach(d => { dayMap[d.date] = d; });
+
+    // Group resources
+    const groups = {};
+    resources.forEach(r => {
+      const g = r.group || 'Other';
+      if (!groups[g]) groups[g] = [];
+      groups[g].push(r);
+    });
+
+    // Type filter
+    const typeFilters = [
+      { key: 'all', label: 'All' },
+      { key: 'boat', label: 'Boats' },
+      { key: 'vehicle', label: 'Transport' },
+      { key: 'labour', label: 'Labour' },
+      { key: 'guard', label: 'Guards' },
+      { key: 'location', label: 'Locations' },
+    ];
+
+    let html = `<div style="padding:.75rem 1rem">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
+        <span class="section-title" style="margin:0">Timeline</span>
+        <span style="color:var(--text-3);font-size:.8rem">${resources.length} resources &middot; ${dates.length} days</span>
+        <div style="display:flex;gap:.25rem;margin-left:auto">
+          ${typeFilters.map(f => `<button class="filter-pill${_timelineFilter === f.key ? ' active' : ''}" onclick="App._timelineSetFilter('${f.key}')">${f.label}</button>`).join('')}
+        </div>
+      </div>
+      <div style="overflow:auto;max-height:calc(100vh - 8rem);border:1px solid var(--border);border-radius:6px">
+        <table style="border-collapse:collapse;font-size:.72rem;width:max-content;min-width:100%">
+          <thead>
+            <tr style="position:sticky;top:0;z-index:2;background:var(--bg-1)">
+              <th style="position:sticky;left:0;z-index:3;background:var(--bg-1);padding:.3rem .5rem;border-bottom:2px solid var(--border);text-align:left;min-width:160px">Resource</th>
+              ${dates.map(d => {
+                const dt = new Date(d + 'T12:00:00');
+                const dow = dt.toLocaleDateString('en-US', { weekday: 'short' }).charAt(0);
+                const day = dt.getDate();
+                const isShoot = !!dayMap[d];
+                const isSun = dt.getDay() === 0;
+                return `<th style="padding:.2rem .15rem;border-bottom:2px solid var(--border);text-align:center;min-width:22px;${isShoot ? 'background:rgba(59,130,246,.15);' : ''}${isSun ? 'border-left:2px solid var(--border);' : ''}" title="${d}${isShoot ? ' (D' + dayMap[d].day_number + ')' : ''}"><div style="line-height:1">${dow}</div><div style="line-height:1;font-weight:700">${day}</div></th>`;
+              }).join('')}
+            </tr>
+          </thead>
+          <tbody>`;
+
+    const typeColors = {
+      boat: '#3B82F6', picture_boat: '#8B5CF6', security_boat: '#EF4444',
+      vehicle: '#22C55E', labour: '#F59E0B', guard: '#F97316', location: '#06B6D4'
+    };
+
+    for (const [groupName, items] of Object.entries(groups)) {
+      // Filter by type
+      const filtered = items.filter(r => _timelineFilter === 'all' || r.type === _timelineFilter
+        || (_timelineFilter === 'boat' && (r.type === 'boat' || r.type === 'picture_boat' || r.type === 'security_boat')));
+      if (filtered.length === 0) continue;
+
+      html += `<tr><td colspan="${dates.length + 1}" style="padding:.3rem .5rem;font-weight:700;background:var(--bg-2);border-bottom:1px solid var(--border);font-size:.75rem;position:sticky;left:0">${esc(groupName)} (${filtered.length})</td></tr>`;
+
+      for (const r of filtered) {
+        const color = typeColors[r.type] || '#94A3B8';
+        // Build assignment date set
+        const assignDates = {};
+        (r.assignments || []).forEach(a => {
+          if (!a.start_date || !a.end_date) return;
+          const s = new Date(a.start_date + 'T00:00:00');
+          const e = new Date(a.end_date + 'T00:00:00');
+          const c = new Date(s);
+          while (c <= e) {
+            const dk = c.toISOString().slice(0, 10);
+            assignDates[dk] = a.status || a.phases || 'assigned';
+            c.setDate(c.getDate() + 1);
+          }
+        });
+
+        html += `<tr>
+          <td style="position:sticky;left:0;z-index:1;background:var(--bg-1);padding:.2rem .5rem;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px" title="${esc(r.name)}">${esc(r.name)}</td>`;
+
+        for (const d of dates) {
+          const hasAssign = assignDates[d];
+          const isShoot = !!dayMap[d];
+          const isSun = new Date(d + 'T12:00:00').getDay() === 0;
+          let cellStyle = `padding:0;border-bottom:1px solid var(--border);${isSun ? 'border-left:2px solid var(--border);' : ''}`;
+          if (hasAssign) {
+            cellStyle += `background:${color};`;
+            const title = typeof hasAssign === 'string' ? hasAssign : '';
+            html += `<td style="${cellStyle}" title="${esc(r.name)} - ${d} ${esc(title)}"><div style="height:16px"></div></td>`;
+          } else {
+            cellStyle += isShoot ? 'background:rgba(59,130,246,.05);' : '';
+            html += `<td style="${cellStyle}"><div style="height:16px"></div></td>`;
+          }
+        }
+        html += `</tr>`;
+      }
+    }
+
+    html += `</tbody></table></div>
+      <div style="display:flex;gap:1rem;margin-top:.5rem;font-size:.72rem;color:var(--text-3);flex-wrap:wrap">
+        ${Object.entries(typeColors).map(([t, c]) => `<span><span style="display:inline-block;width:10px;height:10px;background:${c};border-radius:2px;margin-right:3px"></span>${t.replace('_',' ')}</span>`).join('')}
+      </div>
+    </div>`;
+
+    container.innerHTML = html;
+  }
+
+  function _timelineSetFilter(filter) {
+    _timelineFilter = filter;
+    renderTimeline();
+  }
+
   // ── Daily Checklist ──────────────────────────────────────────
 
   const _clCategoryIcons = {
@@ -13231,6 +13378,8 @@ const App = (() => {
     // Documents
     renderDocuments, _docShowUpload, _docSubmitUpload, _docToggleVersions,
     _docSetStatus, _docDelete, _docUploadVersion, _docSubmitVersion,
+    // Timeline
+    renderTimeline, _timelineSetFilter,
     // Alerts (AXE 7.3)
     toggleAlertsPanel, filterAlerts, loadAlerts,
     // Search
