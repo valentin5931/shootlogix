@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P0] Fix Timeline API crash — 3 wrong column references
+
+**Problem**: The Timeline (Gantt) API endpoint `/api/productions/<id>/timeline` returned a 500 error every time it was called, making the Timeline tab completely non-functional.
+
+**Root cause**: The `api_timeline` function in `app.py` had 3 incorrect column references that didn't match the actual database schema:
+1. `SELECT ... site FROM locations` — `site` column doesn't exist, should be `location_type`
+2. `SELECT ... prep, filming, wrap FROM location_schedules WHERE location_id=?` — none of these columns exist; table uses `status`, `location_name` and `production_id`
+3. `guard_camp_assignments WHERE worker_id=?` — column is `helper_id`, not `worker_id`
+
+**Fix**:
+- `app.py` line 7883: Changed `WHERE worker_id=?` to `WHERE helper_id=?` for guard camp assignments query
+- `app.py` line 7893: Changed `SELECT id, name, site` to `SELECT id, name, location_type` for locations query
+- `app.py` lines 7895-7912: Rewrote location_schedules query to use actual schema (`location_name`, `status`) instead of non-existent columns (`location_id`, `prep`, `filming`, `wrap`)
+
+**Verification**:
+- Timeline API now returns 200 with 81 resources (46 boats, 14 vehicles, 21 locations) and 32 shooting days
+- All other endpoints still return 200 (no regressions)
+- Python syntax check passes
+
+**Branch**: fix/2026-04-01-timeline-api-crash-site-column
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats empty lists (data migration needed)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
