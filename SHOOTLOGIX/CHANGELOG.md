@@ -12,12 +12,15 @@
 **Fix**:
 - `static/app-monolith.js` line 13001: Added `?context=boats` to assignments reload URL
 - `static/app-monolith.js` line 13002: Changed `state.pbFunctions` → `state.pictureFunctions`, `state.pbAssignments` → `state.pictureAssignments`
-- `static/app-monolith.js` line 3522: Changed `state.pbAssignments` → `state.pictureAssignments`, `state.sbAssignments` → `state.securityAssignments`
+- `static/app-monolith.js` line 3522: Changed `state.pbAssignments` → `state.pictureAssignments`, `state.sbAssignments` → `state.securityAssignments`, `state.helperAssignments` → `state.labourAssignments`
+- `static/app-monolith.js` lines 2489, 4367: Added null guard on `renderBoatList` and `renderPbBoatList` containers to prevent crash when DOM element absent
+- `static/app-monolith.js` lines 2453-2454, 4338-4339: Added optional chaining (`?.`) to `setBoatView` and `pbSetBoatView` classList toggles to prevent null crash
 
 **Verification**:
 - JS syntax check passes
 - All 45 backend tests pass
 - State key names now consistent across initial load, reload, and assignment search
+- Null guards match safe patterns used in security boats equivalent functions
 
 **Branch**: fix/2026-04-01-reload-tab-state-keys
 **Side effects**: None
