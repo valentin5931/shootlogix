@@ -1,5 +1,25 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P0] Fix picture boats state variable mismatch in _reloadCurrentTab and _findAssignment
+
+**Problem**: After a pull-to-refresh on the Picture Boats tab, functions and assignments data was stored in wrong state variables (`state.pbFunctions`/`state.pbAssignments` instead of `state.pictureFunctions`/`state.pictureAssignments`). Additionally, the `_findAssignment()` helper searched `state.pbAssignments` (which was always undefined/stale) instead of `state.pictureAssignments`, making picture boat assignments invisible for day-override operations.
+
+**Root cause**: Naming inconsistency — `loadPictureBoatsData()` (initial load) used `state.pictureFunctions`/`state.pictureAssignments`, but `_reloadCurrentTab()` (pull-to-refresh) used `state.pbFunctions`/`state.pbAssignments`. Same mismatch in `_findAssignment()`.
+
+**Fix**:
+- `static/app-monolith.js` line 13002: Changed `state.pbFunctions=f; state.pbAssignments=a` to `state.pictureFunctions=f; state.pictureAssignments=a`
+- `static/app-monolith.js` line 3522: Changed `state.pbAssignments` to `state.pictureAssignments` in `_findAssignment()`
+
+**Verification**:
+- JS syntax check passes (node -c)
+- All 45 existing tests pass
+- No remaining references to the wrong variable names `state.pbFunctions`/`state.pbAssignments`
+- App starts and serves correctly
+
+**Branch**: fix/2026-04-01-picture-boats-state-variable-mismatch
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (no data seeded). Users can add boats manually through the UI, but no initial data exists.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
