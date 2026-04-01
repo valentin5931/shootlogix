@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P1] Fix pull-to-refresh broken state keys + missing context filter
+
+**Problem**:
+1. Pull-to-refresh (swipe down) on the Picture Boats tab saved fetched data to wrong state keys (`state.pbFunctions` and `state.pbAssignments`), causing the render to use stale data from `state.pictureFunctions` and `state.pictureAssignments`.
+2. Pull-to-refresh on the Boats tab fetched assignments without `?context=boats` filter, potentially mixing in picture/security boat assignments.
+3. `_findAssignment()` searched `state.pbAssignments` and `state.sbAssignments` (never populated) instead of `state.pictureAssignments` and `state.securityAssignments`, making it unable to find picture/security boat assignments.
+
+**Root cause**: The `_reloadCurrentTab()` function (used by pull-to-refresh) was written with incorrect state key names that didn't match the rest of the codebase. Similarly, `_findAssignment()` used the same wrong key names.
+
+**Fix**:
+- `static/app-monolith.js` line 13001: Added `?context=boats` to assignments reload URL
+- `static/app-monolith.js` line 13002: Changed `state.pbFunctions` → `state.pictureFunctions`, `state.pbAssignments` → `state.pictureAssignments`
+- `static/app-monolith.js` line 3522: Changed `state.pbAssignments` → `state.pictureAssignments`, `state.sbAssignments` → `state.securityAssignments`
+
+**Verification**:
+- JS syntax check passes
+- All 45 backend tests pass
+- State key names now consistent across initial load, reload, and assignment search
+
+**Branch**: fix/2026-04-01-reload-tab-state-keys
+**Side effects**: None
+**Next priority**: P1 — Picture Boats / Security Boats tables are empty (data model issue — boats exist in main boats table but not in dedicated tables)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
