@@ -1099,6 +1099,23 @@ const App = (() => {
       html += '</div>';
     }
 
+    // Locations
+    if (d.locations && d.locations.length) {
+      html += `<h3 style="margin:.8rem 0 .3rem;color:#22C55E">&#128205; Locations (${d.locations.length})</h3>`;
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.5rem">';
+      for (const loc of d.locations) {
+        const statusMap = { F: 'Filming', P: 'Prep', W: 'Wrap', S: 'Standby' };
+        const statusLabel = statusMap[loc.status] || loc.status || '';
+        const statusColor = loc.status === 'F' ? '#3B82F6' : loc.status === 'P' ? '#F59E0B' : loc.status === 'W' ? '#8B5CF6' : '#94A3B8';
+        html += `<div style="padding:.5rem;border-left:3px solid #22C55E;background:var(--bg-2);border-radius:4px">
+          <strong>${esc(loc.location_name)}</strong>
+          ${statusLabel ? `<br><span style="font-size:.75rem;padding:.1rem .3rem;border-radius:3px;background:${statusColor}20;color:${statusColor}">${esc(statusLabel)}</span>` : ''}
+          ${loc.notes ? `<br><span style="color:var(--text-3);font-size:.8rem">${esc(loc.notes)}</span>` : ''}
+        </div>`;
+      }
+      html += '</div>';
+    }
+
     // Crew
     const crewTotal = (d.counts && d.counts.crew_total) || 0;
     if (crewTotal > 0) {
@@ -1120,7 +1137,7 @@ const App = (() => {
     }
 
     // Empty state
-    if (!d.schedule && fleetTotal === 0 && (!d.transport || !d.transport.length) && crewTotal === 0) {
+    if (!d.schedule && fleetTotal === 0 && (!d.transport || !d.transport.length) && (!d.locations || !d.locations.length) && crewTotal === 0) {
       html += `<div style="text-align:center;padding:3rem;color:var(--text-3)">
         <div style="font-size:2rem">&#128197;</div>
         <div>No operations scheduled for this date</div>

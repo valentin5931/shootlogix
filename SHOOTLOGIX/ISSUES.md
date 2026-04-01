@@ -1,5 +1,11 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] Today tab missing location assignments — FIXED 2026-04-01
+- **Discovered**: 2026-04-01
+- **Symptoms**: Today tab showed Fleet, Transport, Crew, and Fuel but no Locations, even though the API returned location data
+- **Fix**: Added Locations rendering block to `renderToday()` in `app-monolith.js`
+- **Branch**: fix/2026-04-01-today-tab-missing-locations
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

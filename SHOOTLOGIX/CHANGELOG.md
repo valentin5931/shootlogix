@@ -1,5 +1,24 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P1] Today tab: display location assignments
+
+**Problem**: The Today tab showed Fleet, Transport, Crew, and Fuel sections but completely omitted Location assignments, even though the `/api/productions/:id/today` API already returns location data (with location_name, status, and notes). Users couldn't see which locations were active for a given day without leaving the Today view.
+
+**Root cause**: The `renderToday()` function in `app-monolith.js` never included a rendering block for `d.locations`, despite the API returning it. This was likely an oversight when the Today tab was originally implemented.
+
+**Fix**:
+- `static/app-monolith.js` (`renderToday`, ~line 1102): Added a Locations section between Transport and Crew that renders each location card with name, status badge (Filming/Prep/Wrap/Standby with color coding), and optional notes.
+- Updated the empty state check to also account for locations, so "No operations scheduled" only shows when there are truly no assignments of any type.
+
+**Verification**:
+- Today tab for 2026-04-01 now shows "Locations (2)" with CONTADORA and MOGO 2 A, both with "Filming" status badges.
+- JS syntax check passes.
+- No regressions — all other Today sections (Fleet, Transport, Crew, Fuel) render unchanged.
+
+**Branch**: fix/2026-04-01-today-tab-missing-locations
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data needs to be migrated or seeded from the boats table)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
