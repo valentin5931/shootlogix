@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P0] Fix Timeline API crash — wrong column names in SQL queries
+
+**Problem**: The Timeline API (`/api/productions/<id>/timeline`) returned a 500 Internal Server Error every time it was called. The Timeline tab was completely non-functional.
+
+**Root cause**: The timeline endpoint's SQL queries for the Locations section referenced columns that don't exist in the database schema:
+1. `locations.site` — column doesn't exist; the correct column is `location_type`
+2. `location_schedules.prep`, `location_schedules.filming`, `location_schedules.wrap` — these boolean columns don't exist; the table uses a single `status` column with values like 'P', 'F', 'W'
+
+**Fix**: `app.py` (lines 7893-7912):
+- Changed `SELECT id, name, site FROM locations` to `SELECT id, name, location_type FROM locations`
+- Changed `SELECT id, date, prep, filming, wrap FROM location_schedules` to `SELECT id, date, status FROM location_schedules`
+- Rewrote the phase extraction logic to use the `status` column instead of three boolean columns
+- Changed `loc['site']` to `loc['location_type']` for the subgroup label
+
+**Verification**:
+- Timeline API now returns 200 with 84 resources (46 boats, 14 vehicles, 21 locations, 3 crew)
+- Location subgroups correctly show types (e.g., 'tribal_camp', 'game')
+- All 28 other API endpoints still return 200 (no regressions)
+
+**Branch**: fix/2026-04-01-timeline-api-crash
+**Side effects**: None
+**Next priority**: P0 sub-tab navigation issue (Fleet/Crew sub-nav layout); then P1 empty lists (Picture Boats, Security Boats, Helpers, Guards)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
