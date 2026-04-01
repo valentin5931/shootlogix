@@ -1,10 +1,23 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] ~~Timeline API crash — invalid column references~~ FIXED 2026-04-01
+## [FIXED] Timeline API crash — no such column: site
 - **Discovered**: 2026-04-01
-- **Symptoms**: `/api/productions/1/timeline` returns 500 — `sqlite3.OperationalError: no such column: site`
-- **Root cause**: Locations query used `site` (doesn't exist, should be `type`); location_schedules query used `prep/filming/wrap` (don't exist, table has `date/status`)
-- **Fix**: Branch `fix/2026-04-01-timeline-api-crash`
+- **Fixed**: 2026-04-01 (branch: fix/2026-04-01-timeline-api-crash)
+- **Root cause**: Timeline endpoint queried non-existent `site` column (should be `location_type`) and non-existent `prep/filming/wrap` columns in location_schedules (should use `status` column). Also missing soft-delete filters on all 7 entity queries.
+
+## [P1] _seed_helpers idempotency check uses wrong context name
+- **Discovered**: 2026-04-01
+- **Symptoms**: `_seed_helpers()` in `data_loader.py` checks for `boat_functions` with `context='helpers'`, but a migration renames these to `context='labour'`. If `_seed_helpers` were called on re-run, it would create 73 duplicate helper functions.
+- **Likely cause**: Migration in `database.py` renames context 'helpers' → 'labour' but `_seed_helpers()` was not updated to match.
+- **Files involved**: `data_loader.py` (`_seed_helpers`), `database.py` (context rename migration)
+- **Estimated effort**: Quick fix — change check to `context='labour'`
+
+## [P1] Bootstrap re-run path missing seed calls
+- **Discovered**: 2026-04-01
+- **Symptoms**: When the DB already exists (re-run path at `data_loader.py:288-312`), `_seed_helpers()`, `_seed_security_boats()`, and `_seed_transport()` are not called. If the DB was created before these seeds were added, they never run.
+- **Likely cause**: These seed functions were added to the first-time path but not the re-run path.
+- **Files involved**: `data_loader.py` (bootstrap function)
+- **Estimated effort**: Quick — add the 3 missing calls to the re-run path (they're idempotent, but see P1 above about `_seed_helpers` context check first)
 
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22

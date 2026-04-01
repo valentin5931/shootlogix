@@ -7812,7 +7812,7 @@ def api_timeline(prod_id):
         resources = []
 
         # --- Boats ---
-        boats = conn.execute("SELECT id, name, group_name FROM boats WHERE production_id=?", (prod_id,)).fetchall()
+        boats = conn.execute("SELECT id, name, group_name FROM boats WHERE production_id=? AND deleted_at IS NULL", (prod_id,)).fetchall()
         for b in boats:
             assignments = conn.execute(
                 "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM boat_assignments WHERE boat_id=?",
@@ -7825,7 +7825,7 @@ def api_timeline(prod_id):
             })
 
         # --- Picture boats ---
-        pboats = conn.execute("SELECT id, name, group_name FROM picture_boats WHERE production_id=?", (prod_id,)).fetchall()
+        pboats = conn.execute("SELECT id, name, group_name FROM picture_boats WHERE production_id=? AND deleted_at IS NULL", (prod_id,)).fetchall()
         for b in pboats:
             assignments = conn.execute(
                 "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM picture_boat_assignments WHERE picture_boat_id=?",
@@ -7838,7 +7838,7 @@ def api_timeline(prod_id):
             })
 
         # --- Security boats ---
-        sboats = conn.execute("SELECT id, name, group_name FROM security_boats WHERE production_id=?", (prod_id,)).fetchall()
+        sboats = conn.execute("SELECT id, name, group_name FROM security_boats WHERE production_id=? AND deleted_at IS NULL", (prod_id,)).fetchall()
         for b in sboats:
             assignments = conn.execute(
                 "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM security_boat_assignments WHERE security_boat_id=?",
@@ -7851,7 +7851,7 @@ def api_timeline(prod_id):
             })
 
         # --- Vehicles ---
-        vehicles = conn.execute("SELECT id, name, type FROM transport_vehicles WHERE production_id=?", (prod_id,)).fetchall()
+        vehicles = conn.execute("SELECT id, name, type FROM transport_vehicles WHERE production_id=? AND deleted_at IS NULL", (prod_id,)).fetchall()
         for v in vehicles:
             assignments = conn.execute(
                 "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM transport_assignments WHERE vehicle_id=?",
@@ -7864,7 +7864,7 @@ def api_timeline(prod_id):
             })
 
         # --- Labour (helpers) ---
-        helpers = conn.execute("SELECT id, name, role, group_name FROM helpers WHERE production_id=?", (prod_id,)).fetchall()
+        helpers = conn.execute("SELECT id, name, role, group_name FROM helpers WHERE production_id=? AND deleted_at IS NULL", (prod_id,)).fetchall()
         for h in helpers:
             assignments = conn.execute(
                 "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM helper_assignments WHERE helper_id=?",
@@ -7877,7 +7877,7 @@ def api_timeline(prod_id):
             })
 
         # --- Guards (camp workers) ---
-        guards = conn.execute("SELECT id, name, role FROM guard_camp_workers WHERE production_id=?", (prod_id,)).fetchall()
+        guards = conn.execute("SELECT id, name, role FROM guard_camp_workers WHERE production_id=? AND deleted_at IS NULL", (prod_id,)).fetchall()
         for g in guards:
             assignments = conn.execute(
                 "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM guard_camp_assignments WHERE worker_id=?",
@@ -7890,7 +7890,7 @@ def api_timeline(prod_id):
             })
 
         # --- Locations ---
-        locations = conn.execute("SELECT id, name, type FROM locations WHERE production_id=?", (prod_id,)).fetchall()
+        locations = conn.execute("SELECT id, name, location_type FROM locations WHERE production_id=? AND deleted_at IS NULL", (prod_id,)).fetchall()
         for loc in locations:
             schedules = conn.execute(
                 "SELECT id, date, status FROM location_schedules WHERE location_id=?",
@@ -7898,13 +7898,16 @@ def api_timeline(prod_id):
             ).fetchall()
             loc_assignments = []
             for s in schedules:
-                loc_assignments.append({
-                    'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
-                    'status': s['status'] or 'confirmed'
-                })
+                status_val = (s['status'] or '').upper()
+                phase_label = {'P': 'P', 'F': 'F', 'W': 'W'}.get(status_val, status_val)
+                if phase_label:
+                    loc_assignments.append({
+                        'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
+                        'status': 'confirmed', 'phases': phase_label
+                    })
             resources.append({
                 'id': f"loc-{loc['id']}", 'name': loc['name'], 'type': 'location', 'group': 'Locations',
-                'subgroup': loc['type'] or 'Location',
+                'subgroup': loc['location_type'] or 'Location',
                 'assignments': loc_assignments
             })
 

@@ -1,16 +1,28 @@
 # CHANGELOG — ShootLogix
 
-## 2026-04-01 — [P0] Fix Timeline API crash (500) — invalid column references
+## 2026-04-01 — [P0] Fix Timeline API crash + add soft-delete filters
 
-**Problem**: The `/api/productions/{id}/timeline` endpoint crashed with `sqlite3.OperationalError: no such column: site`. The Timeline tab was completely broken.
-**Root cause**: The Locations section of the timeline query referenced two sets of non-existent columns:
-1. `SELECT id, name, site FROM locations` — `site` column doesn't exist (should be `type`)
-2. `SELECT id, date, prep, filming, wrap FROM location_schedules` — `prep`, `filming`, `wrap` columns don't exist (table has `date` and `status`)
-**Fix**: `app.py` lines 7893-7914 — Changed location query to `SELECT id, name, type` and schedule query to `SELECT id, date, status`. Rewrote assignment building to use actual table schema.
-**Verification**: Timeline endpoint returns 200 with 81 resources, 32 shooting days, 121 functions. All other endpoints pass regression test (13/13 return 200).
+**Problem**: The Timeline tab crashed with a 500 error (`sqlite3.OperationalError: no such column: site`). Additionally, the same endpoint referenced non-existent `prep`, `filming`, `wrap` columns in `location_schedules`. All timeline entity queries also lacked `deleted_at IS NULL` filters, meaning soft-deleted records would appear on the timeline.
+
+**Root cause**:
+1. The timeline query used `SELECT id, name, site FROM locations` but the `locations` table has `location_type`, not `site`.
+2. The location schedules query used `SELECT id, date, prep, filming, wrap FROM location_schedules` but the table uses a single `status` column with values like 'P', 'F', 'W' — not separate boolean columns.
+3. All 7 entity queries (boats, picture_boats, security_boats, transport_vehicles, helpers, guard_camp_workers, locations) were missing `AND deleted_at IS NULL`, which would include soft-deleted records in the timeline.
+
+**Fix**:
+- `app.py` (timeline endpoint `api_timeline`):
+  - Changed `site` → `location_type` in locations SELECT and subgroup reference
+  - Rewrote location_schedules query to use `SELECT id, date, status` and map status values to phase labels
+  - Added `AND deleted_at IS NULL` to all 7 entity queries
+
+**Verification**:
+- Timeline API now returns 200 with 82 resources (47 boats, 14 vehicles, 21 locations)
+- All 16 key API endpoints tested and returning 200 (no regressions)
+- Python syntax check passes
+
 **Branch**: fix/2026-04-01-timeline-api-crash
-**Side effects**: None — location timeline entries now show `status` instead of fabricated phase strings, which matches the actual data model.
-**Next priority**: P1 — Picture Boats and Security Boats lists are empty (data model investigation)
+**Side effects**: None
+**Next priority**: P1 — empty module data (picture_boats, security_boats, helpers, guards tables need seeding or user data entry)
 
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
