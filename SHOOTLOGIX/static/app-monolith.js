@@ -923,9 +923,10 @@ const App = (() => {
     const tabMap = { 'boats': 'boats', 'picture-boats': 'picture-boats', 'security-boats': 'security-boats' };
     const target = tabMap[_fleetSubTab] || 'boats';
 
-    // Hide the fleet panel, show the sub-tab panel instead
-    const fleetPanel = $('view-fleet');
-    if (fleetPanel) fleetPanel.classList.remove('active');
+    // Hide all fleet panels, then show the target sub-panel
+    ['view-fleet', 'view-boats', 'view-picture-boats', 'view-security-boats'].forEach(id => {
+      const el = $(id); if (el) el.classList.remove('active');
+    });
     const targetPanel = $(`view-${target}`);
     if (targetPanel) targetPanel.classList.add('active');
 
@@ -974,9 +975,10 @@ const App = (() => {
     const tabMap = { 'labour': 'labour', 'guards': 'guards' };
     const target = tabMap[_crewSubTab] || 'labour';
 
-    // Hide crew panel, show sub-tab panel
-    const crewPanel = $('view-crew');
-    if (crewPanel) crewPanel.classList.remove('active');
+    // Hide crew panel and all crew sub-panels, show target sub-tab panel
+    ['view-crew', 'view-labour', 'view-guards'].forEach(id => {
+      const el = $(id); if (el) el.classList.remove('active');
+    });
     const targetPanel = $(`view-${target}`);
     if (targetPanel) targetPanel.classList.add('active');
 
