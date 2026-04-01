@@ -7880,7 +7880,7 @@ def api_timeline(prod_id):
         guards = conn.execute("SELECT id, name, role FROM guard_camp_workers WHERE production_id=?", (prod_id,)).fetchall()
         for g in guards:
             assignments = conn.execute(
-                "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM guard_camp_assignments WHERE worker_id=?",
+                "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM guard_camp_assignments WHERE helper_id=?",
                 (g['id'],)
             ).fetchall()
             resources.append({
@@ -7890,28 +7890,53 @@ def api_timeline(prod_id):
             })
 
         # --- Locations ---
-        locations = conn.execute("SELECT id, name, site FROM locations WHERE production_id=?", (prod_id,)).fetchall()
-        for loc in locations:
-            schedules = conn.execute(
-                "SELECT id, date, prep, filming, wrap FROM location_schedules WHERE location_id=?",
-                (loc['id'],)
-            ).fetchall()
-            loc_assignments = []
-            for s in schedules:
-                phases = []
-                if s['prep']: phases.append('P')
-                if s['filming']: phases.append('F')
-                if s['wrap']: phases.append('W')
-                if phases:
-                    loc_assignments.append({
-                        'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
-                        'status': 'confirmed', 'phases': '/'.join(phases)
-                    })
+        # location_schedules uses (location_name, date, status) — status is
+        # the phase indicator (e.g. 'P', 'F', 'W').  Group by location_name
+        # and aggregate dates into timeline assignments.
+        loc_scheds = conn.execute(
+            """SELECT ls.id, ls.location_name, ls.date, ls.status, ls.location_type,
+                      COALESCE(ls.location_id, 0) AS location_id
+               FROM location_schedules ls
+               WHERE ls.production_id=?
+               ORDER BY ls.location_name, ls.date""",
+            (prod_id,)
+        ).fetchall()
+        # Group by location_name
+        loc_map = {}
+        for s in loc_scheds:
+            lname = s['location_name']
+            if lname not in loc_map:
+                loc_map[lname] = {
+                    'loc_id': s['location_id'],
+                    'location_type': s['location_type'] or 'Location',
+                    'assignments': []
+                }
+            status = (s['status'] or '').strip()
+            if status:
+                loc_map[lname]['assignments'].append({
+                    'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
+                    'status': 'confirmed', 'phases': status
+                })
+        for lname, info in loc_map.items():
             resources.append({
-                'id': f"loc-{loc['id']}", 'name': loc['name'], 'type': 'location', 'group': 'Locations',
-                'subgroup': loc['site'] or 'Location',
-                'assignments': loc_assignments
+                'id': f"loc-{info['loc_id'] or lname}", 'name': lname,
+                'type': 'location', 'group': 'Locations',
+                'subgroup': info['location_type'],
+                'assignments': info['assignments']
             })
+        # Also include locations from the locations table that have no schedules
+        all_locations = conn.execute(
+            "SELECT id, name, location_type, type FROM locations WHERE production_id=?",
+            (prod_id,)
+        ).fetchall()
+        for loc in all_locations:
+            if loc['name'] not in loc_map:
+                resources.append({
+                    'id': f"loc-{loc['id']}", 'name': loc['name'],
+                    'type': 'location', 'group': 'Locations',
+                    'subgroup': loc['location_type'] or loc['type'] or 'Location',
+                    'assignments': []
+                })
 
         # Boat functions for label lookups
         functions = [dict(f) for f in conn.execute(
