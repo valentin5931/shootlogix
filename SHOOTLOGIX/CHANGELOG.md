@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P1] Fix Picture Boats and Security Boats empty lists
+
+**Problem**: The Picture Boats and Security Boats sub-tabs under Fleet showed empty lists. The `/api/productions/1/picture-boats` and `/api/productions/1/security-boats` endpoints returned `[]` despite 46 boats existing in the database.
+
+**Root cause**: All 46 boats were stored in the main `boats` table (with `category='picture'`), but the Picture Boats and Security Boats API endpoints were querying separate `picture_boats` and `security_boats` tables that had never been populated. The data loader had inserted all boats into the unified `boats` table regardless of type.
+
+**Fix**:
+- `database.py`: Redirected all 8 CRUD functions (`get_picture_boats`, `create_picture_boat`, `update_picture_boat`, `delete_picture_boat`, `get_security_boats`, `create_security_boat`, `update_security_boat`, `delete_security_boat`) to operate on the `boats` table filtered by `category='picture'` or `category='security'` respectively.
+- `database.py`: Updated assignment JOIN queries (`get_picture_boat_assignments`, `get_security_boat_assignments`) to JOIN on `boats` instead of `picture_boats`/`security_boats`.
+- `app.py`: Updated all inline SQL queries (~20 occurrences) that referenced `picture_boats` or `security_boats` tables to use `boats` with appropriate category filters.
+
+**Verification**:
+- `/api/productions/1/picture-boats` now returns 46 boats (was 0)
+- GET, PUT, DELETE, duplicate operations on individual picture/security boats all work correctly
+- Creating a new security boat inserts into `boats` with `category='security'`
+- All assignment JOINs resolve correctly
+- Python syntax check passes on both files
+- No regressions on other endpoints
+
+**Branch**: fix/2026-04-02-picture-security-boats-empty
+**Side effects**: The `picture_boats` and `security_boats` tables are now effectively unused (legacy). No data was deleted.
+**Next priority**: Transport and Helpers empty lists (P1); Guards empty list (P1)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

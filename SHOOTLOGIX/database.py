@@ -2043,8 +2043,13 @@ def delete_boat_assignment(assignment_id):
 # ─── Picture Boats ────────────────────────────────────────────────────────────
 
 def get_picture_boats(prod_id, include_deleted=False):
+    """Return picture boats.
+
+    Reads from the main ``boats`` table filtered by category='picture'.
+    The legacy ``picture_boats`` table is no longer used for reads.
+    """
     with get_db() as conn:
-        sql = "SELECT * FROM picture_boats WHERE production_id=?"
+        sql = "SELECT * FROM boats WHERE production_id=? AND category='picture'"
         if not include_deleted:
             sql += " AND deleted_at IS NULL"
         sql += " ORDER BY sort_order, boat_nr, name"
@@ -2057,11 +2062,12 @@ def create_picture_boat(data):
             "wave_rating", "captain", "vendor", "group_name", "notes",
             "daily_rate_estimate", "daily_rate_actual", "image_path", "currency"]
     fields = {k: data[k] for k in cols if k in data}
+    fields["category"] = "picture"
     placeholders = ", ".join("?" * len(fields))
     col_names = ", ".join(fields.keys())
     with get_db() as conn:
         cur = conn.execute(
-            f"INSERT INTO picture_boats ({col_names}) VALUES ({placeholders})",
+            f"INSERT INTO boats ({col_names}) VALUES ({placeholders})",
             list(fields.values())
         )
         return cur.lastrowid
@@ -2078,12 +2084,12 @@ def update_picture_boat(pb_id, data):
     sets += ", version = version + 1"
     vals = list(fields.values()) + [pb_id]
     version = data.get('version')
-    where = "WHERE id=?"
+    where = "WHERE id=? AND category='picture'"
     if version is not None:
         where += " AND version=?"
         vals.append(version)
     with get_db() as conn:
-        cur = conn.execute(f"UPDATE picture_boats SET {sets} {where}", vals)
+        cur = conn.execute(f"UPDATE boats SET {sets} {where}", vals)
         if version is not None and cur.rowcount == 0:
             return False
     return True
@@ -2091,7 +2097,7 @@ def update_picture_boat(pb_id, data):
 
 def delete_picture_boat(pb_id):
     with get_db() as conn:
-        conn.execute("UPDATE picture_boats SET deleted_at = datetime('now') WHERE id=?", (pb_id,))
+        conn.execute("UPDATE boats SET deleted_at = datetime('now') WHERE id=? AND category='picture'", (pb_id,))
 
 
 # ─── Picture Boat Assignments ─────────────────────────────────────────────────
@@ -2115,7 +2121,7 @@ def get_picture_boat_assignments(prod_id):
                    bf.function_group,
                    bf.color
             FROM picture_boat_assignments pba
-            LEFT JOIN picture_boats pb ON pba.picture_boat_id = pb.id
+            LEFT JOIN boats pb ON pba.picture_boat_id = pb.id
             LEFT JOIN boat_functions bf ON pba.boat_function_id = bf.id
             WHERE bf.production_id = ?
             ORDER BY bf.sort_order, bf.id
@@ -2845,8 +2851,13 @@ def delete_guard_camp_assignment_by_function(func_id):
 # ─── Security Boats ──────────────────────────────────────────────────────────
 
 def get_security_boats(prod_id, include_deleted=False):
+    """Return security boats.
+
+    Reads from the main ``boats`` table filtered by category='security'.
+    The legacy ``security_boats`` table is no longer used for reads.
+    """
     with get_db() as conn:
-        sql = "SELECT * FROM security_boats WHERE production_id=?"
+        sql = "SELECT * FROM boats WHERE production_id=? AND category='security'"
         if not include_deleted:
             sql += " AND deleted_at IS NULL"
         sql += " ORDER BY sort_order, boat_nr, name"
@@ -2859,11 +2870,12 @@ def create_security_boat(data):
             "wave_rating", "captain", "vendor", "group_name", "notes",
             "daily_rate_estimate", "daily_rate_actual", "image_path", "currency"]
     fields = {k: data[k] for k in cols if k in data}
+    fields["category"] = "security"
     placeholders = ", ".join("?" * len(fields))
     col_names = ", ".join(fields.keys())
     with get_db() as conn:
         cur = conn.execute(
-            f"INSERT INTO security_boats ({col_names}) VALUES ({placeholders})",
+            f"INSERT INTO boats ({col_names}) VALUES ({placeholders})",
             list(fields.values())
         )
         return cur.lastrowid
@@ -2880,12 +2892,12 @@ def update_security_boat(sb_id, data):
     sets += ", version = version + 1"
     vals = list(fields.values()) + [sb_id]
     version = data.get('version')
-    where = "WHERE id=?"
+    where = "WHERE id=? AND category='security'"
     if version is not None:
         where += " AND version=?"
         vals.append(version)
     with get_db() as conn:
-        cur = conn.execute(f"UPDATE security_boats SET {sets} {where}", vals)
+        cur = conn.execute(f"UPDATE boats SET {sets} {where}", vals)
         if version is not None and cur.rowcount == 0:
             return False
     return True
@@ -2893,7 +2905,7 @@ def update_security_boat(sb_id, data):
 
 def delete_security_boat(sb_id):
     with get_db() as conn:
-        conn.execute("UPDATE security_boats SET deleted_at = datetime('now') WHERE id=?", (sb_id,))
+        conn.execute("UPDATE boats SET deleted_at = datetime('now') WHERE id=? AND category='security'", (sb_id,))
 
 
 def get_security_boat_assignments(prod_id):
@@ -2914,7 +2926,7 @@ def get_security_boat_assignments(prod_id):
                    bf.function_group,
                    bf.color
             FROM security_boat_assignments sba
-            LEFT JOIN security_boats sb ON sba.security_boat_id = sb.id
+            LEFT JOIN boats sb ON sba.security_boat_id = sb.id
             LEFT JOIN boat_functions bf ON sba.boat_function_id = bf.id
             WHERE bf.production_id = ?
             ORDER BY bf.sort_order, bf.id
@@ -5682,7 +5694,7 @@ def generate_daily_checklist(prod_id, date):
         pboats = conn.execute("""
             SELECT pba.*, pb.name AS boat_name, bf.name AS function_name
             FROM picture_boat_assignments pba
-            LEFT JOIN picture_boats pb ON pba.picture_boat_id = pb.id
+            LEFT JOIN boats pb ON pba.picture_boat_id = pb.id
             LEFT JOIN boat_functions bf ON pba.boat_function_id = bf.id
             WHERE bf.production_id = ? AND bf.context = 'picture'
               AND pba.start_date <= ? AND pba.end_date >= ?
@@ -5699,7 +5711,7 @@ def generate_daily_checklist(prod_id, date):
         sboats = conn.execute("""
             SELECT sba.*, sb.name AS boat_name, bf.name AS function_name
             FROM security_boat_assignments sba
-            LEFT JOIN security_boats sb ON sba.security_boat_id = sb.id
+            LEFT JOIN boats sb ON sba.security_boat_id = sb.id
             LEFT JOIN boat_functions bf ON sba.boat_function_id = bf.id
             WHERE bf.production_id = ? AND bf.context = 'security'
               AND sba.start_date <= ? AND sba.end_date >= ?
