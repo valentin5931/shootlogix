@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P1] Wire up notification bell + activity panel (missing JS functions)
+
+**Problem**: The notification bell button and activity history button in the topbar call `App.toggleNotifPanel()`, `App.closeNotifPanel()`, `App.markAllNotificationsRead()`, `App.toggleActivityPanel()`, `App.closeActivityPanel()`, `App.loadActivity()`, and `App.loadMoreActivity()` — but none of these functions existed in `app-monolith.js`. Clicking either button caused a JS error (`App.toggleNotifPanel is not a function`). The HTML panel markup, CSS styling, and backend API endpoints were all present and functional — only the JS glue code was missing.
+
+**Root cause**: When the notification panel (AXE 9.2) and activity panel (AXE 4.3) HTML/CSS/backend were implemented, the corresponding JavaScript functions were never added to `app-monolith.js`. The functions were also not exported in the `return { ... }` public API block.
+
+**Fix**:
+- `static/app-monolith.js`: Added notification panel functions (`toggleNotifPanel`, `closeNotifPanel`, `_loadNotifications`, `_renderNotifList`, `_onNotifClick`, `markAllNotificationsRead`, `_updateNotifBadge`, `_startNotifPolling`) and activity panel functions (`toggleActivityPanel`, `closeActivityPanel`, `loadActivity`, `loadMoreActivity`, `_fetchActivity`, `_renderActivityFeed`). Added `_relativeTime()` helper for human-readable timestamps. Started notification badge polling after project selection. Added Escape key handling for both panels. Exported all public functions.
+- Activity panel uses correct backend params: `action_type` (not `action`), `date_from`/`date_to` (not `from`/`to`).
+
+**Verification**:
+- JS syntax check passes
+- All 45 existing tests pass
+- Notification API returns 200 with badge count
+- History API returns data for activity feed
+- All existing tabs and functionality unaffected
+
+**Branch**: fix/2026-04-02-notification-panel-js-missing
+**Side effects**: None
+**Next priority**: Activity panel missing `toggleActivityPanel` in topbar button was also fixed. Remaining P1 items: Picture Boats / Security Boats empty data, Transport / Helpers empty data.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
