@@ -1,5 +1,15 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [RESOLVED] [P1] 5 undefined CSS variables causing invisible UI elements
+- **Discovered**: 2026-04-02
+- **Resolved**: 2026-04-02 — Added `--bg`, `--bg-1`, `--bg-3`, `--bg-input`, `--text-muted` to `:root` and `[data-theme="light"]`
+- **Branch**: fix/2026-04-02-missing-css-vars-and-transport-query
+
+## [RESOLVED] [P1] Transport schedule query uses wrong table name
+- **Discovered**: 2026-04-02
+- **Resolved**: 2026-04-02 — Changed `JOIN vehicles` to `JOIN transport_vehicles` in `get_transport_schedules()`
+- **Branch**: fix/2026-04-02-missing-css-vars-and-transport-query
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
@@ -7,33 +17,20 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
-## [P1] Picture Boats and Security Boats lists are empty
+## [BY DESIGN] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`. All boats are in the main boats table with category "picture".
-- **Likely cause**: The data loader may not be seeding picture_boats and security_boats tables separately, or the boats were all created in the main `boats` table regardless of intended category.
-- **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
-- **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
+- **Updated**: 2026-04-02
+- **Status**: By design. The `boats` table (46 entries) stores the generic fleet. `picture_boats` and `security_boats` are separate tables for specialized boat management. The data loader only seeds boat functions (roles), not the boats themselves — users create Picture/Security Boats through the UI. The CRUD API works correctly (tested).
 
-## [P1] Transport and Helpers lists are empty
+## [BY DESIGN] Transport and Helpers lists
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
-- **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+- **Updated**: 2026-04-02
+- **Status**: Transport vehicles ARE seeded (14 vehicles in `transport_vehicles`). The `/transport-vehicles` endpoint returns them correctly. Helpers (labour) are empty — users create them via UI. The 73 `boat_functions` with `context=labour` and 73 `helper_assignments` are pre-populated for assignment scaffolding.
 
-## [P1] Fuel entries and machinery are empty
+## [BY DESIGN] Fuel entries, machinery, and guards are empty
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/fuel-entries` returns `[]`, `/api/productions/1/fuel-machinery` returns `[]`
-- **Likely cause**: No data seeded for fuel module
-- **Files involved**: `database.py`
-- **Estimated effort**: Quick — user needs to add data
-
-## [P1] Guards list is empty
-- **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/guards` returns `[]` but guard-posts has data (1643 bytes)
-- **Likely cause**: Guards need to be created separately from guard posts
-- **Files involved**: `database.py`
-- **Estimated effort**: Quick
+- **Updated**: 2026-04-02
+- **Status**: By design. These modules are operational but have no seeded data — users create fuel entries, machinery, and guards through the UI. Guard posts (8) are pre-seeded as the structural scaffold.
 
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22

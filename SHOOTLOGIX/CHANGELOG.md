@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P1] Fix 5 undefined CSS variables + transport schedule query
+
+**Problem**:
+1. Five CSS custom properties (`--bg`, `--bg-1`, `--bg-3`, `--bg-input`, `--text-muted`) were referenced in JS and CSS but never defined in `:root` or `[data-theme="light"]`. This caused transparent backgrounds on: pull-to-refresh overlay, fleet search input, Today cards, active fleet filter buttons, Labour rate inputs, and invisible text on checklist completed items and empty states.
+2. `get_transport_schedules()` in `database.py` joined against the empty `vehicles` table instead of `transport_vehicles`, causing the `/api/productions/<id>/transport` endpoint to always return `[]`.
+
+**Root cause**:
+- Same class of bug as the `--bg-2`/`--blue` fix from 2026-03-23: CSS vars were used in JS template strings and CSS rules but never added to the theme declarations.
+- The `vehicles` table is a legacy schema; the active transport system uses `transport_vehicles`.
+
+**Fix**:
+- `static/style.css`: Added `--bg`, `--bg-1`, `--bg-3`, `--bg-input`, `--text-muted` to both `:root` (dark) and `[data-theme="light"]` blocks with appropriate values matching the existing design system.
+- `database.py` (line 3059): Changed `JOIN vehicles v` to `JOIN transport_vehicles v` in `get_transport_schedules()`.
+
+**Verification**:
+- All 45 tests pass.
+- All CSS variables now fully defined (0 missing).
+- JS syntax unchanged.
+
+**Branch**: fix/2026-04-02-missing-css-vars-and-transport-query
+**Side effects**: None
+**Next priority**: Audit remaining P1 UX issues — form validation gaps, missing loading states, mobile responsiveness
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

@@ -3056,7 +3056,7 @@ def get_transport_schedules(prod_id):
                    v.daily_rate_estimate, v.daily_rate_actual,
                    sd.date, sd.day_number
             FROM transport_schedules ts
-            JOIN vehicles v ON ts.vehicle_id = v.id
+            JOIN transport_vehicles v ON ts.vehicle_id = v.id
             JOIN shooting_days sd ON ts.shooting_day_id = sd.id
             WHERE v.production_id = ?
             ORDER BY sd.date, v.name

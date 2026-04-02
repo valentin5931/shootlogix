@@ -30,6 +30,11 @@
   --subnav-bar-h: 0px;
   --bg-2:       #131929;
   --blue:       #3B82F6;
+  --bg:         #0A0F1E;
+  --bg-1:       #111827;
+  --bg-3:       #252D3D;
+  --bg-input:   #1C2333;
+  --text-muted: #64748B;
 }
 
 [data-theme="light"] {
@@ -48,6 +53,11 @@
   --overlay-bg: rgba(0,0,0,.35);
   --bg-2:       #F1F5F9;
   --blue:       #3B82F6;
+  --bg:         #F1F5F9;
+  --bg-1:       #FFFFFF;
+  --bg-3:       #E2E8F0;
+  --bg-input:   #FFFFFF;
+  --text-muted: #94A3B8;
 }
 
 html, body {
