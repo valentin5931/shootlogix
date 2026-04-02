@@ -687,6 +687,8 @@ const App = (() => {
       renderPDT();
       // Load scheduling alerts in background (AXE 7.3)
       loadAlerts();
+      // Start notification badge polling (AXE 9.2)
+      _startNotifPolling();
     } catch (e) {
       console.error('Load error after project select:', e);
       toast('Failed to load project data: ' + e.message, 'error');
@@ -12167,6 +12169,225 @@ const App = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════
+  //  NOTIFICATIONS PANEL (AXE 9.2)
+  // ═══════════════════════════════════════════════════════════
+
+  let _notifPanelOpen = false;
+  let _notifData = [];
+  let _notifLoaded = false;
+  let _notifPollTimer = null;
+
+  function toggleNotifPanel() {
+    const panel = $('notif-panel');
+    if (!panel) return;
+    _notifPanelOpen = !_notifPanelOpen;
+    panel.classList.toggle('hidden', !_notifPanelOpen);
+    if (_notifPanelOpen) {
+      _loadNotifications();
+    }
+  }
+
+  function closeNotifPanel() {
+    const panel = $('notif-panel');
+    if (!panel) return;
+    _notifPanelOpen = false;
+    panel.classList.add('hidden');
+  }
+
+  async function _loadNotifications() {
+    const list = $('notif-list');
+    if (!list) return;
+    if (!_notifLoaded) {
+      list.innerHTML = '<div class="notif-loading">Loading...</div>';
+    }
+    try {
+      const prodParam = state.prodId ? `?production_id=${state.prodId}` : '';
+      _notifData = await api('GET', `/api/notifications${prodParam}`);
+      _notifLoaded = true;
+      _renderNotifList();
+    } catch (e) {
+      list.innerHTML = '<div class="notif-empty">Failed to load notifications</div>';
+    }
+  }
+
+  function _renderNotifList() {
+    const list = $('notif-list');
+    if (!list) return;
+    if (!_notifData.length) {
+      list.innerHTML = '<div class="notif-empty">No notifications</div>';
+      return;
+    }
+    list.innerHTML = _notifData.map(n => {
+      const isUnread = !n.read_at;
+      const timeAgo = _relativeTime(n.created_at);
+      return `<div class="notif-item${isUnread ? ' notif-unread' : ''}" onclick="App._onNotifClick(${n.id})">
+        ${isUnread ? '<div class="notif-dot"></div>' : '<div style="width:8px;flex-shrink:0"></div>'}
+        <div class="notif-content">
+          <div class="notif-title">${esc(n.title || '')}</div>
+          ${n.body ? `<div class="notif-body">${esc(n.body)}</div>` : ''}
+          <div class="notif-time">${esc(timeAgo)}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function _relativeTime(isoStr) {
+    if (!isoStr) return '';
+    const then = new Date(isoStr + (isoStr.endsWith('Z') ? '' : 'Z'));
+    const now = new Date();
+    const diffMs = now - then;
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + 'm ago';
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return hrs + 'h ago';
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return days + 'd ago';
+    return then.toLocaleDateString();
+  }
+
+  async function _onNotifClick(notifId) {
+    try {
+      await api('POST', `/api/notifications/${notifId}/read`);
+      const n = _notifData.find(x => x.id === notifId);
+      if (n) n.read_at = new Date().toISOString();
+      _renderNotifList();
+      _updateNotifBadge();
+    } catch (e) { /* ignore */ }
+  }
+
+  async function markAllNotificationsRead() {
+    try {
+      const prodParam = state.prodId ? `?production_id=${state.prodId}` : '';
+      await api('POST', `/api/notifications/read-all${prodParam}`);
+      _notifData.forEach(n => { n.read_at = n.read_at || new Date().toISOString(); });
+      _renderNotifList();
+      _updateNotifBadge();
+    } catch (e) {
+      toast('Failed to mark notifications as read', 'error');
+    }
+  }
+
+  async function _updateNotifBadge() {
+    const badge = $('notif-badge');
+    if (!badge) return;
+    try {
+      const prodParam = state.prodId ? `?production_id=${state.prodId}` : '';
+      const data = await api('GET', `/api/notifications/count${prodParam}`);
+      const count = data.count || 0;
+      if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : count;
+        badge.style.display = '';
+      } else {
+        badge.style.display = 'none';
+      }
+    } catch (e) {
+      badge.style.display = 'none';
+    }
+  }
+
+  function _startNotifPolling() {
+    if (_notifPollTimer) return;
+    // Poll every 60 seconds for badge count
+    _updateNotifBadge();
+    _notifPollTimer = setInterval(_updateNotifBadge, 60000);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  ACTIVITY PANEL (AXE 4.3 — history feed with filters)
+  // ═══════════════════════════════════════════════════════════
+
+  let _activityPanelOpen = false;
+  let _activityData = [];
+  let _activityLimit = 50;
+
+  function toggleActivityPanel() {
+    const overlay = $('activity-overlay');
+    if (!overlay) return;
+    _activityPanelOpen = !_activityPanelOpen;
+    overlay.classList.toggle('hidden', !_activityPanelOpen);
+    if (_activityPanelOpen) {
+      _activityLimit = 50;
+      loadActivity();
+    }
+  }
+
+  function closeActivityPanel() {
+    const overlay = $('activity-overlay');
+    if (!overlay) return;
+    _activityPanelOpen = false;
+    overlay.classList.add('hidden');
+  }
+
+  async function loadActivity() {
+    const feed = $('activity-feed');
+    if (!feed) return;
+    feed.innerHTML = '<div class="activity-loading">Loading...</div>';
+    await _fetchActivity();
+  }
+
+  async function loadMoreActivity() {
+    _activityLimit += 50;
+    await _fetchActivity();
+  }
+
+  async function _fetchActivity() {
+    const feed = $('activity-feed');
+    if (!feed) return;
+    try {
+      let url = `/api/productions/${state.prodId}/history?limit=${_activityLimit}`;
+      const module = $('activity-filter-module')?.value;
+      const user = $('activity-filter-user')?.value;
+      const action = $('activity-filter-action')?.value;
+      const from = $('activity-filter-from')?.value;
+      const to = $('activity-filter-to')?.value;
+      if (module) url += `&entity_type=${encodeURIComponent(module)}`;
+      if (user) url += `&user_id=${encodeURIComponent(user)}`;
+      if (action) url += `&action_type=${encodeURIComponent(action)}`;
+      if (from) url += `&date_from=${encodeURIComponent(from)}`;
+      if (to) url += `&date_to=${encodeURIComponent(to)}`;
+
+      _activityData = await api('GET', url);
+      _renderActivityFeed();
+
+      const loadMoreBtn = $('activity-load-more');
+      if (loadMoreBtn) {
+        loadMoreBtn.style.display = _activityData.length >= _activityLimit ? '' : 'none';
+      }
+    } catch (e) {
+      if (!_activityData.length) {
+        feed.innerHTML = '<div class="activity-loading">Failed to load activity</div>';
+      }
+    }
+  }
+
+  function _renderActivityFeed() {
+    const feed = $('activity-feed');
+    if (!feed) return;
+    if (!_activityData.length) {
+      feed.innerHTML = '<div class="activity-loading" style="color:var(--text-3)">No activity found</div>';
+      return;
+    }
+    feed.innerHTML = _activityData.map(h => {
+      const timeAgo = _relativeTime(h.created_at);
+      const desc = h.human_description || h.description || `${h.action} ${h.entity_type}`;
+      const nick = h.user_nickname || '';
+      const actionColor = h.action === 'create' ? 'var(--green, #22C55E)' : h.action === 'delete' ? 'var(--red, #EF4444)' : 'var(--accent, #3B82F6)';
+      return `<div style="padding:.6rem 1rem;border-bottom:1px solid var(--border-lt, var(--border));font-size:.78rem">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem">
+          <span style="font-weight:600;color:var(--text-1)">${esc(desc)}</span>
+          <span style="color:var(--text-4);font-size:.68rem;white-space:nowrap">${esc(timeAgo)}</span>
+        </div>
+        <div style="display:flex;gap:.4rem;align-items:center;margin-top:.2rem">
+          <span style="font-size:.6rem;font-weight:700;padding:.1rem .3rem;border-radius:3px;background:${actionColor}22;color:${actionColor};text-transform:uppercase">${esc(h.action || '')}</span>
+          <span style="font-size:.65rem;color:var(--text-3)">${esc(h.entity_type || '')}</span>
+          ${nick ? `<span style="color:var(--text-4);font-size:.65rem">by ${esc(nick)}</span>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
   //  GLOBAL SEARCH (Cmd+K)
   // ═══════════════════════════════════════════════════════════
 
@@ -12388,6 +12609,10 @@ const App = (() => {
       if (e.key === 'Escape') {
         // Close alerts panel (AXE 7.3)
         if (_alertsPanelOpen) { toggleAlertsPanel(); }
+        // Close notification panel (AXE 9.2)
+        if (_notifPanelOpen) { closeNotifPanel(); }
+        // Close activity panel (AXE 4.3)
+        if (_activityPanelOpen) { closeActivityPanel(); }
         closeShortcutsPanel();
         const moreSheet = $('bnav-more-sheet');
         if (moreSheet && !moreSheet.classList.contains('hidden')) { moreSheet.classList.add('hidden'); }
@@ -13235,6 +13460,10 @@ const App = (() => {
     _docSetStatus, _docDelete, _docUploadVersion, _docSubmitVersion,
     // Alerts (AXE 7.3)
     toggleAlertsPanel, filterAlerts, loadAlerts,
+    // Notifications (AXE 9.2)
+    toggleNotifPanel, closeNotifPanel, markAllNotificationsRead, _onNotifClick,
+    // Activity panel (AXE 4.3)
+    toggleActivityPanel, closeActivityPanel, loadActivity, loadMoreActivity,
     // Search
     _openSearch, _closeSearch,
     // History undo

@@ -1,5 +1,18 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## ~~[P1] Notification bell and activity button cause JS errors~~ FIXED 2026-04-02
+- **Discovered**: 2026-04-02
+- **Fixed**: 2026-04-02 — Branch `fix/2026-04-02-notification-panel-js-missing`
+- **Symptoms**: Clicking the notification bell or activity history button in the topbar threw `App.toggleNotifPanel is not a function`. The HTML panels, CSS, and backend API all existed but the JS functions were missing.
+- **Resolution**: Added all missing JS functions to `app-monolith.js` and exported them in the public API.
+
+## [P1] Activity panel user filter not populated
+- **Discovered**: 2026-04-02
+- **Symptoms**: The activity panel has a "All users" dropdown filter but it is never populated with actual users. The dropdown only has the default "All users" option.
+- **Likely cause**: No JS code populates the `activity-filter-user` select element with user options from the API.
+- **Files involved**: `static/app-monolith.js` (loadActivity / _fetchActivity)
+- **Estimated effort**: Quick fix — need to fetch users and populate the dropdown
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
