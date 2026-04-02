@@ -6399,7 +6399,8 @@ const App = (() => {
     // AXE 5.4: show loading skeleton
     const fc = $('fuel-content'); if (fc) fc.innerHTML = _skeletonTable(8, 12);
     // Always refresh global fuel prices + locked snapshots from DB
-    await _loadFuelGlobals();
+    try { await _loadFuelGlobals(); }
+    catch(e) { console.warn('Failed to load fuel globals:', e); }
     try {
       const [entries, machinery] = await Promise.all([
         api('GET', `/api/productions/${state.prodId}/fuel-entries`),
@@ -6941,10 +6942,12 @@ const App = (() => {
 
   async function deleteFuelMachinery(id) {
     showConfirm('Delete this machinery row?', async () => {
-      await api('DELETE', `/api/fuel-machinery/${id}`);
-      state.fuelMachinery = (state.fuelMachinery||[]).filter(m => m.id !== id);
-      renderFuelMachineryGrid();
-      toast('Deleted');
+      try {
+        await api('DELETE', `/api/fuel-machinery/${id}`);
+        state.fuelMachinery = (state.fuelMachinery||[]).filter(m => m.id !== id);
+        renderFuelMachineryGrid();
+        toast('Deleted');
+      } catch(e) { toast('Error deleting machinery: ' + e.message, 'error'); }
     });
   }
 
@@ -8988,18 +8991,22 @@ const App = (() => {
     const container = $('view-locations');
     if (!container) return;
 
+    // Show loading skeleton while data loads
+    const needsLoad = !state.locationSites || !state.locationSchedules;
+    if (needsLoad) container.innerHTML = _skeletonTable(8, 10);
+
     // Load location sites from API
     if (!state.locationSites) {
       try {
         state.locationSites = await api('GET', `/api/productions/${state.prodId}/locations`);
-      } catch(e) { state.locationSites = []; }
+      } catch(e) { state.locationSites = []; toast('Error loading locations: ' + e.message, 'error'); }
     }
 
     // Load location schedules from API
     if (!state.locationSchedules) {
       try {
         state.locationSchedules = await api('GET', `/api/productions/${state.prodId}/location-schedules`);
-      } catch(e) { state.locationSchedules = []; }
+      } catch(e) { state.locationSchedules = []; toast('Error loading schedules: ' + e.message, 'error'); }
     }
     if (!state.locSubTab) state.locSubTab = 'all';
     if (!state.locView) state.locView = 'schedule';
@@ -9643,20 +9650,22 @@ const App = (() => {
     // Pre-load base camp data in background so it's ready when sub-tab is clicked
     if (!state.gcWorkers.length && !state._gcPreloading) {
       state._gcPreloading = true;
-      _loadAndRenderGuardCamp().catch(() => {}).finally(() => { state._gcPreloading = false; });
+      _loadAndRenderGuardCamp().catch(e => { console.warn('Guard camp preload failed:', e); }).finally(() => { state._gcPreloading = false; });
     }
     if (state.guardSubTab === 'basecamp') {
       $('gd-location-panel')?.classList.add('hidden');
       $('gd-basecamp-panel')?.classList.remove('hidden');
       $('gd-subtab-location')?.classList.remove('active');
       $('gd-subtab-basecamp')?.classList.add('active');
-      await _loadAndRenderGuardCamp();
+      try { await _loadAndRenderGuardCamp(); }
+      catch(e) { toast('Error loading guard camp: ' + e.message, 'error'); }
     } else {
       $('gd-location-panel')?.classList.remove('hidden');
       $('gd-basecamp-panel')?.classList.add('hidden');
       $('gd-subtab-location')?.classList.add('active');
       $('gd-subtab-basecamp')?.classList.remove('active');
-      await renderGuardLocation();
+      try { await renderGuardLocation(); }
+      catch(e) { toast('Error loading guard locations: ' + e.message, 'error'); }
     }
   }
 
@@ -9677,15 +9686,18 @@ const App = (() => {
     const container = $('gd-location-panel');
     if (!container) return;
 
+    // Show loading skeleton while data loads
+    container.innerHTML = _skeletonTable(6, 10);
+
     // Load location sites
     if (!state.locationSites) {
       try { state.locationSites = await api('GET', `/api/productions/${state.prodId}/locations`); }
-      catch(e) { state.locationSites = []; }
+      catch(e) { state.locationSites = []; toast('Error loading locations: ' + e.message, 'error'); }
     }
     // Load location schedules (for activity lookup)
     if (!state.locationSchedules) {
       try { state.locationSchedules = await api('GET', `/api/productions/${state.prodId}/location-schedules`); }
-      catch(e) { state.locationSchedules = []; }
+      catch(e) { state.locationSchedules = []; toast('Error loading location schedules: ' + e.message, 'error'); }
     }
 
     // Sync guard_location_schedules from location_schedules (creates defaults where missing, removes stale)
@@ -9693,7 +9705,7 @@ const App = (() => {
       state.guardLocSchedules = await api('POST', `/api/productions/${state.prodId}/guard-schedules/sync`);
     } catch(e) {
       try { state.guardLocSchedules = await api('GET', `/api/productions/${state.prodId}/guard-schedules`); }
-      catch(e2) { state.guardLocSchedules = []; }
+      catch(e2) { state.guardLocSchedules = []; toast('Error loading guard schedules: ' + e2.message, 'error'); }
     }
 
     const sites = state.locationSites || [];

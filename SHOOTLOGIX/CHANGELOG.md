@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P1] Add loading states and error handling to Guards, Locations, and Fuel tabs
+
+**Problem**: Guards (Location Guards sub-tab), Locations, and Fuel tabs showed a blank screen with no loading feedback while data was being fetched. Error responses from the API were silently swallowed, leaving users with no indication of what went wrong. The `deleteFuelMachinery` function had no error handling — a failed delete would still remove the item from the UI, causing data inconsistency.
+
+**Root cause**: Several async render functions (`renderGuardLocation`, `renderLocations`) performed multiple sequential API calls without showing a loading skeleton or displaying error toasts on failure. `renderGuards()` had empty `.catch(() => {})` blocks. `deleteFuelMachinery()` lacked a try/catch wrapper. `_loadAndRenderFuel()` called `_loadFuelGlobals()` without try/catch, causing the entire fuel tab to hang on the skeleton if that call failed.
+
+**Fix**:
+- `static/app-monolith.js`: `renderGuardLocation()` — added loading skeleton before API calls; added error toasts on catch blocks
+- `static/app-monolith.js`: `renderLocations()` — added loading skeleton when data needs loading; added error toasts on catch blocks
+- `static/app-monolith.js`: `renderGuards()` — replaced silent `.catch(() => {})` with `console.warn`; wrapped both sub-tab awaits in try/catch with error toasts
+- `static/app-monolith.js`: `deleteFuelMachinery()` — wrapped API call in try/catch with error toast
+- `static/app-monolith.js`: `_loadAndRenderFuel()` — wrapped `_loadFuelGlobals()` in try/catch to prevent skeleton freeze
+
+**Verification**:
+- All affected tabs still load correctly (200 on all API endpoints)
+- JS brace/paren balance: 0 delta (no syntax errors)
+- Loading skeletons now appear before data loads
+- Error messages now display to users on API failure
+
+**Branch**: fix/2026-04-02-loading-states-error-handling
+**Side effects**: None
+**Next priority**: Continue through P1 UX anomalies — check remaining tabs for similar missing loading states and error handling gaps
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

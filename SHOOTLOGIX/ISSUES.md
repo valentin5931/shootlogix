@@ -1,5 +1,18 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] FIXED — Loading states and error handling missing on Guards, Locations, Fuel tabs
+- **Discovered**: 2026-04-02
+- **Fixed**: 2026-04-02
+- **Fix**: Added loading skeletons, try/catch wrappers, and error toasts to `renderGuardLocation`, `renderLocations`, `renderGuards`, `deleteFuelMachinery`, and `_loadAndRenderFuel`
+- **Branch**: fix/2026-04-02-loading-states-error-handling
+
+## [P1] Other tabs may have similar missing loading states / error handling
+- **Discovered**: 2026-04-02
+- **Symptoms**: Some async render functions may perform API calls without loading skeleton or error feedback
+- **Likely cause**: Incremental development — loading skeletons were added to some tabs (Labour, Fuel, Security Boats) but not all
+- **Files involved**: `static/app-monolith.js` — check `renderFnb`, `renderBudget`, `renderDashboard`, `renderDocuments`
+- **Estimated effort**: Quick — same pattern as the fix applied today
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
