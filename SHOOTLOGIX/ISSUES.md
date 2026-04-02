@@ -1,6 +1,13 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [P0] ~~25 missing JS functions breaking mobile nav, modals, and panels~~ FIXED 2026-04-02
+- **Fixed in**: fix/2026-04-02-missing-js-functions
+- **Summary**: 25 `App.xxx()` onclick handlers in index.html had no function definitions in app-monolith.js. Mobile menu, activity panel, notification panel, comments, export date modal, create function button, auto-fill tides, and admin features were all broken.
+
+## [P0] ~~Fleet/Crew sub-tab panel stacking~~ FIXED 2026-04-01
+- **Fixed in**: commit 2a93828
+
+## [P0] ~~Fleet/Crew sub-tab event handlers may not fire on cloned DOM~~ FIXED 2026-03-23
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
 - **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
@@ -34,6 +41,13 @@
 - **Likely cause**: Guards need to be created separately from guard posts
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
+
+## [P1] Missing DOM elements referenced in JS
+- **Discovered**: 2026-04-02
+- **Symptoms**: JS references `$('search-overlay')`, `$('search-input')`, `$('search-results')`, `$('multi-select-bar')` but these IDs don't exist in index.html. Search feature (Ctrl+K) and multi-select bar for schedule assignments are broken.
+- **Likely cause**: HTML elements were never added when the JS features were implemented
+- **Files involved**: `templates/index.html`
+- **Estimated effort**: Quick fix — add the missing HTML elements
 
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22

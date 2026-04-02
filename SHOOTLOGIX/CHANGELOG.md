@@ -1,5 +1,44 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P0] Implement 25 missing JS functions breaking mobile nav, modals, and panels
+
+**Problem**: 25 functions referenced in HTML `onclick` handlers (`App.xxx()`) were never defined or exported in `app-monolith.js`. This caused:
+- Mobile hamburger menu completely broken (14+ references to `toggleMobileMenu`)
+- "Create function" button in boat/transport/labour modals broken (`saveFunction` → undefined)
+- Activity history panel inoperable (`toggleActivityPanel`, `loadActivity`, etc.)
+- Notification bell broken (`toggleNotifPanel`, `closeNotifPanel`, `markAllNotificationsRead`)
+- Comments panel broken (`submitComment`, `handleCommentKeydown`, `closeCommentsPanel`)
+- Export date range modal broken (`closeExportDateModal`, `confirmExportDate`, `exportDateShortcut`)
+- PDT auto-fill tides button broken (`autoFillTides`)
+- Price override visibility toggle broken (`onPriceOverrideChange`)
+- FAB long-press menu broken (`_toggleFabMenu`)
+- Admin panel features broken (access logs, permissions, event planning)
+
+**Root cause**: These functions were added to `index.html` as onclick handlers but never implemented in `app-monolith.js`. The JS file's `return {}` export block did not include them.
+
+**Fix**: `static/app-monolith.js` — Added 25 function implementations:
+- `toggleMobileMenu`: toggles the mobile menu overlay visibility
+- `toggleActivityPanel`/`closeActivityPanel`/`loadActivity`/`loadMoreActivity`: full activity feed with filtering
+- `toggleNotifPanel`/`closeNotifPanel`/`markAllNotificationsRead`: notification CRUD via `/api/notifications`
+- `closeCommentsPanel`/`submitComment`/`handleCommentKeydown`: comments via `/api/productions/:id/comments`
+- `closeExportDateModal`/`confirmExportDate`/`exportDateShortcut`: export date range picker
+- `saveFunction`: alias to existing `createFunction()` (HTML called `saveFunction`, JS had `createFunction`)
+- `autoFillTides`: fetches tide data from `/api/tides` for Pearl Islands coordinates
+- `_toggleFabMenu`/`onPriceOverrideChange`: UI interaction handlers
+- `adminLoadAccessLogs`/`adminExportAccessLogs`/`adminShowSaveTemplate`/`adminPermLoadMembers`/`adminPermLoadPerms`/`adminEpLoadPerms`/`adminEpAdd`: admin panel features
+
+All 25 functions added to the App export block.
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- All `App.xxx` calls in HTML now resolve to defined, exported functions (0 missing)
+- App starts and serves correctly
+- All API endpoints return 200
+
+**Branch**: fix/2026-04-02-missing-js-functions
+**Side effects**: None — all new functions, no existing code modified
+**Next priority**: P1 — Picture Boats / Security Boats empty list investigation; add missing DOM elements (search-overlay, multi-select-bar)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

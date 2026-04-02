@@ -13102,6 +13102,332 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  Missing function implementations (P0 fix 2026-04-02)
+  // ═══════════════════════════════════════════════════════════
+
+  // ── Mobile menu toggle ──────────────────────────────────────
+  function toggleMobileMenu() {
+    const menu = $('mobile-menu');
+    if (menu) menu.classList.toggle('hidden');
+  }
+
+  // ── Activity panel ──────────────────────────────────────────
+  let _activityPage = 0;
+  const _activityLimit = 50;
+
+  function toggleActivityPanel() {
+    const overlay = $('activity-overlay');
+    if (!overlay) return;
+    const isHidden = overlay.classList.contains('hidden');
+    overlay.classList.toggle('hidden');
+    if (isHidden) loadActivity();
+  }
+
+  function closeActivityPanel() {
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  async function loadActivity() {
+    _activityPage = 0;
+    const list = $('activity-list');
+    if (!list) return;
+    list.innerHTML = '<div style="color:var(--text-4);padding:1rem;text-align:center">Loading...</div>';
+    try {
+      const params = new URLSearchParams();
+      params.set('limit', _activityLimit);
+      const modFilter = $('activity-filter-module');
+      if (modFilter && modFilter.value) params.set('module', modFilter.value);
+      const userFilter = $('activity-filter-user');
+      if (userFilter && userFilter.value) params.set('user_id', userFilter.value);
+      const fromDate = $('activity-filter-from');
+      if (fromDate && fromDate.value) params.set('date_from', fromDate.value);
+      const toDate = $('activity-filter-to');
+      if (toDate && toDate.value) params.set('date_to', toDate.value);
+      const data = await api('GET', `/api/productions/${state.prodId}/activity?${params}`);
+      _renderActivityList(data);
+    } catch (e) {
+      list.innerHTML = `<div style="color:var(--red);padding:1rem;text-align:center">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  async function loadMoreActivity() {
+    _activityPage++;
+    try {
+      const params = new URLSearchParams();
+      params.set('limit', _activityLimit);
+      params.set('offset', _activityPage * _activityLimit);
+      const modFilter = $('activity-filter-module');
+      if (modFilter && modFilter.value) params.set('module', modFilter.value);
+      const data = await api('GET', `/api/productions/${state.prodId}/activity?${params}`);
+      _renderActivityList(data, true);
+    } catch (e) { toast('Failed to load more activity', 'error'); }
+  }
+
+  function _renderActivityList(items, append) {
+    const list = $('activity-list');
+    if (!list) return;
+    if (!append) list.innerHTML = '';
+    if (!items || items.length === 0) {
+      if (!append) list.innerHTML = '<div style="color:var(--text-4);padding:1rem;text-align:center">No activity found</div>';
+      const btn = $('activity-load-more');
+      if (btn) btn.style.display = 'none';
+      return;
+    }
+    items.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'activity-item';
+      div.style.cssText = 'padding:.5rem .75rem;border-bottom:1px solid var(--border);font-size:.8rem';
+      const ts = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+      div.innerHTML = `<div style="display:flex;justify-content:space-between;margin-bottom:.15rem">
+        <span style="font-weight:600;color:var(--text-0)">${esc(item.user_nickname || 'System')}</span>
+        <span style="color:var(--text-4);font-size:.7rem">${esc(ts)}</span>
+      </div>
+      <div style="color:var(--text-2)">${esc(item.action_type || '')} ${esc(item.entity_type || '')} ${esc(item.entity_name || '')}</div>`;
+      list.appendChild(div);
+    });
+    const btn = $('activity-load-more');
+    if (btn) btn.style.display = items.length >= _activityLimit ? '' : 'none';
+  }
+
+  // ── Notifications panel ─────────────────────────────────────
+  function toggleNotifPanel() {
+    const panel = $('notif-panel');
+    if (!panel) return;
+    const isHidden = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden');
+    if (isHidden) _loadNotifications();
+  }
+
+  function closeNotifPanel() {
+    const panel = $('notif-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function _loadNotifications() {
+    const list = $('notif-list');
+    if (!list) return;
+    try {
+      const data = await api('GET', '/api/notifications');
+      if (!data || data.length === 0) {
+        list.innerHTML = '<div style="color:var(--text-4);padding:1rem;text-align:center;font-size:.8rem">No notifications</div>';
+        return;
+      }
+      list.innerHTML = data.map(n => `<div class="notif-item${n.read_at ? '' : ' unread'}" style="padding:.5rem .75rem;border-bottom:1px solid var(--border);font-size:.8rem;cursor:pointer${n.read_at ? '' : ';background:var(--bg-surface)'}" onclick="App._markNotifRead(${n.id})">
+        <div style="color:var(--text-2)">${esc(n.message || '')}</div>
+        <div style="color:var(--text-4);font-size:.65rem;margin-top:.15rem">${n.created_at ? new Date(n.created_at).toLocaleString() : ''}</div>
+      </div>`).join('');
+    } catch (e) {
+      list.innerHTML = '<div style="color:var(--text-4);padding:1rem;text-align:center;font-size:.8rem">Could not load notifications</div>';
+    }
+  }
+
+  async function _markNotifRead(id) {
+    try { await api('POST', `/api/notifications/${id}/read`); _loadNotifications(); } catch(e) {}
+  }
+
+  async function markAllNotificationsRead() {
+    try {
+      await api('POST', '/api/notifications/read-all');
+      _loadNotifications();
+      const badge = document.querySelector('#notif-bell .notif-count');
+      if (badge) badge.remove();
+      toast('All notifications marked as read');
+    } catch (e) { toast('Failed to mark notifications', 'error'); }
+  }
+
+  // ── Comments panel ──────────────────────────────────────────
+  let _commentsEntityType = null;
+  let _commentsEntityId = null;
+
+  function closeCommentsPanel() {
+    const panel = $('comments-panel');
+    if (panel) panel.classList.add('hidden');
+    _commentsEntityType = null;
+    _commentsEntityId = null;
+  }
+
+  async function submitComment() {
+    const input = $('comments-input');
+    if (!input || !input.value.trim()) return;
+    try {
+      await api('POST', `/api/productions/${state.prodId}/comments`, {
+        entity_type: _commentsEntityType,
+        entity_id: _commentsEntityId,
+        text: input.value.trim(),
+      });
+      input.value = '';
+      await _loadComments();
+    } catch (e) { toast('Failed to submit comment', 'error'); }
+  }
+
+  function handleCommentKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitComment();
+    }
+  }
+
+  async function _loadComments() {
+    const list = $('comments-list');
+    if (!list || !_commentsEntityType) return;
+    try {
+      const params = `entity_type=${_commentsEntityType}&entity_id=${_commentsEntityId || ''}`;
+      const data = await api('GET', `/api/productions/${state.prodId}/comments?${params}`);
+      if (!data || data.length === 0) {
+        list.innerHTML = '<div class="comments-empty">No comments yet</div>';
+        return;
+      }
+      list.innerHTML = data.map(c => `<div class="comment-item" style="padding:.5rem;border-bottom:1px solid var(--border);font-size:.8rem">
+        <div style="display:flex;justify-content:space-between">
+          <span style="font-weight:600;color:var(--text-0)">${esc(c.user_nickname || 'User')}</span>
+          <span style="color:var(--text-4);font-size:.65rem">${c.created_at ? new Date(c.created_at).toLocaleString() : ''}</span>
+        </div>
+        <div style="color:var(--text-2);margin-top:.15rem">${esc(c.text || '')}</div>
+      </div>`).join('');
+    } catch (e) { list.innerHTML = '<div class="comments-empty">Error loading comments</div>'; }
+  }
+
+  // ── Export date range modal ─────────────────────────────────
+  let _exportDateCallback = null;
+
+  function closeExportDateModal() {
+    const overlay = $('export-date-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    _exportDateCallback = null;
+  }
+
+  function confirmExportDate() {
+    const from = $('export-date-from')?.value;
+    const to = $('export-date-to')?.value;
+    if (_exportDateCallback) _exportDateCallback(from, to);
+    closeExportDateModal();
+  }
+
+  function exportDateShortcut(range) {
+    const days = state.shootingDays || [];
+    const today = new Date();
+    let from = '', to = '';
+    if (range === 'week') {
+      const d = new Date(today);
+      d.setDate(d.getDate() - d.getDay() + 1);
+      from = d.toISOString().slice(0, 10);
+      d.setDate(d.getDate() + 6);
+      to = d.toISOString().slice(0, 10);
+    } else if (range === 'last-week') {
+      const d = new Date(today);
+      d.setDate(d.getDate() - d.getDay() - 6);
+      from = d.toISOString().slice(0, 10);
+      d.setDate(d.getDate() + 6);
+      to = d.toISOString().slice(0, 10);
+    } else if (range === 'all' && days.length) {
+      from = days[0].date;
+      to = days[days.length - 1].date;
+    }
+    if (from) { const el = $('export-date-from'); if (el) el.value = from; }
+    if (to) { const el = $('export-date-to'); if (el) el.value = to; }
+  }
+
+  // ── saveFunction alias → createFunction ─────────────────────
+  function saveFunction() { return createFunction(); }
+
+  // ── Auto-fill tides ─────────────────────────────────────────
+  async function autoFillTides() {
+    const days = state.shootingDays;
+    if (!days || days.length === 0) { toast('No shooting days to fill', 'error'); return; }
+    const start = days[0].date;
+    const end = days[days.length - 1].date;
+    try {
+      toast('Fetching tide data...', 'info');
+      // Pearl Islands coordinates (Panama)
+      const tides = await api('GET', `/api/tides?lat=8.38&lng=-79.04&start=${start}&end=${end}`);
+      if (!tides || !tides.length) { toast('No tide data available', 'error'); return; }
+      let updated = 0;
+      for (const day of days) {
+        const dayTides = tides.filter(t => t.date === day.date);
+        if (dayTides.length > 0 && day.events) {
+          for (const ev of day.events) {
+            if (ev.maree_hauteur == null && dayTides[0]) {
+              ev.maree_hauteur = dayTides[0].height;
+              ev.maree_statut = dayTides[0].type || null;
+              updated++;
+            }
+          }
+        }
+      }
+      if (updated > 0) {
+        renderPDT();
+        toast(`Auto-filled tides for ${updated} events`);
+      } else {
+        toast('All events already have tide data');
+      }
+    } catch (e) { toast('Failed to fetch tides: ' + e.message, 'error'); }
+  }
+
+  // ── FAB menu toggle ─────────────────────────────────────────
+  function _toggleFabMenu() {
+    // FAB right-click / long-press menu — placeholder
+    fabAction();
+  }
+
+  // ── Price override handler ──────────────────────────────────
+  function onPriceOverrideChange() {
+    const input = $('am-price-override');
+    const reasonGroup = $('am-override-reason-group');
+    if (!input || !reasonGroup) return;
+    if (input.value && input.value !== '') {
+      reasonGroup.style.display = '';
+    } else {
+      reasonGroup.style.display = 'none';
+    }
+  }
+
+  // ── Admin panel stubs ───────────────────────────────────────
+  async function adminLoadAccessLogs() {
+    const list = $('admin-logs-list');
+    if (!list) return;
+    try {
+      const params = new URLSearchParams();
+      const userSel = $('admin-logs-user');
+      if (userSel && userSel.value) params.set('user_id', userSel.value);
+      const dateSel = $('admin-logs-date');
+      if (dateSel && dateSel.value) params.set('date', dateSel.value);
+      const epSel = $('admin-logs-endpoint');
+      if (epSel && epSel.value) params.set('endpoint', epSel.value);
+      const data = await api('GET', `/api/productions/${state.prodId}/activity?${params}`);
+      list.innerHTML = (data || []).map(item => `<div style="padding:.4rem .6rem;border-bottom:1px solid var(--border);font-size:.78rem;display:flex;gap:.5rem">
+        <span style="color:var(--text-4);min-width:130px">${item.created_at ? new Date(item.created_at).toLocaleString() : ''}</span>
+        <span style="font-weight:600;min-width:80px">${esc(item.user_nickname || '')}</span>
+        <span style="color:var(--text-2)">${esc(item.action_type || '')} ${esc(item.entity_type || '')} ${esc(item.entity_name || '')}</span>
+      </div>`).join('') || '<div style="padding:1rem;color:var(--text-4);text-align:center">No logs found</div>';
+    } catch (e) { list.innerHTML = `<div style="padding:1rem;color:var(--red)">${esc(e.message)}</div>`; }
+  }
+
+  function adminExportAccessLogs() {
+    authDownload(`/api/productions/${state.prodId}/activity?format=csv`);
+  }
+
+  function adminShowSaveTemplate() {
+    toast('Template feature coming soon', 'info');
+  }
+
+  function adminPermLoadMembers() {
+    toast('Permissions feature coming soon', 'info');
+  }
+
+  function adminPermLoadPerms() {
+    toast('Permissions feature coming soon', 'info');
+  }
+
+  function adminEpLoadPerms() {
+    toast('Event planning permissions coming soon', 'info');
+  }
+
+  function adminEpAdd() {
+    toast('Event planning feature coming soon', 'info');
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13240,12 +13566,31 @@ const App = (() => {
     // History undo
     _undoFromToast,
     // FAB
-    fabAction,
+    fabAction, _toggleFabMenu,
     // Bottom nav & breadcrumb & shortcuts
     toggleBottomNavMore, _updateBreadcrumb,
     openShortcutsPanel, closeShortcutsPanel,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
+    // Mobile menu
+    toggleMobileMenu,
+    // Activity panel
+    toggleActivityPanel, closeActivityPanel, loadActivity, loadMoreActivity,
+    // Notifications panel
+    toggleNotifPanel, closeNotifPanel, markAllNotificationsRead, _markNotifRead,
+    // Comments panel
+    closeCommentsPanel, submitComment, handleCommentKeydown,
+    // Export date range modal
+    closeExportDateModal, confirmExportDate, exportDateShortcut,
+    // saveFunction alias
+    saveFunction,
+    // Auto-fill tides
+    autoFillTides,
+    // Price override
+    onPriceOverrideChange,
+    // Admin panel extras
+    adminLoadAccessLogs, adminExportAccessLogs, adminShowSaveTemplate,
+    adminPermLoadMembers, adminPermLoadPerms, adminEpLoadPerms, adminEpAdd,
     init,
   };
 })();
