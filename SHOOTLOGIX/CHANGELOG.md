@@ -1,5 +1,25 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P1] Fix Checklist tab completely broken — state.production never set
+
+**Problem**: The Checklist tab was completely non-functional. Clicking it showed nothing — no loading indicator, no error, just silence. Users could not generate or view daily checklists.
+
+**Root cause**: The checklist functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) all referenced `state.production` and `state.production.id`, but this property was never set anywhere in the codebase. Every other module uses `state.prodId` (set during project selection). The guard clause `if (!state.production) return;` silently aborted every checklist operation.
+
+**Fix**: Replaced all 5 occurrences in `static/app-monolith.js`:
+- `state.production` → `state.prodId` (3 guard clauses)
+- `state.production.id` → `state.prodId` (3 API URL interpolations)
+
+**Verification**:
+- JS syntax check passes
+- `GET /api/productions/1/checklists?date=2026-04-02` returns 200
+- `POST /api/productions/1/checklists/generate?date=2026-04-02` returns 201 with 95 items
+- All other tabs unaffected (no regressions)
+
+**Branch**: fix/2026-04-02-checklist-tab-broken-state-production
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data model investigation); Transport vehicles not appearing in Today tab
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
