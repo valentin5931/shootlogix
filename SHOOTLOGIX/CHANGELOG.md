@@ -1,5 +1,25 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P1] Fix Today tab showing empty names for crew/labour entries
+
+**Problem**: The Today tab displayed 71 labour/crew cards with empty primary text (`<strong></strong>`) because all helper assignments have no named worker (`helper_name` is empty). Cards showed blank bold text with only the function name in small secondary text below, making the Today view confusing and hard to scan.
+
+**Root cause**: The Today tab rendering code used `helper_name` as the primary display text without a fallback. Since no actual helper workers have been created (the helpers table is empty), all assignments have `helper_name: ""`, resulting in visually empty cards. The same issue existed for the guards section.
+
+**Fix**:
+- `static/app-monolith.js` (renderToday, lines 1109-1117): When `helper_name` is empty, the card now shows `function_name` as the primary bold text and `function_group` as the secondary text. When `helper_name` exists, it displays normally with function name as secondary. Same logic applied to guards entries.
+
+**Verification**:
+- Today tab now shows "HELPER - ART 01", "HELPER - ART 02", etc. as primary text with group "ART" as secondary
+- When a helper name is assigned, it correctly shows helper name primary, function name secondary
+- JS syntax check passes
+- All 45 pytest tests pass
+- No regressions in other tabs
+
+**Branch**: fix/2026-04-02-today-crew-empty-names
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data seeding needed)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

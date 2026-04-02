@@ -1,11 +1,9 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## ~~[P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM~~ FIXED
 - **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Fixed**: 2026-03-23 (commit 2a93828)
+- **Resolution**: Fixed panel stacking by clearing active from all related panels before activating target. Sub-nav height offset handled via CSS var.
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
@@ -34,6 +32,12 @@
 - **Likely cause**: Guards need to be created separately from guard posts
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
+
+## ~~[P1] Today tab shows empty names for crew/labour entries~~ FIXED
+- **Discovered**: 2026-04-02
+- **Fixed**: 2026-04-02
+- **Symptoms**: Today tab rendered 71 labour cards with empty `<strong></strong>` tags because `helper_name` is empty for all helper assignments (no named workers assigned). Cards showed blank primary text with function name in small secondary text.
+- **Resolution**: When `helper_name` is empty, show `function_name` as primary text and `function_group` as secondary. Same fix applied to guards section.
 
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22

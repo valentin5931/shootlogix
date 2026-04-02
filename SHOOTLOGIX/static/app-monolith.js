@@ -1106,8 +1106,16 @@ const App = (() => {
     if (crewTotal > 0) {
       html += `<h3 style="margin:.8rem 0 .3rem;color:#F59E0B">&#128100; Crew (${crewTotal})</h3>`;
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.5rem">';
-      for (const h of (d.labour || [])) html += `<div style="padding:.5rem;border-left:3px solid #F59E0B;background:var(--bg-2);border-radius:4px"><strong>${esc(h.helper_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">${esc(h.function_name || '')}</span></div>`;
-      for (const g of (d.guards || [])) html += `<div style="padding:.5rem;border-left:3px solid #06B6D4;background:var(--bg-2);border-radius:4px"><strong>${esc(g.helper_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">Guard — ${esc(g.function_name || '')}</span></div>`;
+      for (const h of (d.labour || [])) {
+        const lPrimary = h.helper_name || h.function_name || '?';
+        const lSecondary = h.helper_name ? (h.function_name || '') : (h.function_group || '');
+        html += `<div style="padding:.5rem;border-left:3px solid #F59E0B;background:var(--bg-2);border-radius:4px"><strong>${esc(lPrimary)}</strong>${lSecondary ? `<br><span style="color:var(--text-3);font-size:.8rem">${esc(lSecondary)}</span>` : ''}</div>`;
+      }
+      for (const g of (d.guards || [])) {
+        const gPrimary = g.helper_name || g.function_name || '?';
+        const gSecondary = g.helper_name ? ('Guard — ' + (g.function_name || '')) : ('Guard — ' + (g.function_group || ''));
+        html += `<div style="padding:.5rem;border-left:3px solid #06B6D4;background:var(--bg-2);border-radius:4px"><strong>${esc(gPrimary)}</strong>${gSecondary ? `<br><span style="color:var(--text-3);font-size:.8rem">${esc(gSecondary)}</span>` : ''}</div>`;
+      }
       html += '</div>';
     }
 
