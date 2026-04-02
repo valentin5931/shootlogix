@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P1] Add missing confirmation dialogs on destructive actions
+
+**Problem**: 5 destructive operations (assignment removal across boats, picture boats, transport, security boats, and shooting day event deletion) executed immediately on click with no confirmation dialog. Users could accidentally delete assignments or events with a single misclick, with no undo.
+
+**Root cause**: Inconsistent implementation — `lbRemoveAssignmentById` (labour) and `gcRemoveAssignmentById` (guard camp) already used `showConfirm()`, but the same pattern was not applied to the other 4 assignment removal functions or the event deletion function.
+
+**Fix**:
+- `static/app-monolith.js`:
+  - `removeAssignmentById()` (boats): wrapped in `showConfirm('Remove this assignment?', ...)`
+  - `pbRemoveAssignmentById()` (picture boats): wrapped in `showConfirm('Remove this assignment?', ...)`
+  - `tbRemoveAssignmentById()` (transport): wrapped in `showConfirm('Remove this assignment?', ...)`
+  - `sbRemoveAssignmentById()` (security boats): wrapped in `showConfirm('Remove this assignment?', ...)`
+  - `deleteEventFromDay()` (PDT events): wrapped in `showConfirm('Delete "<event name>" from this day?', ...)`
+
+**Verification**:
+- JS brace balance verified (4727/4727)
+- App restarts without errors
+- All 6 assignment removal functions now consistently use `showConfirm()`
+- Event deletion now shows event name in confirmation message
+- No regressions — all existing tabs and API endpoints still work
+
+**Branch**: fix/2026-04-02-confirm-destructive-actions
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats empty data (tables not seeded)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
