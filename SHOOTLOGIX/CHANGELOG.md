@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P1] Fix guard camp assignment endpoint + export menu close + silent error feedback
+
+**Problem**:
+1. `_getAssignmentEndpoint()` returned wrong API endpoint for guard camp assignments — both `helper_assignments` and `guard_camp_assignments` have a `helper_id` field, so gc assignments matched the helper-assignments check first, routing schedule operations to the wrong API endpoint.
+2. Security Boats and Guard Camp export dropdown menus didn't close when clicking outside (unlike Boats, Picture Boats, Transport, Labour, and Fuel which all had close handlers).
+3. `_clearDayOverride()` silently swallowed API errors with `catch (e) { /* silent */ }`, giving users no feedback when a schedule override failed to save.
+
+**Root cause**:
+- `_getAssignmentEndpoint` relied on field-name heuristics (`helper_id`, `boat_id`, etc.) to determine assignment type, but gc assignments and helper assignments share the same `helper_id` field name.
+- The global click-outside handler for export menus was missing entries for `sb-export-wrap` and `gc-export-wrap`.
+- The error catch in `_clearDayOverride` was deliberately silent — likely an oversight from initial implementation.
+
+**Fix**:
+- `static/app-monolith.js`: Restructured `_clearDayOverride()` to track which state array (`state.gcAssignments`, `state.labourAssignments`, etc.) the assignment was found in, passing a `source` parameter to `_getAssignmentEndpoint()`. Added `source === 'gc'` check before the `helper_id` heuristic. Added toast error feedback in catch block. Added `sb-export-wrap` and `gc-export-wrap` to the click-outside close handler.
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- App starts without errors
+- All existing API endpoints return correct data (47 boats, 73 helper assignments, 26 boat assignments)
+- app-monolith.js loads successfully (634KB)
+
+**Branch**: fix/2026-04-02-assignment-endpoint-and-ux-fixes
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data architecture issue: all boats are in main boats table)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

@@ -3609,26 +3609,34 @@ const App = (() => {
   }
 
   async function _clearDayOverride(assignmentId, date) {
-    // Find context and clear the override
-    const asgn = state.assignments.find(a => a.id === assignmentId)
-      || state.pictureAssignments?.find(a => a.id === assignmentId)
-      || state.transportAssignments?.find(a => a.id === assignmentId)
-      || state.labourAssignments?.find(a => a.id === assignmentId)
-      || state.securityAssignments?.find(a => a.id === assignmentId)
-      || state.gcAssignments?.find(a => a.id === assignmentId);
+    // Find the assignment and track which source array it came from
+    let asgn, source;
+    const searches = [
+      [state.assignments, 'boats'],
+      [state.pictureAssignments, 'pb'],
+      [state.transportAssignments, 'transport'],
+      [state.labourAssignments, 'labour'],
+      [state.securityAssignments, 'sb'],
+      [state.gcAssignments, 'gc'],
+    ];
+    for (const [arr, src] of searches) {
+      const found = arr?.find(a => a.id === assignmentId);
+      if (found) { asgn = found; source = src; break; }
+    }
     if (!asgn) return;
     const overrides = JSON.parse(asgn.day_overrides || '{}');
     overrides[date] = 'empty';
     try {
-      const endpoint = _getAssignmentEndpoint(asgn);
+      const endpoint = _getAssignmentEndpoint(asgn, source);
       if (endpoint) {
         await api('PUT', endpoint, { day_overrides: JSON.stringify(overrides) });
         asgn.day_overrides = JSON.stringify(overrides);
       }
-    } catch (e) { /* silent */ }
+    } catch (e) { toast('Failed to clear day override', 'error'); }
   }
 
-  function _getAssignmentEndpoint(asgn) {
+  function _getAssignmentEndpoint(asgn, source) {
+    if (source === 'gc') return `/api/guard-camp-assignments/${asgn.id}`;
     if (asgn.boat_id !== undefined && asgn.boat_function_id) return `/api/assignments/${asgn.id}`;
     if (asgn.picture_boat_id !== undefined) return `/api/picture-boat-assignments/${asgn.id}`;
     if (asgn.vehicle_id !== undefined) return `/api/transport-assignments/${asgn.id}`;
@@ -12377,6 +12385,10 @@ const App = (() => {
       if (lbWrap && !lbWrap.contains(e.target)) $('lb-export-menu')?.classList.add('hidden');
       const fuelWrap = $('fuel-exp-wrap');
       if (fuelWrap && !fuelWrap.contains(e.target)) $('fuel-exp-menu')?.classList.add('hidden');
+      const sbWrap = $('sb-export-wrap');
+      if (sbWrap && !sbWrap.contains(e.target)) $('sb-export-menu')?.classList.add('hidden');
+      const gcWrap = $('gc-export-wrap');
+      if (gcWrap && !gcWrap.contains(e.target)) $('gc-export-menu')?.classList.add('hidden');
       // Close schedule popover if clicking outside
       const pop = $('schedule-popover');
       if (pop && !pop.classList.contains('hidden') && !pop.contains(e.target)) {
