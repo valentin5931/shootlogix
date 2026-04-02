@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P1] Fix auth token key mismatch in dashboard-v2.js and timeline.js
+
+**Problem**: The DashboardV2 executive KPIs (fleet coverage, crew coverage, budget health, burn chart, alerts) and the Timeline tab were completely non-functional — all API calls returned 401 Unauthorized.
+
+**Root cause**: `dashboard-v2.js` and `timeline.js` used `localStorage.getItem('sl_token')` to retrieve the JWT, but the auth system stores the token under `localStorage.getItem('access_token')`. The `sl_token` key was never set by the login flow, so these modules always sent unauthenticated requests.
+
+**Fix**:
+- `static/js/dashboard-v2.js` (lines 19, 323): Changed `sl_token` → `access_token`
+- `static/js/timeline.js` (line 44): Changed `sl_token` → `access_token`
+
+**Verification**:
+- All 3 dashboard sub-endpoints (`/dashboard/kpis`, `/dashboard/alerts`, `/dashboard/burnrate`) return 200 with proper auth
+- Timeline endpoint (`/history`) returns 200 with proper auth
+- Dashboard PDF export also fixed (was also using `sl_token`)
+- JS syntax check passes on both files
+- No regressions on other tabs
+
+**Branch**: fix/2026-04-02-auth-token-key-mismatch
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data exists only in main boats table); or P1 UX audit items from CLAUDE.md categories
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

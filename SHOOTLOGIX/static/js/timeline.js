@@ -41,7 +41,7 @@ const Timeline = (() => {
 
   // ── Helpers ────────────────────────────────────────────────
   function _api(url) {
-    const token = localStorage.getItem('sl_token');
+    const token = localStorage.getItem('access_token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = 'Bearer ' + token;
     return fetch(url, { headers }).then(r => {
