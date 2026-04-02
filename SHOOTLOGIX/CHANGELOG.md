@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P0] Fix Daily Report PDF crash + Timeline API crash (3 bugs)
+
+**Problem**: Two critical API endpoints returning 500 errors:
+1. `/api/productions/:id/reports/daily` crashed with `AttributeError: 'str' object has no attribute 'get'`
+2. `/api/productions/:id/timeline` crashed with `sqlite3.OperationalError`
+
+**Root cause**:
+1. Daily Report: `api_alerts()` returns `{"alerts": [...], "count": N}` (a dict), but line 7697 iterated over the dict directly instead of extracting the `alerts` list, causing string keys to be passed to `.get("date")`.
+2. Timeline (bug 1): Query used `WHERE worker_id=?` on `guard_camp_assignments` table, but the column is actually named `helper_id`.
+3. Timeline (bug 2): Query selected `site` from `locations` table, but column doesn't exist (should be `location_type`). Also selected `prep`, `filming`, `wrap` from `location_schedules`, but those columns don't exist — the table uses a single `status` column.
+
+**Fix**:
+- `app.py` line 7696-7697: Extract `alerts` key from the dict before iterating; added `isinstance` guard
+- `app.py` line 7882: Changed `worker_id` to `helper_id` in guard_camp_assignments query
+- `app.py` lines 7893-7914: Fixed locations query to use `location_type` instead of `site`; fixed location_schedules query to use `status` column instead of non-existent `prep`/`filming`/`wrap` columns
+
+**Verification**:
+- Daily Report PDF: HTTP 200, generates valid PDF (8713 bytes)
+- Timeline API: HTTP 200, returns 86 resources and 32 shooting days
+- No regressions: Dashboard, Boats, Locations, all other endpoints still working
+
+**Branch**: fix/2026-04-02-daily-report-timeline-crash
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats empty lists
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

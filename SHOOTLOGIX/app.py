@@ -7693,8 +7693,9 @@ def api_daily_report(prod_id):
 
     # ── Alerts for this date ──
     alerts_resp = api_alerts(prod_id)
-    all_alerts = alerts_resp.get_json() if hasattr(alerts_resp, 'get_json') else []
-    day_alerts = [a for a in all_alerts if a.get("date", "") == target_date]
+    alerts_data = alerts_resp.get_json() if hasattr(alerts_resp, 'get_json') else {}
+    all_alerts = alerts_data.get("alerts", []) if isinstance(alerts_data, dict) else alerts_data
+    day_alerts = [a for a in all_alerts if isinstance(a, dict) and a.get("date", "") == target_date]
 
     # ── Generate PDF ──
     pdf_bytes = generate_daily_report(
@@ -7880,7 +7881,7 @@ def api_timeline(prod_id):
         guards = conn.execute("SELECT id, name, role FROM guard_camp_workers WHERE production_id=?", (prod_id,)).fetchall()
         for g in guards:
             assignments = conn.execute(
-                "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM guard_camp_assignments WHERE worker_id=?",
+                "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM guard_camp_assignments WHERE helper_id=?",
                 (g['id'],)
             ).fetchall()
             resources.append({
@@ -7890,26 +7891,23 @@ def api_timeline(prod_id):
             })
 
         # --- Locations ---
-        locations = conn.execute("SELECT id, name, site FROM locations WHERE production_id=?", (prod_id,)).fetchall()
+        locations = conn.execute("SELECT id, name, location_type FROM locations WHERE production_id=?", (prod_id,)).fetchall()
         for loc in locations:
             schedules = conn.execute(
-                "SELECT id, date, prep, filming, wrap FROM location_schedules WHERE location_id=?",
+                "SELECT id, date, status FROM location_schedules WHERE location_id=?",
                 (loc['id'],)
             ).fetchall()
             loc_assignments = []
             for s in schedules:
-                phases = []
-                if s['prep']: phases.append('P')
-                if s['filming']: phases.append('F')
-                if s['wrap']: phases.append('W')
-                if phases:
+                st = s['status'] or ''
+                if st:
                     loc_assignments.append({
                         'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
-                        'status': 'confirmed', 'phases': '/'.join(phases)
+                        'status': 'confirmed', 'phases': st
                     })
             resources.append({
                 'id': f"loc-{loc['id']}", 'name': loc['name'], 'type': 'location', 'group': 'Locations',
-                'subgroup': loc['site'] or 'Location',
+                'subgroup': loc['location_type'] or 'Location',
                 'assignments': loc_assignments
             })
 

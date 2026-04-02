@@ -1,5 +1,17 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [FIXED] Daily Report PDF crash — api_alerts response structure mismatch
+- **Discovered**: 2026-04-02
+- **Fixed**: 2026-04-02
+- **Root cause**: `api_alerts()` returns `{"alerts": [...], "count": N}` but daily report iterated over dict keys instead of the alerts list
+- **Fix**: Extract `.get("alerts", [])` from the response dict
+
+## [FIXED] Timeline API crash — wrong column names in 3 queries
+- **Discovered**: 2026-04-02
+- **Fixed**: 2026-04-02
+- **Root cause**: Timeline queries referenced `worker_id` (should be `helper_id`), `site` (should be `location_type`), and `prep/filming/wrap` (should be `status`) — all non-existent columns
+- **Fix**: Updated all 3 queries to use correct column names
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
