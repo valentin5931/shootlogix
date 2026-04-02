@@ -21,6 +21,7 @@ from database import (
     create_production, seed_departments,
     create_boat, create_boat_function, create_boat_assignment,
     create_helper, create_helper_assignment,
+    create_picture_boat,
     create_security_boat, create_security_boat_assignment,
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
@@ -301,6 +302,8 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _seed_security_boats(prod_id)
+        _seed_picture_security_boats_from_fleet(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -342,6 +345,7 @@ def bootstrap():
     _seed_picture_boats(prod_id)
     _seed_helpers(prod_id)
     _seed_security_boats(prod_id)
+    _seed_picture_security_boats_from_fleet(prod_id)
     _seed_transport(prod_id)
     _seed_location_sites(prod_id)
     _seed_guard_posts(prod_id)
@@ -470,6 +474,81 @@ def _seed_security_boats(prod_id):
             'default_end': f['end'],
             'context': 'security',
         })
+
+
+# ─── Seed Picture Boats & Security Boats from Fleet ────────────────────────
+
+# Boats assigned to safety/medical/evac functions in the fleet
+SECURITY_BOAT_NAMES = {
+    'ESMELDA', 'EVAC', 'MISHKA', 'MISHKA 24/7', 'EVAC BOAT',
+}
+
+
+def _seed_picture_security_boats_from_fleet(prod_id):
+    """
+    One-time migration: copy boats from the main fleet (boats table) into
+    picture_boats and security_boats tables so those tabs are populated.
+
+    - ALL fleet boats are copied to picture_boats (all are filming boats).
+    - Safety-related boats (ESMELDA, EVAC, MISHKA, MISHKA 24/7, EVAC BOAT)
+      are also copied to security_boats.
+
+    Uses flag 'picture_security_seed_v1' for idempotency.
+    """
+    if get_setting('picture_security_seed_v1'):
+        return
+
+    with get_db() as conn:
+        fleet_boats = conn.execute(
+            "SELECT * FROM boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchall()
+        existing_pb = conn.execute(
+            "SELECT COUNT(*) FROM picture_boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchone()[0]
+        existing_sb = conn.execute(
+            "SELECT COUNT(*) FROM security_boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchone()[0]
+
+    if not fleet_boats:
+        _log("  Picture/Security seed: no fleet boats found, skipping")
+        set_setting('picture_security_seed_v1', '1')
+        return
+
+    if existing_pb > 0 or existing_sb > 0:
+        _log("  Picture/Security seed: tables already have data, setting flag only")
+        set_setting('picture_security_seed_v1', '1')
+        return
+
+    _log(f"  Seeding picture_boats and security_boats from {len(fleet_boats)} fleet boats...")
+
+    pb_count = 0
+    sb_count = 0
+    copy_cols = [
+        'production_id', 'boat_nr', 'name', 'capacity', 'night_ok',
+        'wave_rating', 'captain', 'vendor', 'group_name', 'notes',
+        'daily_rate_estimate', 'daily_rate_actual', 'image_path', 'currency',
+    ]
+
+    for boat in fleet_boats:
+        boat_dict = dict(boat)
+        data = {k: boat_dict[k] for k in copy_cols if k in boat_dict}
+
+        # All fleet boats → picture_boats
+        create_picture_boat(data)
+        pb_count += 1
+
+        # Safety boats → security_boats
+        if boat_dict['name'] in SECURITY_BOAT_NAMES:
+            sb_data = dict(data)
+            sb_data['group_name'] = 'SAFETY'
+            create_security_boat(sb_data)
+            sb_count += 1
+
+    set_setting('picture_security_seed_v1', '1')
+    _log(f"  Seeded {pb_count} picture boats, {sb_count} security boats")
 
 
 # ─── Seed Transport ─────────────────────────────────────────────────────────
