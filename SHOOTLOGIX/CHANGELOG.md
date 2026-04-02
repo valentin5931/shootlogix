@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P0] Fix Timeline API crash — wrong column names in locations query
+
+**Problem**: The Timeline tab (`/api/productions/<id>/timeline`) crashed with `500 sqlite3.OperationalError` every time it was loaded. The locations section of the timeline query referenced columns that don't exist in the database schema.
+
+**Root cause**: Two schema mismatches in `app.py` line ~7893:
+1. `locations` table: query used `site` column which doesn't exist (correct column is `location_type`)
+2. `location_schedules` table: query used `prep`, `filming`, `wrap` boolean columns which don't exist (correct column is `status` with values like 'F' for filming)
+
+**Fix**:
+- `app.py` (line 7893): Changed `SELECT id, name, site FROM locations` → `SELECT id, name, location_type FROM locations`
+- `app.py` (line 7896): Changed `SELECT id, date, prep, filming, wrap FROM location_schedules` → `SELECT id, date, status FROM location_schedules`
+- Updated subgroup reference from `loc['site']` → `loc['location_type']`
+- Simplified phase assignment to use `s['status']` directly instead of checking individual boolean columns
+
+**Verification**:
+- Timeline API returns 200 with 81 resources, 32 shooting days, 21 locations
+- Location subgroups correctly show: tribal_camp, game, reward
+- All other endpoints (dashboard, locations, boats, transport, fuel, guards, FNB, documents, budget) still return 200
+- Python syntax check passes
+
+**Branch**: fix/2026-04-02-timeline-locations-schema-fix
+**Side effects**: None
+**Next priority**: Investigate remaining 404 endpoints (schedule, labour) — these routes may not exist yet and need to be created or the JS frontend needs to use the correct route names
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
