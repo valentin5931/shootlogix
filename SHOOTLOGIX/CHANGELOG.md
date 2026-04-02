@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P1] Add confirmation dialogs to destructive assignment/event delete actions
+
+**Problem**: Five assignment removal functions (`removeAssignmentById`, `pbRemoveAssignmentById`, `tbRemoveAssignmentById`, `sbRemoveAssignmentById`) and `deleteEventFromDay` deleted data immediately on click without any confirmation prompt. On a production tool used daily during active filming, an accidental click could remove a boat/transport/security assignment from the schedule with no undo path.
+
+**Root cause**: These functions were implemented without `showConfirm()` wrappers, unlike their equivalents in the Labour and Guard Camp modules (`lbRemoveAssignmentById`, `gcRemoveAssignmentById`) which already had confirmation dialogs.
+
+**Fix**:
+- `static/app-monolith.js`: Wrapped all 5 functions with `showConfirm()` to require user confirmation before executing the DELETE API call:
+  - `removeAssignmentById` (boat assignments) — "Remove this boat assignment?"
+  - `pbRemoveAssignmentById` (picture boat assignments) — "Remove this picture boat assignment?"
+  - `tbRemoveAssignmentById` (transport assignments) — "Remove this transport assignment?"
+  - `sbRemoveAssignmentById` (security boat assignments) — "Remove this security boat assignment?"
+  - `deleteEventFromDay` (PDT schedule events) — "Delete this event?"
+
+**Verification**:
+- JS syntax check passes (node -c)
+- All 45 Python tests pass
+- Pattern matches existing confirmed-delete functions in labour/guards modules
+
+**Branch**: fix/2026-04-02-add-confirm-dialogs-destructive-actions
+**Side effects**: None — only adds a confirmation step before existing delete operations
+**Next priority**: P1 — Empty picture_boats/security_boats tables (data model investigation), or additional missing confirmation dialogs on entity deletes
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

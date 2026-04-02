@@ -1,5 +1,19 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] FIXED — Missing confirmation dialogs on destructive delete actions
+- **Discovered**: 2026-04-02
+- **Fixed**: 2026-04-02 — Branch `fix/2026-04-02-add-confirm-dialogs-destructive-actions`
+- **Symptoms**: Clicking "Remove" on boat/picture-boat/transport/security-boat assignments and PDT events deleted them instantly without asking for confirmation
+- **Root cause**: 5 delete functions lacked `showConfirm()` wrappers (inconsistent with labour/guards modules which had them)
+- **Files involved**: `static/app-monolith.js`
+
+## [P1] All boats have category='picture' — potential data quality issue
+- **Discovered**: 2026-04-02
+- **Symptoms**: All 47 boats in the `boats` table have `category = 'picture'` which appears to be a default/incorrect value. These boats function as the main fleet.
+- **Likely cause**: The data loader or initial import set all boats to category "picture" regardless of actual type.
+- **Files involved**: `database.py`, `data_loader.py`
+- **Estimated effort**: Quick — may need to clear or correct the category field
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
