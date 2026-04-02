@@ -13100,6 +13100,303 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ── Mobile menu ────────────────────────────────────────────
+  function toggleMobileMenu() {
+    const menu = $('mobile-menu');
+    if (!menu) return;
+    const isOpen = !menu.classList.contains('hidden');
+    if (isOpen) {
+      menu.classList.add('hidden');
+      document.body.style.overflow = '';
+    } else {
+      menu.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      // Sync active state
+      menu.querySelectorAll('.mobile-menu-item[data-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === state.tab);
+      });
+    }
+  }
+
+  // ── Activity panel ────────────────────────────────────────
+  let _activityOpen = false;
+
+  async function toggleActivityPanel() {
+    _activityOpen = !_activityOpen;
+    const overlay = $('activity-overlay');
+    if (!overlay) return;
+    overlay.classList.toggle('hidden', !_activityOpen);
+    if (_activityOpen) {
+      _loadActivityFeed();
+    }
+  }
+
+  function closeActivityPanel() {
+    _activityOpen = false;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  async function _loadActivityFeed() {
+    const feed = $('activity-feed');
+    if (!feed || !state.prodId) return;
+    feed.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">Loading activity...</div>';
+    try {
+      const data = await api('GET', `/api/productions/${state.prodId}/activity?limit=100`);
+      const entries = data.entries || [];
+      if (!entries.length) {
+        feed.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">No activity found</div>';
+        return;
+      }
+      // Group by date
+      const grouped = {};
+      for (const e of entries) {
+        const dk = e.date || 'unknown';
+        if (!grouped[dk]) grouped[dk] = [];
+        grouped[dk].push(e);
+      }
+      const actionColors = { create: '#22C55E', update: '#3B82F6', delete: '#EF4444', lock: '#F59E0B', unlock: '#8B5CF6' };
+      const actionLabels = { create: 'Added', update: 'Updated', delete: 'Removed', lock: 'Locked', unlock: 'Unlocked' };
+      let html = '';
+      const dates = Object.keys(grouped).sort().reverse();
+      for (const date of dates) {
+        const dayEntries = grouped[date];
+        const dateLabel = date === new Date().toISOString().slice(0,10) ? 'Today' : date;
+        html += `<div style="margin-bottom:1rem">
+          <div style="padding:.4rem .8rem;font-weight:600;color:var(--text-2);font-size:.85rem;border-bottom:1px solid var(--border)">${esc(dateLabel)} (${dayEntries.length})</div>`;
+        for (const e of dayEntries) {
+          const c = actionColors[e.action] || '#6b7280';
+          const label = actionLabels[e.action] || e.action;
+          html += `<div style="padding:.4rem .8rem;display:flex;gap:.5rem;align-items:flex-start;border-bottom:1px solid var(--border-light, rgba(128,128,128,.1))">
+            <span style="padding:.1rem .4rem;border-radius:3px;font-size:.7rem;background:${c}18;color:${c};font-weight:600;white-space:nowrap">${esc(label)}</span>
+            <span style="flex:1;font-size:.85rem;color:var(--text-1)">${esc(e.description)}</span>
+            <span style="font-size:.75rem;color:var(--text-3);white-space:nowrap">${esc(e.user || '')}</span>
+          </div>`;
+        }
+        html += '</div>';
+      }
+      feed.innerHTML = html;
+    } catch(e) {
+      feed.innerHTML = '<div style="padding:2rem;text-align:center;color:#EF4444">Failed to load activity</div>';
+    }
+  }
+
+  // ── Notification panel ────────────────────────────────────
+  let _notifPanelOpen = false;
+
+  async function toggleNotifPanel() {
+    _notifPanelOpen = !_notifPanelOpen;
+    const panel = $('notif-panel');
+    if (!panel) return;
+    panel.classList.toggle('hidden', !_notifPanelOpen);
+    if (_notifPanelOpen) {
+      _loadNotifications();
+    }
+  }
+
+  function closeNotifPanel() {
+    _notifPanelOpen = false;
+    const panel = $('notif-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function _loadNotifications() {
+    const list = $('notif-list');
+    if (!list || !state.prodId) return;
+    list.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--text-3)">Loading...</div>';
+    try {
+      const data = await api('GET', `/api/productions/${state.prodId}/notifications?limit=50`);
+      const items = Array.isArray(data) ? data : (data.items || []);
+      if (!items.length) {
+        list.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--text-3)">No notifications</div>';
+        return;
+      }
+      list.innerHTML = items.map(n => {
+        const unread = !n.is_read;
+        return `<div style="padding:.5rem .8rem;border-bottom:1px solid var(--border-light, rgba(128,128,128,.1));${unread ? 'background:var(--bg-2)' : ''}">
+          <div style="font-size:.85rem;color:var(--text-1)">${esc(n.title || '')}</div>
+          ${n.body ? `<div style="font-size:.8rem;color:var(--text-3)">${esc(n.body)}</div>` : ''}
+        </div>`;
+      }).join('');
+    } catch(e) {
+      list.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--text-3)">No notifications</div>';
+    }
+  }
+
+  // ── Auto-fill tides ───────────────────────────────────────
+  async function autoFillTides() {
+    const days = state.shootingDays;
+    if (!days || !days.length) { toast('No shooting days to fill', 'error'); return; }
+    const dates = days.map(d => d.date).filter(Boolean).sort();
+    if (!dates.length) { toast('No dates found', 'error'); return; }
+    const startDate = dates[0];
+    const endDate = dates[dates.length - 1];
+    toast('Fetching tide data...');
+    try {
+      const tideData = await api('GET', `/api/tides?lat=8.35&lng=-79.05&start=${startDate}&end=${endDate}`);
+      const tideMap = {};
+      (Array.isArray(tideData) ? tideData : []).forEach(t => { tideMap[t.date] = t; });
+      let updated = 0;
+      for (const day of days) {
+        const td = tideMap[day.date];
+        if (!td || td.height == null) continue;
+        const existingH = day.events && day.events.length ? day.events[0].maree_hauteur : day.maree_hauteur;
+        if (existingH != null) continue;
+        await api('PUT', `/api/productions/${state.prodId}/shooting-days/${day.id}`, {
+          maree_hauteur: td.height,
+          maree_statut: td.status
+        });
+        if (day.events && day.events.length) {
+          const ev = day.events[0];
+          await api('PUT', `/api/productions/${state.prodId}/shooting-days/${day.id}/events/${ev.id}`, {
+            maree_hauteur: td.height,
+            maree_statut: td.status
+          });
+        }
+        updated++;
+      }
+      state.shootingDays = await api('GET', `/api/productions/${state.prodId}/shooting-days`);
+      renderPDT();
+      toast(`Tides filled for ${updated} day${updated !== 1 ? 's' : ''} (${dates.length - updated} skipped)`);
+    } catch (e) {
+      toast('Error fetching tides: ' + e.message, 'error');
+    }
+  }
+
+  // ── saveFunction (create or edit) ──────────────────────────
+  async function saveFunction() {
+    const name = $('nf-name').value.trim();
+    if (!name) { toast('Name is required', 'error'); return; }
+    const ctx = $('add-func-overlay').dataset.ctx || 'boats';
+    const editId = $('nf-edit-id')?.value;
+
+    const data = {
+      name,
+      function_group: $('nf-group').value,
+      color:          $('nf-color').value,
+      default_start:  $('nf-start').value || null,
+      default_end:    $('nf-end').value   || null,
+      specs:          $('nf-specs').value.trim() || null,
+    };
+
+    const funcArrays = {
+      boats: 'functions', picture: 'pictureFunctions', transport: 'transportFunctions',
+      security: 'securityFunctions', labour: 'labourFunctions', guard_camp: 'gcFunctions',
+    };
+
+    try {
+      if (editId) {
+        const updated = await api('PUT', `/api/boat-functions/${editId}`, data);
+        const arr = state[funcArrays[ctx] || 'functions'];
+        const idx = arr.findIndex(f => f.id === parseInt(editId));
+        if (idx !== -1) Object.assign(arr[idx], updated);
+        closeAddFunctionModal();
+        toast(`Function "${updated.name}" updated`);
+      } else {
+        data.sort_order = (state[funcArrays[ctx] || 'functions'] || []).length;
+        data.context = ctx;
+        const func = await api('POST', `/api/productions/${state.prodId}/boat-functions`, data);
+        (state[funcArrays[ctx] || 'functions'] || state.functions).push(func);
+        closeAddFunctionModal();
+        toast(`Function "${func.name}" created`);
+      }
+      // Re-render appropriate context
+      if (ctx === 'picture') renderPbRoleCards();
+      else if (ctx === 'transport') renderTbRoleCards();
+      else if (ctx === 'security') renderSecurityBoats();
+      else if (ctx === 'labour') renderLbRoleCards();
+      else if (ctx === 'guard_camp') renderGcRoleCards();
+      else renderRoleCards();
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // ── Price override change handler ─────────────────────────
+  function onPriceOverrideChange() {
+    const poInput = $('am-price-override');
+    const orGroup = $('am-override-reason-group');
+    if (!poInput || !orGroup) return;
+    const val = parseFloat(poInput.value);
+    orGroup.style.display = (val > 0) ? '' : 'none';
+  }
+
+  // ── FAB context menu ──────────────────────────────────────
+  let _fabMenuOpen = false;
+  function _toggleFabMenu() {
+    if (_fabMenuOpen) {
+      const menu = $('fab-context-menu');
+      if (menu) { menu.classList.add('hidden'); menu.style.display = 'none'; }
+      _fabMenuOpen = false;
+      return;
+    }
+    _fabMenuOpen = true;
+    let menu = $('fab-context-menu');
+    if (!menu) {
+      menu = document.createElement('div');
+      menu.id = 'fab-context-menu';
+      menu.className = 'fab-context-menu';
+      document.body.appendChild(menu);
+    }
+    menu.innerHTML = '<div style="padding:.5rem;color:var(--text-3);font-size:.8rem">No context actions</div>';
+    menu.classList.remove('hidden');
+    menu.style.display = 'flex';
+    setTimeout(() => {
+      document.addEventListener('click', function _h() { _toggleFabMenu(); document.removeEventListener('click', _h); }, { once: true });
+    }, 0);
+  }
+
+  // ── Activity helpers (loadActivity, loadMoreActivity) ─────
+  function loadActivity() { _loadActivityFeed(); }
+  function loadMoreActivity() { _loadActivityFeed(); }
+
+  // ── Notifications: markAllRead ────────────────────────────
+  async function markAllNotificationsRead() {
+    try {
+      await api('POST', `/api/productions/${state.prodId}/notifications/read-all`);
+      const badge = $('notif-badge');
+      if (badge) badge.style.display = 'none';
+      _loadNotifications();
+      toast('All notifications marked as read', 'success');
+    } catch(e) {
+      toast('No notifications to mark', 'info');
+    }
+  }
+
+  // ── Comments panel (stub) ─────────────────────────────────
+  function closeCommentsPanel() {
+    const panel = $('comments-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+  function submitComment() { toast('Comments feature loading...', 'info'); }
+  function handleCommentKeydown(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); } }
+
+  // ── Export date modal (stub) ──────────────────────────────
+  function closeExportDateModal() {
+    const modal = $('export-date-modal');
+    if (modal) modal.classList.add('hidden');
+  }
+  function confirmExportDate() { closeExportDateModal(); }
+  function exportDateShortcut(preset) { closeExportDateModal(); }
+
+  // ── Admin permission/entity permission stubs ───────────────
+  function adminPermLoadMembers() {
+    const sel = $('admin-perm-user');
+    if (sel) sel.innerHTML = '<option value="">Select user...</option>';
+  }
+  function adminPermLoadPerms() { toast('Permission editor loading...', 'info'); }
+  function adminShowSaveTemplate() { toast('Template save not available yet', 'info'); }
+  function adminEpLoadPerms() {
+    const list = $('admin-ep-list');
+    if (list) list.innerHTML = '<div style="padding:1rem;color:var(--text-3)">No entity permissions configured</div>';
+  }
+  function adminEpAdd() { toast('Entity permission add not available yet', 'info'); }
+  function adminLoadAccessLogs() {
+    const list = $('admin-logs-list');
+    if (list) list.innerHTML = '<div style="padding:1rem;color:var(--text-3)">No access logs available</div>';
+  }
+  function adminExportAccessLogs() { toast('Access log export not available yet', 'info'); }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13242,6 +13539,30 @@ const App = (() => {
     // Bottom nav & breadcrumb & shortcuts
     toggleBottomNavMore, _updateBreadcrumb,
     openShortcutsPanel, closeShortcutsPanel,
+    // Mobile menu
+    toggleMobileMenu,
+    // Activity panel
+    toggleActivityPanel, closeActivityPanel,
+    // Notification panel
+    toggleNotifPanel, closeNotifPanel,
+    // Tides
+    autoFillTides,
+    // Function save (create/edit)
+    saveFunction, onPriceOverrideChange,
+    // FAB context menu
+    _toggleFabMenu,
+    // Activity helpers
+    loadActivity, loadMoreActivity,
+    // Notifications
+    markAllNotificationsRead,
+    // Comments
+    closeCommentsPanel, submitComment, handleCommentKeydown,
+    // Export date modal
+    closeExportDateModal, confirmExportDate, exportDateShortcut,
+    // Admin permissions/entity permissions
+    adminPermLoadMembers, adminPermLoadPerms, adminShowSaveTemplate,
+    adminEpLoadPerms, adminEpAdd,
+    adminLoadAccessLogs, adminExportAccessLogs,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
     init,

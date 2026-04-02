@@ -1,5 +1,20 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [FIXED 2026-04-02] [P1] 18 missing JS functions in app-monolith.js
+- **Discovered**: 2026-04-02
+- **Fixed**: 2026-04-02
+- **Symptoms**: Mobile hamburger menu did nothing (toggleMobileMenu undefined). Activity panel, notification panel, tide auto-fill, function edit modal, FAB context menu, and admin permission panels all threw JS errors on click.
+- **Root cause**: Functions existed in `app.js` and `static/modules/*.js` but were never ported to `app-monolith.js`
+- **Files involved**: `static/app-monolith.js`
+- **Fix**: Added all 18 functions + exported them in the public API
+
+## [P1] Admin permission panel functions are stubs
+- **Discovered**: 2026-04-02
+- **Symptoms**: Admin > Permissions and Admin > Entity Permissions tabs show placeholder content. Functions `adminPermLoadMembers`, `adminPermLoadPerms`, `adminShowSaveTemplate`, `adminEpLoadPerms`, `adminEpAdd`, `adminLoadAccessLogs`, `adminExportAccessLogs` are currently stubs.
+- **Likely cause**: These were in `static/modules/admin.js` which uses `window._SL` (not available in monolith)
+- **Files involved**: `static/app-monolith.js`, `static/modules/admin.js`
+- **Estimated effort**: Medium — need to port full admin permission logic from modules
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

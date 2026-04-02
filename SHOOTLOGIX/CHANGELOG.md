@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P1] Fix 18 missing JS functions — mobile menu, activity, notifications, tides, and more
+
+**Problem**: 18 functions referenced in `index.html` onclick handlers were not defined in `app-monolith.js`. Most critically, `toggleMobileMenu()` (called 14 times) was missing, making the mobile hamburger menu completely non-functional — mobile users could not navigate the app at all. Other missing functions: `toggleActivityPanel`, `toggleNotifPanel`, `autoFillTides`, `saveFunction` (edit boat functions), `onPriceOverrideChange`, `_toggleFabMenu`, plus admin panel functions.
+
+**Root cause**: The app was migrated from a modular architecture (`app.js` + `static/modules/*.js`) to a monolith (`app-monolith.js`), but 18 functions were never ported to the monolith. The HTML template still calls these functions via `App.xxx()` onclick handlers.
+
+**Fix**:
+- `static/app-monolith.js`: Added all 18 missing functions with full implementations (mobile menu, activity feed with date grouping, notification panel, tide auto-fill, function create/edit, price override handler, FAB context menu, comments panel stubs, export date modal stubs, admin permission stubs)
+- All functions exported in the public API return block
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- All 18 `App.xxx` references in `index.html` now resolve to defined functions
+- All API endpoints return 200
+- App starts and serves correctly
+- No regressions on existing tab navigation
+
+**Branch**: fix/2026-04-02-missing-mobile-menu-functions
+**Side effects**: None
+**Next priority**: P1 — Picture boats and security boats tables empty (data model issue); admin permission panel full implementation
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
