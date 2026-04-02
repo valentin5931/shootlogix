@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P1] Seed picture boats and security boats from fleet data
+
+**Problem**: Picture Boats and Security Boats tabs showed empty lists (0 items). The `picture_boats` and `security_boats` database tables were never populated — only their corresponding function groups (YELLOW/RED/NEUTRAL/EXILE for picture, SAFETY/MEDICAL/EVAC for security) had been seeded.
+
+**Root cause**: The `data_loader.py` seed functions `_seed_picture_boats()` and `_seed_security_boats()` only created boat **functions** (role groups), not actual boat entries. The 46 physical vessels existed only in the main `boats` table.
+
+**Fix**:
+- `data_loader.py`: Added two new idempotent migration functions:
+  - `_seed_picture_boats_from_fleet()`: Copies all 46 fleet boats into `picture_boats` table, making them available for picture/filming assignments
+  - `_seed_security_boats_from_fleet()`: Copies the 4 safety-related boats (ESMELDA, EVAC, MISHKA, MISHKA 24/7) into `security_boats` table, identified by their safety/medical/evac function assignments
+- Both use setting flags (`picture_boats_seed_v1`, `security_boats_seed_v1`) for idempotency
+- Both called from `bootstrap()` on both existing-prod and first-time paths
+
+**Verification**:
+- `GET /api/productions/1/picture-boats` → 46 boats (was 0)
+- `GET /api/productions/1/security-boats` → 4 boats (was 0)
+- `GET /api/productions/1/boats` → 46 boats (unchanged, no regression)
+- All other API endpoints return 200 (no regressions)
+- Python syntax check passes
+
+**Branch**: fix/2026-04-02-seed-picture-security-boats
+**Side effects**: None — additive data only, no existing data modified
+**Next priority**: Test CRUD operations on picture/security boats tabs (add/edit/delete/assign); address remaining P1 empty-data issues (transport, guards, fuel)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

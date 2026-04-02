@@ -21,6 +21,7 @@ from database import (
     create_production, seed_departments,
     create_boat, create_boat_function, create_boat_assignment,
     create_helper, create_helper_assignment,
+    create_picture_boat,
     create_security_boat, create_security_boat_assignment,
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
@@ -301,6 +302,8 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _seed_picture_boats_from_fleet(prod_id)
+        _seed_security_boats_from_fleet(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -342,6 +345,8 @@ def bootstrap():
     _seed_picture_boats(prod_id)
     _seed_helpers(prod_id)
     _seed_security_boats(prod_id)
+    _seed_picture_boats_from_fleet(prod_id)
+    _seed_security_boats_from_fleet(prod_id)
     _seed_transport(prod_id)
     _seed_location_sites(prod_id)
     _seed_guard_posts(prod_id)
@@ -470,6 +475,140 @@ def _seed_security_boats(prod_id):
             'default_end': f['end'],
             'context': 'security',
         })
+
+
+# ─── Seed Picture & Security Boats from Fleet ──────────────────────────────
+
+# Boats assigned to safety/medical/evac functions should also be seeded
+# as security boats. These boat names are matched by their function assignments.
+SECURITY_BOAT_FUNCTIONS = {'SAFETY', 'MEDICAL PREP', 'MEDICAL WRAP', 'MEDICAL SHOOT', 'EVAC'}
+
+
+def _seed_picture_boats_from_fleet(prod_id):
+    """
+    Copy boats from the main fleet (boats table) into picture_boats table.
+    This makes the Picture Boats tab functional with real data.
+    Idempotent: uses a setting flag and skips if picture_boats already has data.
+    """
+    flag = "picture_boats_seed_v1"
+    if get_setting(flag):
+        return
+
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM picture_boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchone()[0]
+    if existing > 0:
+        set_setting(flag, "1")
+        return
+
+    # Get all fleet boats
+    with get_db() as conn:
+        fleet_boats = conn.execute(
+            "SELECT * FROM boats WHERE production_id=? AND deleted_at IS NULL ORDER BY sort_order, boat_nr, name",
+            (prod_id,)
+        ).fetchall()
+
+    if not fleet_boats:
+        return
+
+    count = 0
+    for boat in fleet_boats:
+        create_picture_boat({
+            'production_id': prod_id,
+            'boat_nr': boat['boat_nr'],
+            'name': boat['name'],
+            'capacity': boat['capacity'],
+            'night_ok': boat['night_ok'],
+            'wave_rating': boat['wave_rating'],
+            'captain': boat['captain'],
+            'vendor': boat['vendor'],
+            'group_name': boat['group_name'] or 'Custom',
+            'notes': boat['notes'],
+            'daily_rate_estimate': boat['daily_rate_estimate'],
+            'daily_rate_actual': boat['daily_rate_actual'],
+            'image_path': boat['image_path'],
+            'currency': boat['currency'],
+        })
+        # Set sort_order to match fleet order
+        with get_db() as conn:
+            new_id = conn.execute("SELECT MAX(id) FROM picture_boats").fetchone()[0]
+            conn.execute(
+                "UPDATE picture_boats SET sort_order=? WHERE id=?",
+                (boat['sort_order'] or 0, new_id)
+            )
+        count += 1
+
+    print(f"  Seeded {count} picture boats from fleet")
+    set_setting(flag, "1")
+
+
+def _seed_security_boats_from_fleet(prod_id):
+    """
+    Copy safety/medical/evac boats from the fleet into security_boats table.
+    Idempotent: uses a setting flag and skips if security_boats already has data.
+    """
+    flag = "security_boats_seed_v1"
+    if get_setting(flag):
+        return
+
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM security_boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchone()[0]
+    if existing > 0:
+        set_setting(flag, "1")
+        return
+
+    # Find boats assigned to safety-related functions
+    with get_db() as conn:
+        safety_boats = conn.execute("""
+            SELECT DISTINCT b.*
+            FROM boats b
+            JOIN boat_assignments ba ON ba.boat_id = b.id
+            JOIN boat_functions bf ON bf.id = ba.boat_function_id
+            WHERE b.production_id = ? AND b.deleted_at IS NULL
+              AND bf.name IN ({})
+            ORDER BY b.sort_order, b.boat_nr, b.name
+        """.format(','.join('?' * len(SECURITY_BOAT_FUNCTIONS))),
+            (prod_id, *SECURITY_BOAT_FUNCTIONS)
+        ).fetchall()
+
+    if not safety_boats:
+        set_setting(flag, "1")
+        return
+
+    count = 0
+    for boat in safety_boats:
+        create_security_boat({
+            'production_id': prod_id,
+            'boat_nr': boat['boat_nr'],
+            'name': boat['name'],
+            'capacity': boat['capacity'],
+            'night_ok': boat['night_ok'],
+            'wave_rating': boat['wave_rating'],
+            'captain': boat['captain'],
+            'vendor': boat['vendor'],
+            'group_name': 'SAFETY',
+            'notes': boat['notes'],
+            'daily_rate_estimate': boat['daily_rate_estimate'],
+            'daily_rate_actual': boat['daily_rate_actual'],
+            'image_path': boat['image_path'],
+            'currency': boat['currency'],
+        })
+        # Set sort_order to match fleet order
+        with get_db() as conn:
+            new_id = conn.execute("SELECT MAX(id) FROM security_boats").fetchone()[0]
+            conn.execute(
+                "UPDATE security_boats SET sort_order=? WHERE id=?",
+                (boat['sort_order'] or 0, new_id)
+            )
+        count += 1
+
+    print(f"  Seeded {count} security boats from fleet")
+    set_setting(flag, "1")
 
 
 # ─── Seed Transport ─────────────────────────────────────────────────────────
