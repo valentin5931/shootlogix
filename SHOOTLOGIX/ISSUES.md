@@ -1,6 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [P0] ~~Timeline API crash — 3 wrong column references~~ FIXED 2026-04-02
+- **Discovered**: 2026-04-02
+- **Fixed**: 2026-04-02 — Branch: fix/2026-04-02-timeline-api-crash-wrong-column
+- **Symptoms**: `/api/productions/{id}/timeline` returns 500 error. Timeline tab never loads.
+- **Root cause**: SQL queries used wrong column names: `worker_id` instead of `helper_id`, `site` instead of `location_type`, `prep/filming/wrap` instead of `status`.
+
+## [P0] ~~Fleet/Crew sub-tab event handlers may not fire on cloned DOM~~ FIXED 2026-03-23
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
 - **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.

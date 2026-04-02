@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-02 — [P0] Fix Timeline API crash — 3 wrong column references
+
+**Problem**: The Timeline tab (`/api/productions/{id}/timeline`) crashes with a 500 error (`sqlite3.OperationalError: no such column: worker_id`). Even if that bug were bypassed, two more queries would also crash.
+
+**Root cause**: The `api_timeline` endpoint in `app.py` had 3 incorrect SQL column references:
+1. `guard_camp_assignments WHERE worker_id=?` — column is actually `helper_id`
+2. `SELECT id, name, site FROM locations` — `site` column doesn't exist, correct column is `location_type`
+3. `SELECT id, date, prep, filming, wrap FROM location_schedules` — `prep`, `filming`, `wrap` columns don't exist; the schema uses a single `status` column with values like 'P', 'F', 'W'
+
+**Fix**:
+- `app.py` line 7883: Changed `worker_id` to `helper_id` in guard_camp_assignments query
+- `app.py` lines 7893-7914: Rewrote locations section to use `location_type` instead of `site`, and `status` instead of `prep/filming/wrap`
+
+**Verification**:
+- Timeline API now returns 200 with 85 resources (46 boats, 1 picture boat, 1 security boat, 14 vehicles, 1 helper, 1 guard, 21 locations) and 32 shooting days
+- All 24 core API endpoints confirmed 200
+- Python and JS syntax checks pass
+- No regressions in any other module
+
+**Branch**: fix/2026-04-02-timeline-api-crash-wrong-column
+**Side effects**: None
+**Next priority**: P1 items from ISSUES.md (empty Picture Boats/Security Boats data)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
