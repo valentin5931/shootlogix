@@ -1,5 +1,16 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~Timeline API crash — no such column: site~~ FIXED 2026-04-02
+- **Fixed in**: fix/2026-04-02-timeline-crash-no-column-site
+- **Was**: Timeline endpoint crashed with `sqlite3.OperationalError` due to referencing non-existent `site` column in locations table and wrong schema assumptions for `location_schedules`
+
+## [P1] Schedule/PDT endpoint missing from API
+- **Discovered**: 2026-04-02
+- **Symptoms**: `/api/productions/1/schedule` returns 404. The actual endpoint is `/api/productions/1/shooting-days`. The frontend JS may be calling the wrong URL.
+- **Likely cause**: No `/schedule` route alias exists; the frontend app-monolith.js may need to use `shooting-days` endpoint instead
+- **Files involved**: `app.py` (routes), `static/app-monolith.js` (PDT tab)
+- **Estimated effort**: Quick fix — add route alias or update JS
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
