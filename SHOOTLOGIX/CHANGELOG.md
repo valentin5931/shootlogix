@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-03 — [P1] Add confirmation dialogs for assignment deletion + fix missing currency in boat creation
+
+**Problem**:
+1. Assignment removal buttons (✕) on Boats, Picture Boats, Transport, and Security Boats performed immediate DELETE API calls with no confirmation — one misclick could irreversibly remove an assignment.
+2. The "Add a boat" modal had a currency selector (`nb-currency`) in the HTML but the `createBoat()` JS function never sent the selected currency value to the API, so all new boats defaulted to USD regardless of selection.
+
+**Root cause**:
+- `removeAssignmentById`, `pbRemoveAssignmentById`, `tbRemoveAssignmentById`, and `sbRemoveAssignmentById` all called the DELETE API directly without wrapping in `showConfirm()`. The Labour (`lbRemoveAssignmentById`) and Guard Camp (`gcRemoveAssignmentById`) modules already had confirmation — this was an inconsistency.
+- `createBoat()` was missing the `currency` field in its API payload despite the modal form having a currency select element.
+
+**Fix**:
+- `static/app-monolith.js`: Wrapped all 4 assignment removal functions (boats, picture boats, transport, security boats) in `showConfirm('Remove this assignment?', ...)` to match the pattern already used by labour and guard camp modules.
+- `static/app-monolith.js`: Added `currency: $('nb-currency')?.value || 'USD'` to the `createBoat()` API payload.
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- All 45 tests pass
+- Labour and guard camp confirm behavior remains unchanged
+- Boats, picture boats, transport, and security boats now show confirmation before deleting
+
+**Branch**: fix/2026-04-03-assignment-delete-confirm
+**Side effects**: None
+**Next priority**: P1 — Add vendor field to "Add boat" modal; investigate Picture/Security Boats empty tables (data not seeded)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

@@ -1,11 +1,17 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [P1] Add boat modal missing vendor field
+- **Discovered**: 2026-04-03
+- **Symptoms**: When creating a new boat via the "+ Add" button, there is no vendor/owner input field. The vendor can only be set by editing the boat detail panel after creation.
+- **Likely cause**: The add-boat modal HTML (`add-boat-overlay`) was designed with minimal fields; vendor was left for the detail panel edit flow.
+- **Files involved**: `templates/index.html` (add-boat-overlay), `static/app-monolith.js` (createBoat, showAddBoatModal)
+- **Estimated effort**: Quick fix — add vendor input to modal HTML and include in createBoat() payload
+
+## [RESOLVED] [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
+- **Resolved**: 2026-03-23 (CSS vars `--subnav-bar-h`, sub-nav height compensation, breadcrumb update)
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Resolution**: Sub-nav height is now measured after injection and stored in `--subnav-bar-h` CSS var. Layout divs account for it. Breadcrumb updates correctly per sub-tab.
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
