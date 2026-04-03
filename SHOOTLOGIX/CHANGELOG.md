@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-03 — [P0] Fix Timeline API 500 crash — wrong column names in SQL queries
+
+**Problem**: The `/api/productions/<id>/timeline` endpoint returned a 500 Internal Server Error, making the Timeline/Gantt view completely non-functional.
+
+**Root cause**: The `api_timeline()` function in `app.py` referenced two columns that don't exist in the database:
+1. `locations.site` — the actual column is `type` (stores location category like "île", etc.)
+2. `location_schedules.prep`, `location_schedules.filming`, `location_schedules.wrap` — the actual schema uses a single `status` column that stores phase codes like "F", "P", "P/F/W", etc.
+
+**Fix**:
+- `app.py` line 7893: Changed `SELECT id, name, site` to `SELECT id, name, type` for locations query
+- `app.py` line 7912: Changed `loc['site']` to `loc['type']` for subgroup label
+- `app.py` lines 7895-7909: Replaced the query selecting `prep, filming, wrap` columns with `SELECT id, date, status`, and replaced the three boolean checks with parsing the `status` string directly as the phases value
+
+**Verification**:
+- Timeline endpoint now returns 200 with 82 resources and 32 shooting days
+- Location resources include proper subgroup labels (e.g., "île") and phase assignments (e.g., "F")
+- All other endpoints still return 200 (no regressions)
+
+**Branch**: fix/2026-04-03-timeline-500-locations-site-column
+**Side effects**: None
+**Next priority**: Checklist API route mismatch (404), Activity Log route missing from frontend
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

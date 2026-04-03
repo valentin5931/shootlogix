@@ -1,5 +1,23 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] Timeline API crash — FIXED 2026-04-03
+- **Discovered**: 2026-04-03
+- **Symptoms**: `/api/productions/1/timeline` returned 500 error
+- **Root cause**: SQL queries referenced non-existent columns `locations.site` and `location_schedules.prep/filming/wrap`
+- **Status**: FIXED in branch fix/2026-04-03-timeline-500-locations-site-column
+
+## [P1] Checklist API route not called by frontend
+- **Discovered**: 2026-04-03
+- **Symptoms**: Checklist tab exists in JS and backend routes exist at `/api/productions/<id>/checklists`, but the frontend correctly calls these routes. No user-facing bug, but the checklist generate/view flow should be tested end-to-end.
+- **Files involved**: `app.py` (lines 7949-7969), `static/app-monolith.js` (line 13034)
+- **Estimated effort**: Quick — verify end-to-end flow
+
+## [P1] Activity Log panel has no frontend implementation
+- **Discovered**: 2026-04-03
+- **Symptoms**: Backend route exists at `/api/productions/<id>/activity` but the activity panel in the frontend (slide-out) does not call it or render data.
+- **Files involved**: `app.py` (line 1943), `static/app-monolith.js`
+- **Estimated effort**: Medium — need to wire up the activity panel to the API
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
