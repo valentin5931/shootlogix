@@ -13102,6 +13102,736 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  Missing function implementations (ported from dead modules)
+  // ═══════════════════════════════════════════════════════════
+
+  // ── Mobile menu toggle ───────────────────────────────────
+  function toggleMobileMenu() {
+    const menu = $('mobile-menu');
+    if (!menu) return;
+    const isOpen = !menu.classList.contains('hidden');
+    if (isOpen) {
+      menu.classList.add('hidden');
+      document.body.style.overflow = '';
+    } else {
+      menu.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      menu.querySelectorAll('.mobile-menu-item[data-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === state.tab);
+      });
+    }
+  }
+
+  // ── Save function (create or edit) ───────────────────────
+  async function saveFunction() {
+    const name = $('nf-name').value.trim();
+    if (!name) { toast('Name is required', 'error'); return; }
+    const ctx = $('add-func-overlay').dataset.ctx || 'boats';
+    const editId = $('nf-edit-id')?.value;
+
+    const data = {
+      name,
+      function_group: $('nf-group').value,
+      color:          $('nf-color').value,
+      default_start:  $('nf-start').value || null,
+      default_end:    $('nf-end').value   || null,
+      specs:          $('nf-specs').value.trim() || null,
+    };
+
+    try {
+      if (editId) {
+        const updated = await api('PUT', `/api/boat-functions/${editId}`, data);
+        const funcArrays = {
+          boats: 'functions', picture: 'pictureFunctions', transport: 'transportFunctions',
+          security: 'securityFunctions', labour: 'labourFunctions', guard_camp: 'gcFunctions',
+        };
+        const arr = state[funcArrays[ctx] || 'functions'];
+        if (arr) {
+          const idx = arr.findIndex(f => f.id === parseInt(editId));
+          if (idx !== -1) Object.assign(arr[idx], updated);
+        }
+        closeAddFunctionModal();
+        _rerenderForCtx(ctx);
+        toast(`Function "${updated.name}" updated`);
+      } else {
+        createFunction();
+      }
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  function _rerenderForCtx(ctx) {
+    if (ctx === 'picture') renderPbRoleCards();
+    else if (ctx === 'transport') renderTbRoleCards();
+    else if (ctx === 'security') renderSecurityBoats();
+    else if (ctx === 'labour') renderLbRoleCards();
+    else if (ctx === 'guard_camp') renderGcRoleCards();
+    else renderRoleCards();
+  }
+
+  // ── Export date modal ────────────────────────────────────
+  let _exportDateCallback = null;
+  let _exportDateModule = null;
+
+  function closeExportDateModal() {
+    const overlay = $('export-date-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    _exportDateCallback = null;
+    _exportDateModule = null;
+  }
+
+  function _selectExportFormat(fmt) {
+    const btns = document.querySelectorAll('.export-fmt-btn');
+    btns.forEach(b => {
+      if (b.dataset.fmt === fmt) {
+        b.style.background = '#3B82F6'; b.style.color = '#fff'; b.style.borderColor = '#3B82F6';
+      } else {
+        b.style.background = 'var(--bg-surface)'; b.style.color = 'var(--text-2)'; b.style.borderColor = 'var(--border)';
+      }
+    });
+  }
+
+  function _getSelectedExportFormat() {
+    const active = document.querySelector('.export-fmt-btn[style*="#3B82F6"]');
+    return active ? active.dataset.fmt : 'csv';
+  }
+
+  async function confirmExportDate() {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    const dateFrom = fromEl ? fromEl.value : '';
+    const dateTo = toEl ? toEl.value : '';
+    const fmt = _getSelectedExportFormat();
+
+    if (_exportDateModule && state.prodId) {
+      api('POST', `/api/productions/${state.prodId}/export-defaults/${_exportDateModule}`,
+          { from: dateFrom, to: dateTo }).catch(() => {});
+    }
+
+    closeExportDateModal();
+    if (_exportDateCallback) _exportDateCallback(dateFrom, dateTo, fmt);
+  }
+
+  function exportDateShortcut(type) {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    if (!fromEl || !toEl) return;
+
+    const now = new Date();
+    if (type === 'week') {
+      const day = now.getDay();
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      fromEl.value = monday.toISOString().slice(0, 10);
+      toEl.value = sunday.toISOString().slice(0, 10);
+    } else if (type === 'last-week') {
+      const day = now.getDay();
+      const lastMonday = new Date(now);
+      lastMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1) - 7);
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastMonday.getDate() + 6);
+      fromEl.value = lastMonday.toISOString().slice(0, 10);
+      toEl.value = lastSunday.toISOString().slice(0, 10);
+    } else if (type === 'all') {
+      fromEl.value = '';
+      toEl.value = '';
+    }
+  }
+
+  // ── Activity panel ───────────────────────────────────────
+  let _activityOpen = false;
+  let _activityData = [];
+  let _activityGrouped = {};
+  let _activityPage = 0;
+  const _ACT_PAGE_SIZE = 100;
+
+  const _ACT_MODULE_ICONS = {
+    pdt: { icon: '\uD83D\uDCC5', color: '#94A3B8' },
+    fleet: { icon: '\u2693', color: '#3B82F6' },
+    'picture-boats': { icon: '\uD83D\uDCF7', color: '#8B5CF6' },
+    'security-boats': { icon: '\uD83D\uDEE1', color: '#EF4444' },
+    transport: { icon: '\uD83D\uDE9B', color: '#22C55E' },
+    fuel: { icon: '\u26FD', color: '#F59E0B' },
+    labour: { icon: '\uD83D\uDC65', color: '#F59E0B' },
+    guards: { icon: '\uD83D\uDC82', color: '#06B6D4' },
+    locations: { icon: '\uD83D\uDCCD', color: '#22C55E' },
+    fnb: { icon: '\uD83C\uDF7D', color: '#F97316' },
+  };
+
+  const _ACT_MODULE_LABELS = {
+    pdt: 'PDT (Schedule)', fleet: 'Fleet (Boats)', 'picture-boats': 'Picture Boats',
+    'security-boats': 'Security Boats', transport: 'Transport', fuel: 'Fuel',
+    labour: 'Labour', guards: 'Guards', locations: 'Locations', fnb: 'FNB (Food & Beverage)',
+  };
+
+  const _ACT_ACTION_CFG = {
+    create: { label: 'Added', badge: '+', color: '#22C55E', bg: '#22C55E18' },
+    update: { label: 'Updated', badge: '~', color: '#3B82F6', bg: '#3B82F618' },
+    delete: { label: 'Removed', badge: '\u00D7', color: '#EF4444', bg: '#EF444418' },
+    lock:   { label: 'Locked', badge: '\uD83D\uDD12', color: '#F59E0B', bg: '#F59E0B18' },
+    unlock: { label: 'Unlocked', badge: '\uD83D\uDD13', color: '#8B5CF6', bg: '#8B5CF618' },
+    cascade:{ label: 'Cascaded', badge: '\u2197', color: '#06B6D4', bg: '#06B6D418' },
+  };
+
+  function _actRelativeTime(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00Z'));
+    const diffMs = Date.now() - d;
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 7) return `${diffDay}d ago`;
+    return dateStr.slice(0, 10);
+  }
+
+  function _actFormatDateHeader(dateStr) {
+    if (!dateStr || dateStr === 'unknown') return 'Unknown date';
+    try {
+      const d = new Date(dateStr + 'T00:00:00');
+      const today = new Date().toISOString().slice(0, 10);
+      const yd = new Date(); yd.setDate(yd.getDate() - 1);
+      if (dateStr === today) return 'Today';
+      if (dateStr === yd.toISOString().slice(0, 10)) return 'Yesterday';
+      return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    } catch { return dateStr; }
+  }
+
+  function _renderActivityEntry(entry) {
+    const mod = _ACT_MODULE_ICONS[entry.module] || { icon: '\u2699', color: '#6b7280' };
+    const act = _ACT_ACTION_CFG[entry.action] || _ACT_ACTION_CFG.update;
+    const time = entry.timestamp ? entry.timestamp.slice(11, 16) : '';
+    const relTime = _actRelativeTime(entry.timestamp);
+    const undoneClass = entry.undone ? ' activity-entry-undone' : '';
+    let changesHTML = '';
+    if (entry.changes && entry.changes.length > 0) {
+      changesHTML = `<div class="activity-changes">
+        ${entry.changes.slice(0, 5).map(c => `<div class="activity-change-row">
+          <span class="activity-change-field">${esc(c.field)}</span>
+          <span class="activity-change-old">${esc(String(c.old == null ? 'empty' : c.old))}</span>
+          <span class="activity-change-arrow">&rarr;</span>
+          <span class="activity-change-new">${esc(String(c.new == null ? 'empty' : c.new))}</span>
+        </div>`).join('')}
+        ${entry.changes.length > 5 ? `<div class="activity-change-more">+${entry.changes.length - 5} more changes</div>` : ''}
+      </div>`;
+    }
+    return `<div class="activity-entry${undoneClass}" data-module="${entry.module}">
+      <div class="activity-timeline-dot">
+        <div class="activity-timeline-line"></div>
+        <div class="activity-dot" style="background:${act.color}"></div>
+      </div>
+      <div class="activity-entry-content">
+        <div class="activity-entry-header">
+          <span class="activity-module-icon">${mod.icon}</span>
+          <span class="activity-action-tag" style="background:${act.bg};color:${act.color}">${esc(act.label)}</span>
+          <span class="activity-entry-time" title="${esc(entry.timestamp || '')}">${esc(time)} - ${esc(relTime)}</span>
+        </div>
+        <div class="activity-entry-desc">${esc(entry.description)}</div>
+        ${changesHTML}
+        <div class="activity-entry-user">${esc(entry.user)}</div>
+      </div>
+    </div>`;
+  }
+
+  function _renderGroupedTimeline() {
+    const feed = $('activity-feed');
+    if (!feed) return;
+    if (_activityData.length === 0) { feed.innerHTML = '<div class="activity-empty">No activity found</div>'; return; }
+    let html = '';
+    const dates = Object.keys(_activityGrouped).sort().reverse();
+    for (const date of dates) {
+      const entries = _activityGrouped[date];
+      html += `<div class="activity-date-group">
+        <div class="activity-date-header">
+          <span class="activity-date-label">${esc(_actFormatDateHeader(date))}</span>
+          <span class="activity-date-count">${entries.length} action${entries.length > 1 ? 's' : ''}</span>
+        </div>
+        <div class="activity-date-entries">${entries.map(e => _renderActivityEntry(e)).join('')}</div>
+      </div>`;
+    }
+    feed.innerHTML = html;
+  }
+
+  async function toggleActivityPanel() {
+    if (_activityOpen) { closeActivityPanel(); return; }
+    _activityOpen = true;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+    loadActivity();
+  }
+
+  function closeActivityPanel() {
+    _activityOpen = false;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  async function loadActivity() {
+    _activityPage = 0;
+    _activityData = [];
+    _activityGrouped = {};
+    const feed = $('activity-feed');
+    if (feed) feed.innerHTML = '<div class="activity-loading">Loading...</div>';
+    await _fetchActivity();
+  }
+
+  async function _fetchActivity() {
+    if (!state.prodId) return;
+    const module = $('activity-filter-module')?.value || '';
+    const userId = $('activity-filter-user')?.value || '';
+    const action = $('activity-filter-action')?.value || '';
+    const dateFrom = $('activity-filter-from')?.value || '';
+    const dateTo = $('activity-filter-to')?.value || '';
+
+    const params = new URLSearchParams();
+    params.set('limit', _ACT_PAGE_SIZE);
+    if (module) params.set('module', module);
+    if (userId) params.set('user_id', userId);
+    if (action) params.set('action_type', action);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+
+    try {
+      const res = await authFetch(`/api/productions/${state.prodId}/activity?${params.toString()}`);
+      if (!res.ok) throw new Error('Failed to load activity');
+      const data = await res.json();
+      let entries = data.entries || [];
+      if (action) entries = entries.filter(e => e.action === action);
+
+      _activityData = entries;
+      _activityGrouped = {};
+      for (const e of entries) {
+        const dk = e.date || 'unknown';
+        if (!_activityGrouped[dk]) _activityGrouped[dk] = [];
+        _activityGrouped[dk].push(e);
+      }
+      _renderGroupedTimeline();
+
+      if (_activityPage === 0 && data.modules) {
+        const sel = $('activity-filter-module');
+        if (sel) {
+          const cur = sel.value;
+          sel.innerHTML = '<option value="">All modules</option>';
+          for (const mod of data.modules) sel.innerHTML += `<option value="${mod}">${esc(_ACT_MODULE_LABELS[mod] || mod)}</option>`;
+          sel.value = cur;
+        }
+      }
+      if (_activityPage === 0) {
+        const sel = $('activity-filter-user');
+        if (sel) {
+          const cur = sel.value;
+          const users = new Map();
+          for (const entry of entries) { if (entry.user_id && entry.user) users.set(entry.user_id, entry.user); }
+          sel.innerHTML = '<option value="">All users</option>';
+          for (const [id, nick] of users) sel.innerHTML += `<option value="${id}">${esc(nick)}</option>`;
+          sel.value = cur;
+        }
+      }
+      const loadMoreBtn = $('activity-load-more');
+      if (loadMoreBtn) loadMoreBtn.style.display = entries.length >= _ACT_PAGE_SIZE ? '' : 'none';
+    } catch (e) {
+      const feed = $('activity-feed');
+      if (feed) feed.innerHTML = '<div class="activity-empty">Failed to load activity</div>';
+    }
+  }
+
+  function loadMoreActivity() {
+    _activityPage++;
+    _fetchActivity();
+  }
+
+  // ── Notifications panel ──────────────────────────────────
+  let _notifPanelOpen = false;
+  let _notifData = [];
+
+  async function toggleNotifPanel() {
+    _notifPanelOpen = !_notifPanelOpen;
+    const panel = $('notif-panel');
+    if (!panel) return;
+    panel.classList.toggle('hidden', !_notifPanelOpen);
+    if (_notifPanelOpen) await _loadNotifications();
+  }
+
+  function closeNotifPanel() {
+    _notifPanelOpen = false;
+    const panel = $('notif-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function _loadNotifications() {
+    const list = $('notif-list');
+    if (!list) return;
+    list.innerHTML = '<div class="notif-loading">Loading...</div>';
+    try {
+      const res = await authFetch(`/api/notifications?production_id=${state.prodId}&limit=50`);
+      if (!res.ok) throw new Error('Failed');
+      _notifData = await res.json();
+      _renderNotifications();
+    } catch { list.innerHTML = '<div class="notif-empty">Failed to load notifications</div>'; }
+  }
+
+  function _renderNotifications() {
+    const list = $('notif-list');
+    if (!list) return;
+    if (!_notifData.length) { list.innerHTML = '<div class="notif-empty">No notifications</div>'; return; }
+    list.innerHTML = _notifData.map(n => {
+      const unread = !n.is_read;
+      return `<div class="notif-item ${unread ? 'notif-unread' : ''}" data-id="${n.id}">
+        <div class="notif-content">
+          <div class="notif-title">${esc(n.title)}</div>
+          ${n.body ? `<div class="notif-body">${esc(n.body)}</div>` : ''}
+        </div>
+        ${unread ? '<div class="notif-dot"></div>' : ''}
+      </div>`;
+    }).join('');
+  }
+
+  async function markAllNotificationsRead() {
+    try {
+      await authFetch(`/api/notifications/read-all?production_id=${state.prodId}`, { method: 'POST' });
+      _notifData.forEach(n => n.is_read = 1);
+      _renderNotifications();
+      toast('All notifications marked as read', 'success');
+    } catch { toast('Failed to mark all as read', 'error'); }
+  }
+
+  // ── Comments panel ───────────────────────────────────────
+  let _commentsPanelOpen = false;
+  let _commentsEntity = { type: null, id: null };
+  let _commentsData = [];
+
+  function closeCommentsPanel() {
+    _commentsPanelOpen = false;
+    const panel = $('comments-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function _loadComments() {
+    const list = $('comments-list');
+    if (!list) return;
+    list.innerHTML = '<div class="comments-loading">Loading...</div>';
+    try {
+      const res = await authFetch(
+        `/api/productions/${state.prodId}/comments?entity_type=${_commentsEntity.type}&entity_id=${_commentsEntity.id}`
+      );
+      if (!res.ok) throw new Error('Failed');
+      _commentsData = await res.json();
+      _renderCommentsList();
+    } catch { list.innerHTML = '<div class="comments-empty">Failed to load comments</div>'; }
+  }
+
+  function _renderCommentsList() {
+    const list = $('comments-list');
+    if (!list) return;
+    if (!_commentsData.length) { list.innerHTML = '<div class="comments-empty">No comments yet</div>'; return; }
+    list.innerHTML = _commentsData.map(c => {
+      const canDel = authState.user && (authState.user.is_admin || c.user_id === authState.user.id);
+      return `<div class="comment-item">
+        <div class="comment-header">
+          <span class="comment-author">${esc(c.user_nickname || 'Unknown')}</span>
+          ${canDel ? `<button class="comment-delete" onclick="App.deleteComment(${c.id})" title="Delete">&times;</button>` : ''}
+        </div>
+        <div class="comment-body">${esc(c.body)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  async function submitComment() {
+    const input = $('comments-input');
+    const body = (input.value || '').trim();
+    if (!body) return;
+    input.disabled = true;
+    try {
+      const res = await authFetch(`/api/productions/${state.prodId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entity_type: _commentsEntity.type, entity_id: _commentsEntity.id, body })
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || 'Failed'); }
+      input.value = '';
+      await _loadComments();
+      toast('Comment added', 'success');
+    } catch (e) { toast(e.message || 'Failed to add comment', 'error'); }
+    finally { input.disabled = false; input.focus(); }
+  }
+
+  async function deleteComment(commentId) {
+    if (!confirm('Delete this comment?')) return;
+    try {
+      const res = await authFetch(`/api/comments/${commentId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed');
+      await _loadComments();
+      toast('Comment deleted', 'success');
+    } catch { toast('Failed to delete comment', 'error'); }
+  }
+
+  function handleCommentKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); }
+  }
+
+  async function openCommentsPanel(entityType, entityId) {
+    _commentsEntity = { type: entityType, id: entityId };
+    _commentsPanelOpen = true;
+    const panel = $('comments-panel');
+    if (!panel) return;
+    panel.classList.remove('hidden');
+    const title = $('comments-panel-title');
+    if (title) title.textContent = `Comments: ${entityType} #${entityId}`;
+    $('comments-input').value = '';
+    await _loadComments();
+  }
+
+  // ── Price override change ────────────────────────────────
+  function onPriceOverrideChange() {
+    const poInput = $('am-price-override');
+    const orGroup = $('am-override-reason-group');
+    if (!poInput || !orGroup) return;
+    const val = parseFloat(poInput.value);
+    orGroup.style.display = (val > 0) ? '' : 'none';
+  }
+
+  // ── Auto-fill tides ──────────────────────────────────────
+  async function autoFillTides() {
+    const days = state.shootingDays;
+    if (!days.length) { toast('No shooting days to fill', 'error'); return; }
+    const dates = days.map(d => d.date).filter(Boolean).sort();
+    if (!dates.length) { toast('No dates found', 'error'); return; }
+    const startD = dates[0];
+    const endD = dates[dates.length - 1];
+
+    toast('Fetching tide data...');
+    try {
+      const tideData = await api('GET', `/api/tides?lat=8.35&lng=-79.05&start=${startD}&end=${endD}`);
+      const tideMap = {};
+      tideData.forEach(td => { tideMap[td.date] = td; });
+
+      let updated = 0;
+      for (const day of days) {
+        const td = tideMap[day.date];
+        if (!td || td.height == null) continue;
+        const existingH = day.events && day.events.length ? day.events[0].maree_hauteur : day.maree_hauteur;
+        if (existingH != null) continue;
+
+        await api('PUT', `/api/productions/${state.prodId}/shooting-days/${day.id}`, {
+          maree_hauteur: td.height, maree_statut: td.status
+        });
+        updated++;
+      }
+
+      state.shootingDays = await api('GET', `/api/productions/${state.prodId}/shooting-days`);
+      renderPDT();
+      toast(`Tides filled for ${updated} day${updated !== 1 ? 's' : ''} (${dates.length - updated} skipped)`);
+    } catch (e) { toast('Error fetching tides: ' + e.message, 'error'); }
+  }
+
+  // ── FAB context menu toggle ──────────────────────────────
+  let _fabMenuOpen = false;
+
+  function _toggleFabMenu() {
+    if (_fabMenuOpen) { _closeFabMenu(); return; }
+    const ctx = FAB_CONTEXT_ACTIONS?.[state.tab];
+    if (!ctx || ctx.length <= 1) return;
+    _fabMenuOpen = true;
+    let menu = $('fab-context-menu');
+    if (!menu) {
+      menu = document.createElement('div');
+      menu.id = 'fab-context-menu';
+      menu.className = 'fab-context-menu';
+      document.body.appendChild(menu);
+    }
+    menu.innerHTML = ctx.map((a, i) =>
+      `<button class="fab-ctx-item" onclick="App._fabCtxAction(${i})">${esc(a.label)}</button>`
+    ).join('');
+    menu.classList.remove('hidden');
+    menu.style.display = 'flex';
+    setTimeout(() => {
+      document.addEventListener('click', _fabMenuOutside, { once: true });
+    }, 10);
+  }
+
+  function _fabMenuOutside(e) {
+    const menu = $('fab-context-menu');
+    const fab = $('fab-btn');
+    if (menu && !menu.contains(e.target) && fab && !fab.contains(e.target)) _closeFabMenu();
+  }
+
+  function _closeFabMenu() {
+    _fabMenuOpen = false;
+    const menu = $('fab-context-menu');
+    if (menu) { menu.classList.add('hidden'); menu.style.display = 'none'; }
+  }
+
+  function _fabCtxAction(idx) {
+    const ctx = FAB_CONTEXT_ACTIONS?.[state.tab];
+    if (ctx && ctx[idx]) { _closeFabMenu(); ctx[idx].action(); }
+  }
+
+  // FAB_CONTEXT_ACTIONS placeholder (no multi-actions yet)
+  const FAB_CONTEXT_ACTIONS = {};
+
+  // ── Admin: permissions ───────────────────────────────────
+  let _permCurrentProjId = null;
+  let _permCurrentUserId = null;
+  let _permCurrentPerms = null;
+  let _epPerms = [];
+  let _logsDebounce = null;
+  const _LOGS_LIMIT = 50;
+  let _logsPage = 0;
+
+  async function adminPermLoadMembers() {
+    const sel = $('admin-perm-project');
+    if (!sel || !sel.value) return;
+    _permCurrentProjId = sel.value;
+    try {
+      const members = await api('GET', `/api/admin/projects/${sel.value}/members`);
+      const userSel = $('admin-perm-user');
+      if (userSel) {
+        userSel.innerHTML = members.map(m =>
+          `<option value="${m.user_id}">${esc(m.nickname)}${m.is_admin ? ' (ADMIN)' : ''}</option>`
+        ).join('');
+      }
+      await adminPermLoadPerms();
+    } catch (e) { toast('Failed to load members: ' + e.message, 'error'); }
+  }
+
+  async function adminPermLoadPerms() {
+    const userSel = $('admin-perm-user');
+    if (!userSel || !userSel.value) { const el = $('admin-perm-grid'); if (el) el.innerHTML = ''; return; }
+    _permCurrentUserId = userSel.value;
+    try {
+      const data = await api('GET', `/api/admin/projects/${_permCurrentProjId}/members/${_permCurrentUserId}/permissions`);
+      _permCurrentPerms = data;
+      const el = $('admin-perm-grid');
+      if (el) {
+        if (data.is_admin) {
+          el.innerHTML = '<p style="color:var(--text-3);padding:1rem">Admin users have full access.</p>';
+        } else {
+          el.innerHTML = '<p style="color:var(--text-3);padding:1rem">Permission grid loaded.</p>';
+        }
+      }
+    } catch (e) { toast('Failed to load permissions: ' + e.message, 'error'); }
+  }
+
+  function adminShowSaveTemplate() {
+    const _adminModalAction = 'save-template';
+    const title = $('admin-modal-title');
+    const body = $('admin-modal-body');
+    if (title) title.textContent = 'Save as Template';
+    if (body) body.innerHTML = `
+      <div class="form-group"><label class="form-label">Template Name</label>
+        <input type="text" id="adm-tpl-name" class="form-control" placeholder="e.g. Survival Show Standard"></div>
+      <div class="form-group"><label class="form-label">Description (optional)</label>
+        <input type="text" id="adm-tpl-desc" class="form-control"></div>
+      <p style="color:var(--text-3);font-size:.75rem;margin-top:.5rem">Saves: boat functions, catering categories/items, guard posts, location sites from current project.</p>
+    `;
+    const ok = $('admin-modal-ok');
+    if (ok) ok.textContent = 'Save Template';
+    const overlay = $('admin-modal-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+  }
+
+  async function adminEpLoadPerms() {
+    const userId = $('admin-ep-user')?.value;
+    if (!userId) {
+      const el = $('admin-ep-list');
+      if (el) el.innerHTML = '<p style="color:var(--text-3)">Select a user.</p>';
+      $('admin-ep-add-form')?.classList.add('hidden');
+      return;
+    }
+    const entityType = $('admin-ep-type')?.value || '';
+    try {
+      const qs = entityType ? `?entity_type=${entityType}` : '';
+      const data = await api('GET', `/api/admin/users/${userId}/entity-permissions${qs}`);
+      _epPerms = data.permissions || [];
+      const el = $('admin-ep-list');
+      if (el) {
+        if (!_epPerms.length) {
+          el.innerHTML = '<p style="color:var(--text-3)">No entity restrictions.</p>';
+        } else {
+          let html = '<table class="admin-table"><thead><tr><th>Entity Type</th><th>Entity ID</th><th>Permission</th><th>Actions</th></tr></thead><tbody>';
+          for (const p of _epPerms) {
+            html += `<tr><td>${esc(p.entity_type)}</td><td>${p.entity_id}</td><td>${esc(p.permission)}</td>
+              <td><button class="btn btn-sm btn-danger" onclick="App.adminEpDelete(${p.id})">Remove</button></td></tr>`;
+          }
+          html += '</tbody></table>';
+          el.innerHTML = html;
+        }
+      }
+      $('admin-ep-add-form')?.classList.remove('hidden');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function adminEpAdd() {
+    const userId = $('admin-ep-user')?.value;
+    if (!userId) return;
+    const entityType = $('admin-ep-add-type')?.value;
+    const entityId = $('admin-ep-add-id')?.value;
+    const permission = $('admin-ep-add-perm')?.value || 'read';
+    if (!entityType || !entityId) { toast('Fill entity type and ID', 'error'); return; }
+    try {
+      await api('POST', `/api/admin/users/${userId}/entity-permissions`, {
+        entity_type: entityType, entity_id: parseInt(entityId), permission,
+      });
+      toast('Entity permission added');
+      $('admin-ep-add-id').value = '';
+      adminEpLoadPerms();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function adminEpDelete(permId) {
+    const userId = $('admin-ep-user')?.value;
+    if (!userId) return;
+    try {
+      await api('DELETE', `/api/admin/users/${userId}/entity-permissions/${permId}`);
+      toast('Permission removed');
+      adminEpLoadPerms();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function adminLoadAccessLogs() {
+    clearTimeout(_logsDebounce);
+    _logsDebounce = setTimeout(async () => {
+      try {
+        const userId = $('admin-logs-user')?.value || '';
+        const date = $('admin-logs-date')?.value || '';
+        const endpoint = $('admin-logs-endpoint')?.value || '';
+        const qs = new URLSearchParams();
+        if (userId) qs.set('user_id', userId);
+        if (date) qs.set('date', date);
+        if (endpoint) qs.set('endpoint', endpoint);
+        qs.set('limit', _LOGS_LIMIT);
+        qs.set('offset', _logsPage * _LOGS_LIMIT);
+        const data = await api('GET', `/api/admin/access-logs?${qs}`);
+        const el = $('admin-logs-list');
+        if (el) {
+          const logs = data.logs || [];
+          if (!logs.length) { el.innerHTML = '<p style="color:var(--text-3)">No logs found.</p>'; return; }
+          let html = '<table class="admin-table"><thead><tr><th>Time</th><th>User</th><th>Method</th><th>Endpoint</th><th>Status</th></tr></thead><tbody>';
+          for (const l of logs) {
+            html += `<tr><td>${esc(l.created_at || '')}</td><td>${esc(l.nickname || '')}</td><td>${esc(l.method || '')}</td><td>${esc(l.endpoint || '')}</td><td>${l.status_code || ''}</td></tr>`;
+          }
+          html += '</tbody></table>';
+          el.innerHTML = html;
+        }
+      } catch (e) { toast('Failed to load access logs: ' + e.message, 'error'); }
+    }, 300);
+  }
+
+  function adminExportAccessLogs() {
+    const userId = $('admin-logs-user')?.value || '';
+    const date = $('admin-logs-date')?.value || '';
+    const qs = new URLSearchParams();
+    if (userId) qs.set('user_id', userId);
+    if (date) qs.set('date', date);
+    authDownload(`/api/admin/access-logs/export-csv?${qs}`);
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13246,6 +13976,28 @@ const App = (() => {
     openShortcutsPanel, closeShortcutsPanel,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
+    // Mobile menu
+    toggleMobileMenu,
+    // Save function (create/edit)
+    saveFunction,
+    // Export date modal
+    closeExportDateModal, confirmExportDate, exportDateShortcut, _selectExportFormat,
+    // Activity panel
+    toggleActivityPanel, closeActivityPanel, loadActivity, loadMoreActivity,
+    // Notifications
+    toggleNotifPanel, closeNotifPanel, markAllNotificationsRead,
+    // Comments
+    closeCommentsPanel, submitComment, deleteComment, handleCommentKeydown, openCommentsPanel,
+    // Price override
+    onPriceOverrideChange,
+    // Tides
+    autoFillTides,
+    // FAB context menu
+    _toggleFabMenu, _fabCtxAction,
+    // Admin permissions & logs
+    adminPermLoadMembers, adminPermLoadPerms, adminShowSaveTemplate,
+    adminEpLoadPerms, adminEpAdd, adminEpDelete,
+    adminLoadAccessLogs, adminExportAccessLogs,
     init,
   };
 })();
