@@ -22,6 +22,7 @@ from database import (
     create_boat, create_boat_function, create_boat_assignment,
     create_helper, create_helper_assignment,
     create_security_boat, create_security_boat_assignment,
+    create_picture_boat,
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
     create_fnb_category, get_fnb_categories,
@@ -309,6 +310,7 @@ def bootstrap():
         _migrate_boat_meeting_feb25(prod_id)
         _migrate_boat_update_feb27(prod_id)
         _migrate_boat_update_mar(prod_id)
+        _migrate_boats_to_picture_security(prod_id)
         return prod_id
 
     # First-time setup — backup before destructive migrations
@@ -351,6 +353,7 @@ def bootstrap():
     _migrate_boat_meeting_feb25(prod_id)
     _migrate_boat_update_feb27(prod_id)
     _migrate_boat_update_mar(prod_id)
+    _migrate_boats_to_picture_security(prod_id)
 
     # Verify settings were persisted
     verify = get_setting("klas7_production_id")
@@ -470,6 +473,69 @@ def _seed_security_boats(prod_id):
             'default_end': f['end'],
             'context': 'security',
         })
+
+
+# ─── Migrate boats → picture_boats & security_boats ─────────────────────────
+
+def _migrate_boats_to_picture_security(prod_id):
+    """
+    One-time migration: copy boats from the main `boats` table into
+    `picture_boats` and `security_boats` so those tabs display data.
+
+    All 46 boats go to picture_boats (they are the filming fleet).
+    Safety/evac boats also go to security_boats.
+
+    Guarded by setting flag 'boats_to_pb_sb_v1' — only runs once.
+    """
+    if get_setting("boats_to_pb_sb_v1"):
+        return
+
+    with get_db() as conn:
+        # Skip if picture_boats already has data (user may have added boats manually)
+        existing_pb = conn.execute(
+            "SELECT COUNT(*) FROM picture_boats WHERE production_id=?", (prod_id,)
+        ).fetchone()[0]
+        if existing_pb > 0:
+            set_setting("boats_to_pb_sb_v1", "1")
+            return
+
+        # Fetch all active boats from the main boats table
+        boats = conn.execute(
+            "SELECT * FROM boats WHERE production_id=? AND deleted_at IS NULL ORDER BY sort_order, id",
+            (prod_id,)
+        ).fetchall()
+
+    if not boats:
+        set_setting("boats_to_pb_sb_v1", "1")
+        return
+
+    # Columns shared between boats → picture_boats / security_boats
+    shared_cols = [
+        "production_id", "boat_nr", "name", "capacity", "night_ok",
+        "wave_rating", "captain", "vendor", "group_name", "notes",
+        "daily_rate_estimate", "daily_rate_actual", "image_path", "currency",
+    ]
+
+    pb_count = 0
+    sb_count = 0
+
+    for boat in boats:
+        row = dict(boat)
+        data = {c: row.get(c) for c in shared_cols if row.get(c) is not None}
+        data["production_id"] = prod_id
+
+        # All boats go to picture_boats (the filming fleet)
+        create_picture_boat(data)
+        pb_count += 1
+
+        # Safety / evac boats also go to security_boats
+        name_upper = (row.get("name") or "").upper()
+        if any(kw in name_upper for kw in ("EVAC", "SAFETY", "MEDICAL", "MISHKA")):
+            create_security_boat(data)
+            sb_count += 1
+
+    set_setting("boats_to_pb_sb_v1", "1")
+    print(f"  Migrated {pb_count} boats → picture_boats, {sb_count} → security_boats")
 
 
 # ─── Seed Transport ─────────────────────────────────────────────────────────

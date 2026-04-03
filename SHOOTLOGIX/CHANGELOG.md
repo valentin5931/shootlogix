@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-03 — [P1] Populate picture_boats and security_boats tables from main boats data
+
+**Problem**: The Picture Boats and Security Boats tabs showed empty lists. The `/api/productions/1/picture-boats` endpoint returned `[]` and `/api/productions/1/security-boats` returned `[]`, even though 46 boats existed in the database.
+
+**Root cause**: All 46 boats were stored in the main `boats` table (with category "picture"), but the Picture Boats and Security Boats API endpoints query their own dedicated tables (`picture_boats` and `security_boats`), which were never populated. The `_seed_picture_boats()` function in `data_loader.py` only created boat_functions (YELLOW/RED/NEUTRAL/EXILE) but never copied actual boat records into the `picture_boats` table.
+
+**Fix**: Added `_migrate_boats_to_picture_security()` migration in `data_loader.py` that:
+- Copies all 46 active boats from `boats` table into `picture_boats` (the filming fleet)
+- Copies safety/evac boats (EVAC, EVAC BOAT, MISHKA, MISHKA 24/7) into `security_boats`
+- Guarded by setting flag `boats_to_pb_sb_v1` — only runs once, idempotent
+- Called from both bootstrap paths (existing production and first-time setup)
+
+**Verification**:
+- `/api/productions/1/picture-boats` now returns 46 boats
+- `/api/productions/1/security-boats` now returns 4 boats
+- All 45 existing tests pass
+- Migration flag prevents duplicate runs on subsequent restarts
+
+**Branch**: fix/2026-04-03-populate-picture-security-boats
+**Side effects**: None — adds data only, no existing data modified or deleted
+**Next priority**: P1 — Helpers list is empty (helpers table has 0 rows, needs seed data migration similar to this one)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
