@@ -1,15 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## ~~[P0] Timeline API crash — no such column: site~~ ✅ FIXED 2026-04-03
-- **Fixed in**: fix/2026-04-03-timeline-api-crash-no-site-column
-- **Root cause**: Timeline query referenced non-existent `site` column on `locations` table and `prep`/`filming`/`wrap` columns on `location_schedules` table
+## ~~[P0] Fleet/Crew sub-tab event handlers~~ — FIXED (2026-03-23, PR #32)
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
-- **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+## ~~[P0] Timeline API crash (no such column: site)~~ — FIXED (2026-04-03)
+- **Discovered**: 2026-04-03
+- **Symptoms**: `/api/productions/1/timeline` returned 500 with `sqlite3.OperationalError: no such column: site`
+- **Root cause**: Timeline query referenced non-existent `site` column on `locations` table and `prep`/`filming`/`wrap` columns on `location_schedules` table
+- **Fixed in**: `fix/2026-04-03-timeline-api-crash-no-site-column`
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22

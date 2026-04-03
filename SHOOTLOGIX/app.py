@@ -7898,7 +7898,7 @@ def api_timeline(prod_id):
             ).fetchall()
             loc_assignments = []
             for s in schedules:
-                phase = s['status'] or ''
+                phase = (s['status'] or '').upper()
                 if phase:
                     loc_assignments.append({
                         'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
