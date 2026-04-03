@@ -1,24 +1,25 @@
 # CHANGELOG — ShootLogix
 
-## 2026-04-03 — [P0] Fix Checklist tab completely broken — state.production undefined
+## 2026-04-03 — [P1] Fix Checklist tab — silently broken due to undefined state.production
 
-**Problem**: The entire Checklist tab was non-functional. Clicking the tab, generating a checklist, and toggling items all silently failed — no data was ever loaded or displayed.
+**Problem**: The Checklist tab did nothing when clicked. No data loaded, no error shown. The "Generate" button and checkbox toggling were also non-functional.
 
-**Root cause**: The 3 checklist functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) in `app-monolith.js` referenced `state.production.id` and guarded with `if (!state.production) return`. However, `state.production` was never defined anywhere in the codebase — the app uses `state.prodId` for the current production ID (set during project selection). Since `state.production` is always `undefined`, all 3 functions returned early before making any API call.
+**Root cause**: The three checklist functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) all referenced `state.production` and `state.production.id`, but `state.production` was never set anywhere in the codebase. The app uses `state.prodId` (set on project selection at line 679). The guard clause `if (!state.production) return;` caused all three functions to exit early without any error.
 
-**Fix**: `static/app-monolith.js` (lines 13032-13055): Replaced all 6 occurrences of `state.production` / `state.production.id` with `state.prodId`, matching the pattern used by all 198 other API calls in the file.
+**Fix**:
+- `static/app-monolith.js` (lines 13032-13055): Replaced all 3 occurrences of `state.production` with `state.prodId` and all 3 occurrences of `state.production.id` with `state.prodId`.
 
 **Verification**:
-- Checklist tab now loads and renders items when clicked
-- Generate button creates checklist items from today's assignments (94 items for day 10)
-- Toggle checkbox marks items as checked/unchecked via PUT endpoint
-- JS syntax check passes (`node --check`)
+- Checklist tab now calls the API (`/api/productions/{id}/checklists`) correctly
+- Generate checklist works (POST to `/checklists/generate`)
+- Checkbox toggling works (PUT to `/checklists/items/{id}/check`)
+- JS bracket/brace/paren balance verified: all balanced
 - All 45 backend tests pass
-- No regressions in other tabs
+- No regressions on other tabs
 
 **Branch**: fix/2026-04-03-checklist-tab-broken
 **Side effects**: None
-**Next priority**: P1 — Picture Boats / Security Boats empty data; investigate fleet sub-tab event handler edge cases
+**Next priority**: P1 — Missing confirmation dialogs on some delete operations; Picture Boats/Security Boats empty data (user needs to create entries via UI)
 
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
@@ -41,7 +42,7 @@
 - Crew > Labor/Guards: same.
 - Today tab: date input and boat cards now have visible background color.
 - Dashboard burn chart: line now visible in blue.
-- Breadcrumb shows "Fleet › Boats", "Fleet › Picture Boats", "Crew › Labor", "Crew › Guards" etc.
+- Breadcrumb shows "Fleet > Boats", "Fleet > Picture Boats", "Crew > Labor", "Crew > Guards" etc.
 - JS syntax check passes.
 
 **Branch**: claude/fix-display-issues-q03dh

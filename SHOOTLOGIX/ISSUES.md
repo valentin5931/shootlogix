@@ -1,13 +1,14 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] ~~Checklist tab completely broken~~ FIXED 2026-04-03
+## [P1] [FIXED 2026-04-03] Checklist tab completely broken — state.production undefined
 - **Discovered**: 2026-04-03
-- **Symptoms**: Clicking Checklist tab showed empty content; Generate button did nothing; checkboxes non-functional
-- **Root cause**: `state.production` used in 3 checklist functions was never defined; should be `state.prodId`
-- **Fix**: Replaced `state.production`/`state.production.id` with `state.prodId` in `app-monolith.js`
+- **Symptoms**: Clicking the Checklist tab does nothing. No data loads, no error shown. Generate button and checkbox toggling are non-functional.
+- **Root cause**: `loadChecklist()`, `generateChecklist()`, and `toggleChecklistItem()` all reference `state.production` and `state.production.id`, but `state.production` is never set. The app uses `state.prodId`. The guard `if (!state.production) return;` causes silent early exit.
+- **Fix**: Replaced `state.production` → `state.prodId` and `state.production.id` → `state.prodId` in all 3 functions.
+- **Files involved**: `static/app-monolith.js` (lines 13032-13055)
 - **Branch**: fix/2026-04-03-checklist-tab-broken
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [P0] [FIXED 2026-03-23] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
 - **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
@@ -26,7 +27,7 @@
 - **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
 - **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
 - **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+- **Estimated effort**: Quick — user needs to add data through the UI
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22
@@ -41,6 +42,13 @@
 - **Likely cause**: Guards need to be created separately from guard posts
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
+
+## [P1] Missing confirmation dialogs on assignment delete operations
+- **Discovered**: 2026-04-03
+- **Symptoms**: Deleting assignments (unassigning boats/workers/vehicles from schedule) happens immediately without confirmation. 42 DELETE API calls but only 10 have confirmation dialogs. Most missing ones are "unassign" operations (less destructive), but some users may accidentally unassign.
+- **Likely cause**: Confirmation was only added for entity deletions (boats, vehicles, workers) but not for assignment removals.
+- **Files involved**: `static/app-monolith.js` — assignment delete calls at lines 2937, 2949, 6327, 6712, 7676, 8824
+- **Estimated effort**: Medium — need to add showConfirm() wrappers to ~6 delete operations
 
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22
