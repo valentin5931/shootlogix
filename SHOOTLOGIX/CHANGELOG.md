@@ -1,5 +1,25 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-03 — [P0] Fix Checklist tab — silently broken due to undefined state.production
+
+**Problem**: Clicking the CHECKLIST tab loaded the panel but never fetched or displayed any data. The tab appeared empty with no error messages.
+
+**Root cause**: The checklist functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) all referenced `state.production` and `state.production.id`, but `state.production` was never defined or set anywhere in the app. The app uses `state.prodId` for the production ID. All three functions had early-return guards (`if (!state.production) return`) that silently aborted execution every time.
+
+**Fix**:
+- `static/app-monolith.js`: Replaced all 3 occurrences of `state.production` with `state.prodId` and all 3 occurrences of `state.production.id` with `state.prodId` in the `loadChecklist()`, `generateChecklist()`, and `toggleChecklistItem()` functions.
+
+**Verification**:
+- Checklist tab now loads and shows "No items. Click Generate" prompt
+- Generate button creates checklist with 94 items for current date
+- Checking/unchecking items works correctly
+- JS syntax check passes (all braces/parens/brackets balanced)
+- No regressions on other tabs
+
+**Branch**: fix/2026-04-03-checklist-tab-broken-state-production
+**Side effects**: None
+**Next priority**: P1 — Picture Boats / Security Boats empty lists (need user to create boats, not a code bug); investigate other P1 UX anomalies
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

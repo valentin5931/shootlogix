@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~Checklist tab silently broken~~ — FIXED 2026-04-03
+- **Discovered**: 2026-04-03
+- **Symptoms**: Clicking CHECKLIST tab showed empty panel with no data and no error
+- **Root cause**: `state.production` was never defined; checklist code used it instead of `state.prodId`
+- **Fix**: Replaced `state.production` → `state.prodId` in 3 functions
+- **Branch**: fix/2026-04-03-checklist-tab-broken-state-production
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
