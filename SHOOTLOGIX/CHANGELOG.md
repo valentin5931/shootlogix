@@ -1,5 +1,23 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-03 — [P1] Fix checklist generate returning null
+
+**Problem**: Clicking "Generate" on the Daily Checklist tab created checklist items in the database but returned `null` to the frontend, making the checklist appear empty until the page was refreshed.
+
+**Root cause**: `generate_daily_checklist()` in `database.py` called `return get_daily_checklist(prod_id, date)` from **inside** an uncommitted `with get_db() as conn:` block. Since `get_daily_checklist` opens its own SQLite connection, it couldn't see the uncommitted INSERT operations from the outer transaction. SQLite's `journal_mode=DELETE` prevents read-uncommitted visibility across connections.
+
+**Fix**: Moved the `return get_daily_checklist(prod_id, date)` call outside the `with get_db()` block (de-indented by one level) so the transaction commits before the read query runs on a fresh connection.
+
+**Verification**:
+- Before fix: `POST /api/productions/1/checklists/generate?date=2026-04-03` → `null` (HTTP 201)
+- After fix: same endpoint → full checklist object with 94 items (HTTP 201)
+- GET endpoint also returns the same 94 items
+- All 45 existing tests pass
+
+**Branch**: fix/2026-04-03-checklist-generate-returns-null
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data in main boats table only)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

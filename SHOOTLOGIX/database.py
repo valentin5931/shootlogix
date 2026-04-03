@@ -5782,7 +5782,7 @@ def generate_daily_checklist(prod_id, date):
                 (checklist_id, text, cat)
             )
 
-        return get_daily_checklist(prod_id, date)
+    return get_daily_checklist(prod_id, date)
 
 
 def get_daily_checklist(prod_id, date):
