@@ -1,5 +1,35 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-03 — [P0] Fix 25 missing function exports in app-monolith.js
+
+**Problem**: 25 functions referenced via `App.xxx()` onclick handlers in `index.html` were never defined or exported in `app-monolith.js`. They existed only in dead module files (`static/modules/*.js`, `static/app.js`) that are never loaded by the HTML template. This caused silent failures when users clicked buttons — nothing happened, no error feedback.
+
+**Root cause**: When the app was consolidated into `app-monolith.js`, these 25 functions were missed during the port. The old modular files relied on `window._SL` which doesn't exist in the monolith architecture.
+
+**Fix**: Ported all 25 functions from the dead modules into `app-monolith.js` and added them to the return/export object:
+- `toggleMobileMenu` — hamburger menu on mobile (P0: ALL mobile navigation was broken)
+- `saveFunction` — create/edit boat functions (enhanced version supporting both create and update)
+- `closeExportDateModal`, `confirmExportDate`, `exportDateShortcut` — export date range modal
+- `toggleActivityPanel`, `closeActivityPanel`, `loadActivity`, `loadMoreActivity` — activity history
+- `toggleNotifPanel`, `closeNotifPanel`, `markAllNotificationsRead` — notifications panel
+- `closeCommentsPanel`, `submitComment`, `deleteComment`, `handleCommentKeydown`, `openCommentsPanel` — comments
+- `onPriceOverrideChange` — price override field in assignment modal
+- `autoFillTides` — tide auto-fill for shooting days
+- `_toggleFabMenu`, `_fabCtxAction` — FAB context menu
+- `adminPermLoadMembers`, `adminPermLoadPerms`, `adminShowSaveTemplate` — admin permissions
+- `adminEpLoadPerms`, `adminEpAdd`, `adminEpDelete` — admin entity permissions
+- `adminLoadAccessLogs`, `adminExportAccessLogs` — admin access logs
+
+**Verification**: 
+- All 163 `App.xxx()` calls from HTML now have matching exports (was 138/163)
+- JS syntax check passes (`node --check`)
+- All 45 Python tests pass
+- App starts and serves correctly
+
+**Branch**: fix/2026-04-03-missing-function-exports
+**Side effects**: None — only additions, no existing code modified
+**Next priority**: P1 UX issues — inconsistent use of native `confirm()` vs custom `showConfirm()` in 5 places; verify all admin panel features work end-to-end
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

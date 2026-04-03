@@ -1,5 +1,25 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [FIXED 2026-04-03] [P0] 25 missing function exports in app-monolith.js
+- **Discovered**: 2026-04-03
+- **Symptoms**: Mobile hamburger menu did nothing. "Create function" button silent. Activity panel, notifications, comments, export date modal, admin permissions/logs — all non-functional.
+- **Root cause**: Functions existed in dead module files (`static/modules/*.js`, `static/app.js`) but were never ported to `app-monolith.js`.
+- **Fix**: Ported all 25 functions and added to exports. Branch: `fix/2026-04-03-missing-function-exports`
+
+## [P1] Inconsistent confirm dialogs — native confirm() vs custom showConfirm()
+- **Discovered**: 2026-04-03
+- **Symptoms**: 5 places use native `confirm()` (documents delete, vendor export format, security boat delete, location delete, guard post delete) while the rest of the app uses the styled `showConfirm()` dialog.
+- **Likely cause**: These functions were written at different times and never unified.
+- **Files involved**: `static/app-monolith.js` (search for `confirm(` without `show`)
+- **Estimated effort**: Quick fix
+
+## [P1] Vendor summary export uses confusing confirm() for format selection
+- **Discovered**: 2026-04-03
+- **Symptoms**: `vendorSummaryExport()` uses `confirm('OK = PDF format\nCancel = CSV format')` — using OK/Cancel buttons to choose between PDF and CSV is terrible UX.
+- **Likely cause**: Quick hack that was never replaced with proper UI.
+- **Files involved**: `static/app-monolith.js` line ~5527
+- **Estimated effort**: Quick fix — replace with a small dropdown or the export date modal
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
