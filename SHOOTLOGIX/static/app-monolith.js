@@ -3625,7 +3625,7 @@ const App = (() => {
         await api('PUT', endpoint, { day_overrides: JSON.stringify(overrides) });
         asgn.day_overrides = JSON.stringify(overrides);
       }
-    } catch (e) { /* silent */ }
+    } catch (e) { toast('Error updating assignment: ' + e.message, 'error'); }
   }
 
   function _getAssignmentEndpoint(asgn) {
@@ -6264,11 +6264,13 @@ const App = (() => {
     $('bd-delete-btn').classList.remove('hidden');
     $('bd-delete-btn').onclick = () => {
       showConfirm(`Delete vehicle "${v.name}"?`, async () => {
-        await api('DELETE', `/api/transport-vehicles/${vehicleId}`);
-        state.transportVehicles = state.transportVehicles.filter(x => x.id !== vehicleId);
-        closeBoatDetail();
-        renderTbVehicleList();
-        toast('Vehicle deleted');
+        try {
+          await api('DELETE', `/api/transport-vehicles/${vehicleId}`);
+          state.transportVehicles = state.transportVehicles.filter(x => x.id !== vehicleId);
+          closeBoatDetail();
+          renderTbVehicleList();
+          toast('Vehicle deleted');
+        } catch (e) { toast('Error deleting vehicle: ' + e.message, 'error'); }
       });
     };
 
@@ -6648,7 +6650,7 @@ const App = (() => {
           _flashSaved(td); break;
         }
       }
-    } catch(e) { /* silent */ }
+    } catch(e) { toast('Error saving fuel entry: ' + e.message, 'error'); }
   }
 
   // ── Fuel type row change ───────────────────────────────────────────────────
@@ -6882,7 +6884,7 @@ const App = (() => {
       const updated = await api('PUT', `/api/fuel-machinery/${machineId}`, { fuel_type: newType });
       const idx = (state.fuelMachinery||[]).findIndex(m => m.id === machineId);
       if (idx >= 0) state.fuelMachinery[idx] = updated;
-    } catch(e) { /* silent */ }
+    } catch(e) { toast('Error updating machinery type: ' + e.message, 'error'); }
     renderFuelMachineryGrid();
   }
 
@@ -6941,10 +6943,12 @@ const App = (() => {
 
   async function deleteFuelMachinery(id) {
     showConfirm('Delete this machinery row?', async () => {
-      await api('DELETE', `/api/fuel-machinery/${id}`);
-      state.fuelMachinery = (state.fuelMachinery||[]).filter(m => m.id !== id);
-      renderFuelMachineryGrid();
-      toast('Deleted');
+      try {
+        await api('DELETE', `/api/fuel-machinery/${id}`);
+        state.fuelMachinery = (state.fuelMachinery||[]).filter(m => m.id !== id);
+        renderFuelMachineryGrid();
+        toast('Deleted');
+      } catch (e) { toast('Error deleting machinery: ' + e.message, 'error'); }
     });
   }
 
@@ -7133,7 +7137,7 @@ const App = (() => {
     try {
       const payload = type === 'DIESEL' ? { diesel: state.fuelPricePerL.DIESEL } : { petrol: state.fuelPricePerL.PETROL };
       await api('PUT', '/api/fuel-prices', payload);
-    } catch(e) { /* silent */ }
+    } catch(e) { toast('Error saving fuel price: ' + e.message, 'error'); }
     _renderFuelPriceBar();
     renderFuelBudget();
   }
@@ -7577,11 +7581,13 @@ const App = (() => {
     $('bd-delete-btn').classList.remove('hidden');
     $('bd-delete-btn').onclick = () => {
       showConfirm(`Delete worker "${w.name}"?`, async () => {
-        await api('DELETE', `/api/helpers/${workerId}`);
-        state.labourWorkers = state.labourWorkers.filter(x => x.id !== workerId);
-        closeBoatDetail();
-        renderLabour();
-        toast('Worker deleted');
+        try {
+          await api('DELETE', `/api/helpers/${workerId}`);
+          state.labourWorkers = state.labourWorkers.filter(x => x.id !== workerId);
+          closeBoatDetail();
+          renderLabour();
+          toast('Worker deleted');
+        } catch (e) { toast('Error deleting worker: ' + e.message, 'error'); }
       });
     };
     const asgns = state.labourAssignments.filter(a => a.helper_id === workerId);
@@ -10514,11 +10520,13 @@ const App = (() => {
     $('bd-delete-btn').classList.remove('hidden');
     $('bd-delete-btn').onclick = () => {
       showConfirm(`Delete guard "${w.name}"?`, async () => {
-        await api('DELETE', `/api/guard-camp-workers/${workerId}`);
-        state.gcWorkers = state.gcWorkers.filter(x => x.id !== workerId);
-        closeBoatDetail();
-        renderGuardCamp();
-        toast('Guard deleted');
+        try {
+          await api('DELETE', `/api/guard-camp-workers/${workerId}`);
+          state.gcWorkers = state.gcWorkers.filter(x => x.id !== workerId);
+          closeBoatDetail();
+          renderGuardCamp();
+          toast('Guard deleted');
+        } catch (e) { toast('Error deleting guard: ' + e.message, 'error'); }
       });
     };
     const asgns = state.gcAssignments.filter(a => a.helper_id === workerId);

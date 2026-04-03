@@ -1,5 +1,33 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-03 — [P1] Fix silent error handling in fuel, scheduling, and delete operations
+
+**Problem**: Multiple API operations across the fuel module, scheduling assignment overrides, and entity deletion callbacks silently swallowed errors. Users got no feedback when operations failed, causing data inconsistency between UI state and database.
+
+**Root cause**: Several `catch` blocks used `/* silent */` pattern or were missing entirely. When API calls failed (network errors, server errors, validation), the UI would show success or update local state without the change persisting to the database.
+
+**Fix**: `static/app-monolith.js` — Added proper error toast notifications to 8 operations:
+1. Assignment day override updates (line ~3628) — was `catch (e) { /* silent */ }`
+2. Fuel entry cell saves (line ~6651) — was `catch(e) { /* silent */ }`
+3. Fuel machinery type changes (line ~6885) — was `catch(e) { /* silent */ }`
+4. Fuel price persistence (line ~7136) — was `catch(e) { /* silent */ }`
+5. Fuel machinery delete (line ~6943) — had no try-catch at all
+6. Transport vehicle delete in detail panel (line ~6266) — had no try-catch
+7. Labour worker delete in detail panel (line ~7581) — had no try-catch
+8. Guard delete in detail panel (line ~10522) — had no try-catch
+
+All now use the established pattern: `catch (e) { toast('Error: ' + e.message, 'error'); }`
+
+**Verification**:
+- JS syntax check passes (brace/paren/bracket balance maintained)
+- All API endpoints return 200
+- App loads correctly
+- No regressions in existing error-handled operations
+
+**Branch**: fix/2026-04-03-silent-error-handling
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats empty lists (data model investigation)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

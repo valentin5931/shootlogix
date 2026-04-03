@@ -1,5 +1,11 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] FIXED — Silent error handling in fuel, scheduling, and delete operations
+- **Discovered**: 2026-04-03
+- **Fixed**: 2026-04-03
+- **Branch**: fix/2026-04-03-silent-error-handling
+- **Details**: 8 API operations had silent catch blocks or missing try-catch. Now all show toast error messages on failure.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
