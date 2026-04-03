@@ -7,12 +7,10 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
-## [P1] Picture Boats and Security Boats lists are empty
+## [P1] ~~Picture Boats and Security Boats lists are empty~~ FIXED 2026-04-03
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`. All boats are in the main boats table with category "picture".
-- **Likely cause**: The data loader may not be seeding picture_boats and security_boats tables separately, or the boats were all created in the main `boats` table regardless of intended category.
-- **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
-- **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
+- **Fixed**: 2026-04-03 — Seeded 4 picture boats and 6 security boats in `data_loader.py`
+- **Branch**: fix/2026-04-03-seed-picture-security-boats
 
 ## [P1] Transport and Helpers lists are empty
 - **Discovered**: 2026-03-22
@@ -33,6 +31,24 @@
 - **Symptoms**: `/api/productions/1/guards` returns `[]` but guard-posts has data (1643 bytes)
 - **Likely cause**: Guards need to be created separately from guard posts
 - **Files involved**: `database.py`
+- **Estimated effort**: Quick
+
+## [P1] Missing seed calls on restart path caused empty modules
+- **Discovered**: 2026-04-03
+- **Fixed**: 2026-04-03 — Added `_seed_security_boats()`, `_seed_helpers()`, `_seed_transport()` to existing-production startup path in `data_loader.py`
+
+## [P1] Helpers (Labour) table still empty — needs seed data
+- **Discovered**: 2026-04-03
+- **Symptoms**: `/api/productions/1/helpers` returns `[]`. The `helpers` table has 0 rows. 73 helper *functions* exist in `boat_functions` (context='labour') but no actual helper entities.
+- **Likely cause**: `_seed_helpers()` seeds functions but not entities (same pattern as picture/security boats before the fix)
+- **Files involved**: `data_loader.py` (`_seed_helpers()`), `database.py` (`create_helper`)
+- **Estimated effort**: Medium — need to define helper entities based on production needs
+
+## [P1] Guards table still empty — needs seed data
+- **Discovered**: 2026-04-03
+- **Symptoms**: `/api/productions/1/guards` returns `[]`. 8 guard posts exist but no guard workers.
+- **Likely cause**: Guard entities were never seeded
+- **Files involved**: `data_loader.py`, `database.py`
 - **Estimated effort**: Quick
 
 ## [P2] Module files in static/modules/ are dead code

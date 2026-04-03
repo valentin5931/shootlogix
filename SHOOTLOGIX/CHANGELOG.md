@@ -1,5 +1,24 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-03 — [P1] Seed picture boats and security boats + fix missing seed calls on restart
+
+**Problem**: Picture Boats and Security Boats tabs showed empty lists. The API endpoints `/api/productions/1/picture-boats` and `/api/productions/1/security-boats` returned `[]` because the `picture_boats` and `security_boats` tables were never populated.
+
+**Root cause**: The data loader seeded picture/security boat *functions* (YELLOW, RED, NEUTRAL, EXILE for picture; SAFETY GAMES, COUNCIL, ARENA, EVAC, MEDICAL, STANDBY for security) but never created actual boat entities in the `picture_boats` and `security_boats` tables. Additionally, on app restart (existing production path), `_seed_security_boats`, `_seed_helpers`, and `_seed_transport` were never called — only `_seed_picture_boats` was.
+
+**Fix**:
+- `data_loader.py`: Added `PICTURE_BOAT_DATA` (4 camera boats) and `SECURITY_BOAT_DATA` (6 safety boats) seed definitions. Extended `_seed_picture_boats()` and `_seed_security_boats()` to also create actual boat entities when tables are empty. Added missing `_seed_security_boats()`, `_seed_helpers()`, and `_seed_transport()` calls to the existing-production startup path. Imported `create_picture_boat` from database.
+
+**Verification**:
+- `/api/productions/1/picture-boats` now returns 4 boats (was 0)
+- `/api/productions/1/security-boats` now returns 6 boats (was 0)
+- All 45 tests pass
+- No regressions on other endpoints (boats: 46, PDT: 32, locations: 21, FNB: 9, transport-vehicles: 14)
+
+**Branch**: fix/2026-04-03-seed-picture-security-boats
+**Side effects**: None
+**Next priority**: P1 — Helpers and Guards lists still empty (need seed data or UI for manual creation)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
