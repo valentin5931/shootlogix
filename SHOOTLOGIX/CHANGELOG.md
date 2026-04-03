@@ -1,5 +1,24 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-03 — [P1] Fix auth token key mismatch in dashboard-v2.js and timeline.js
+
+**Problem**: The DashboardV2 executive KPI panel and the Timeline tab silently failed to load any data. Both features appeared empty or showed error states without any explanation.
+
+**Root cause**: Two standalone JS files (`dashboard-v2.js` and `timeline.js`) used `localStorage.getItem('sl_token')` to read the auth token, but the main app (`app-monolith.js`) stores the JWT as `localStorage.setItem('access_token', ...)`. The token key mismatch meant these modules always sent unauthenticated requests, receiving 401 errors that were silently caught.
+
+**Fix**:
+- `static/js/dashboard-v2.js` (lines 19, 323): Changed `'sl_token'` → `'access_token'` (2 occurrences)
+- `static/js/timeline.js` (line 44): Changed `'sl_token'` → `'access_token'` (1 occurrence)
+
+**Verification**:
+- JS syntax check passes for both files
+- All three token references now match the key used by the main app
+- No other JS files in `static/js/` use the old `sl_token` key
+
+**Branch**: fix/2026-04-03-token-key-mismatch
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data model issue)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

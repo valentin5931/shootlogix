@@ -16,7 +16,7 @@ const DashboardV2 = (() => {
   };
 
   async function _fetch(url) {
-    const token = localStorage.getItem('sl_token');
+    const token = localStorage.getItem('access_token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = 'Bearer ' + token;
     const res = await fetch(url, { headers });
@@ -320,7 +320,7 @@ const DashboardV2 = (() => {
           pdfBtn.disabled = true;
           pdfBtn.textContent = 'Generating...';
           try {
-            const token = localStorage.getItem('sl_token');
+            const token = localStorage.getItem('access_token');
             const headers = {};
             if (token) headers['Authorization'] = 'Bearer ' + token;
             const res = await fetch(`/api/productions/${prodId}/export/dashboard-pdf`, { headers });
