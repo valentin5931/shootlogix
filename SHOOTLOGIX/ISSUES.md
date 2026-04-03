@@ -1,5 +1,16 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] Timeline API crash — FIXED 2026-04-03
+- **Status**: FIXED in branch `fix/2026-04-03-timeline-api-crash-no-such-column-site`
+- **Root cause**: 3 SQL queries in `api_timeline()` referenced wrong column names (`site`, `prep/filming/wrap`, `worker_id`)
+
+## [P0] Schedule/PDT endpoint returns 404
+- **Discovered**: 2026-04-03
+- **Symptoms**: `GET /api/productions/1/schedule` returns 404 — no such route exists
+- **Likely cause**: There is no `/api/productions/<id>/schedule` route defined in `app.py`. The PDT/schedule data is likely accessed via `/api/productions/<id>/upload-pdt` or `/api/productions/<id>/parse-pdt` (POST only), and schedule display uses `shooting_days` + `location_schedules` tables
+- **Files involved**: `app.py`, `static/app-monolith.js`
+- **Estimated effort**: Medium — need to determine if a GET schedule endpoint is needed by the JS frontend or if schedule data is fetched via other endpoints
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
