@@ -1,5 +1,18 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] Transport assignments not seeded — schedule/budget views empty
+- **Discovered**: 2026-04-03
+- **Symptoms**: Transport tab shows 14 vehicles in sidebar and 13 functions in cards, but schedule and budget views are empty because no assignments link functions to vehicles.
+- **Likely cause**: `_seed_transport()` creates vehicles and functions but does not create `transport_assignments` linking them (unlike boats which have full assignment data from the BATEAUX migration).
+- **Files involved**: `data_loader.py` (_seed_transport), `database.py` (create_transport_assignment)
+- **Estimated effort**: Medium — need to create assignment data matching each transport function to the corresponding vehicle
+
+## [FIXED] [P1] Data seeder context mismatch in _seed_helpers
+- **Discovered**: 2026-04-03
+- **Fixed**: 2026-04-03 (fix/2026-04-03-seed-helpers-context-mismatch)
+- **Symptoms**: Latent bug — `_seed_helpers()` used `context='helpers'` but DB migration renames to `context='labour'`. Could create 73 duplicate functions if re-run.
+- **Root cause**: Seeder not updated after context rename migration. Also missing from restart path.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
@@ -14,12 +27,13 @@
 - **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
 - **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
 
-## [P1] Transport and Helpers lists are empty
+## [UPDATED] [P1] Transport vehicles exist but no assignments; Helpers table empty by design
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
-- **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+- **Updated**: 2026-04-03
+- **Symptoms**: Transport has 14 vehicles and 13 functions but 0 assignments (schedule/budget views empty). Helpers table has 0 rows but 73 functions+assignments exist — the helpers (workers) are meant to be created by users via the UI and then assigned to functions.
+- **Likely cause**: Transport seeder creates vehicles and functions but not assignments. Helpers are user-created entities.
+- **Files involved**: `data_loader.py` (_seed_transport)
+- **Estimated effort**: Medium for transport assignments; helpers is by design
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22

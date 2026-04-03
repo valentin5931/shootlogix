@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-03 — [P1] Fix data seeder context mismatch + missing seeders on restart
+
+**Problem**: 
+1. `_seed_helpers()` in `data_loader.py` checked for `context='helpers'` and created functions with `context='helpers'`, but the database migration in `database.py` renames all `helpers` context to `labour`. This mismatch meant a re-run of the seeder could create 73 duplicate functions.
+2. `_seed_helpers()`, `_seed_security_boats()`, and `_seed_transport()` were only called during first-time bootstrap — they were missing from the restart path. If the database was partially reset, these modules wouldn't be re-seeded.
+
+**Root cause**: The `helpers` → `labour` context rename migration in `database.py` was added after `_seed_helpers()` was written. The seeder was never updated to match. The restart path in `bootstrap()` only included `_seed_picture_boats` but not the other module seeders.
+
+**Fix**:
+- `data_loader.py` `_seed_helpers()`: Changed idempotency check to look for `context IN ('labour', 'helpers')` (lines 408-411). Changed new function creation to use `context='labour'` (line 427).
+- `data_loader.py` `bootstrap()`: Added `_seed_helpers(prod_id)`, `_seed_security_boats(prod_id)`, and `_seed_transport(prod_id)` to the restart path (lines 304-306), alongside the existing `_seed_picture_boats` call.
+
+**Verification**:
+- App restarts cleanly without creating duplicate functions
+- All boat_functions contexts unchanged: boats=25, labour=73, picture=4, security=6, transport=13
+- All API endpoints return 200 (boats, helpers, transport, security-boats, budget, dashboard)
+- Helper assignments intact (73 assignments)
+
+**Branch**: fix/2026-04-03-seed-helpers-context-mismatch
+**Side effects**: None
+**Next priority**: Transport module has 14 vehicles and 13 functions but 0 assignments — linking them would make schedule/budget views functional
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
