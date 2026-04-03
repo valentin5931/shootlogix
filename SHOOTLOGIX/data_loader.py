@@ -301,6 +301,9 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _seed_helpers(prod_id)
+        _seed_security_boats(prod_id)
+        _seed_transport(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -403,10 +406,12 @@ HELPER_DATA = [
 
 
 def _seed_helpers(prod_id):
-    """Seed helpers + functions + assignments from budget data."""
+    """Seed helpers + functions + assignments from budget data.
+    Note: the DB migration renames context 'helpers' -> 'labour',
+    so we check for 'labour' and create with 'labour' directly."""
     with get_db() as conn:
         existing = conn.execute(
-            "SELECT id FROM boat_functions WHERE production_id=? AND context='helpers'",
+            "SELECT id FROM boat_functions WHERE production_id=? AND context IN ('helpers','labour')",
             (prod_id,)
         ).fetchall()
     if existing:
@@ -424,7 +429,7 @@ def _seed_helpers(prod_id):
             'sort_order': gi['sort'],
             'default_start': h['start'],
             'default_end': h['end'],
-            'context': 'helpers',
+            'context': 'labour',
         })
         # Create the assignment with dates and rate
         create_helper_assignment({

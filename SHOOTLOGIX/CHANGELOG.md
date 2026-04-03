@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-03 — [P1] Fix missing seed calls for helpers, security boats, and transport
+
+**Problem**: The Transport tab showed 0 vehicles, Crew > Labour had no functions/assignments, and Security Boats had no function groups. These modules appeared empty despite seed data being defined in `data_loader.py`.
+
+**Root cause**: The `bootstrap()` function's existing-production code path (lines 303-311) was missing calls to `_seed_helpers()`, `_seed_security_boats()`, and `_seed_transport()`. These were only called during first-time bootstrap, but the DB was created before these functions were added, so the data was never seeded. Additionally, `_seed_helpers()` checked for `context='helpers'` and created with `context='helpers'`, but a migration in `database.py` unconditionally renames `context='helpers'` to `context='labour'` on every startup. This caused the seed to re-create 73 duplicate functions on every restart.
+
+**Fix**:
+- `data_loader.py`: Added `_seed_helpers(prod_id)`, `_seed_security_boats(prod_id)`, and `_seed_transport(prod_id)` to the existing-production path in `bootstrap()`.
+- `data_loader.py`: Fixed `_seed_helpers()` to check for both `context IN ('helpers','labour')` and create with `context='labour'` directly, preventing duplicate creation after the migration renames the context.
+- Cleaned up 219 duplicate `boat_functions` and 219 orphaned `helper_assignments` from the DB.
+
+**Verification**:
+- Transport vehicles: 14 (seeded correctly)
+- Transport functions: 13 (context='transport')
+- Security boat functions: 6 (context='security')
+- Labour/helper functions: 73 (context='labour', no duplicates)
+- Helper assignments: 73
+- All API endpoints return correct data
+- Restarting the app does NOT re-seed (idempotent)
+
+**Branch**: fix/2026-04-03-missing-seed-calls
+**Side effects**: None — all seed functions are idempotent and check for existing data
+**Next priority**: Picture Boats and Security Boats tables remain empty (0 entities) — boats are all in the main `boats` table with category='picture'. May need data migration or UI change.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
