@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-03 — [P0] Fix state key mismatch for picture/security boat assignments
+
+**Problem**: `_findAssignment()` could never find picture boat or security boat assignments. After pull-to-refresh on the Picture Boats tab, function and assignment data was written to wrong state keys, causing stale/empty renders.
+
+**Root cause**: Two state key naming inconsistencies in `app-monolith.js`:
+1. `_findAssignment()` searched `state.pbAssignments` and `state.sbAssignments`, but the actual data is stored in `state.pictureAssignments` and `state.securityAssignments`.
+2. `_reloadCurrentTab()` for `picture-boats` wrote fetched data to `state.pbFunctions` / `state.pbAssignments` instead of `state.pictureFunctions` / `state.pictureAssignments`.
+
+**Fix**:
+- `static/app-monolith.js:3524`: Changed `state.pbAssignments` → `state.pictureAssignments` and `state.sbAssignments` → `state.securityAssignments` in `_findAssignment()`.
+- `static/app-monolith.js:13004`: Changed `state.pbFunctions` → `state.pictureFunctions` and `state.pbAssignments` → `state.pictureAssignments` in `_reloadCurrentTab()`.
+
+**Verification**:
+- JS syntax check passes (`node -c` returns 0).
+- App starts and serves correctly on port 5002.
+- `_findAssignment()` now correctly searches the populated assignment arrays.
+- Pull-to-refresh on picture-boats tab now writes to the correct state keys.
+
+**Branch**: fix/2026-04-03-state-key-mismatch-picture-security
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (no boat entities seeded); users need to add boats via UI or seeding needs to be implemented.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

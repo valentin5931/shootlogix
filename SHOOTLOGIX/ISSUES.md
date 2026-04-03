@@ -1,11 +1,13 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
-- **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+## [P0] ~~Fleet/Crew sub-tab event handlers may not fire on cloned DOM~~ FIXED 2026-03-23
+- **Fixed in**: CHANGELOG 2026-03-23 (layout overflow + CSS vars fix)
+
+## [P0] ~~State key mismatch in _findAssignment and _reloadCurrentTab for picture/security boats~~ FIXED 2026-04-03
+- **Discovered**: 2026-04-03
+- **Symptoms**: `_findAssignment()` never finds picture or security boat assignments. After pull-to-refresh on Picture Boats tab, data written to wrong state keys causing stale renders.
+- **Root cause**: Code used `state.pbAssignments`/`state.sbAssignments` but actual data lives in `state.pictureAssignments`/`state.securityAssignments`.
+- **Fixed in**: Branch `fix/2026-04-03-state-key-mismatch-picture-security`
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
@@ -34,6 +36,13 @@
 - **Likely cause**: Guards need to be created separately from guard posts
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
+
+## [P1] No `/api/productions/<id>/labour` endpoint — 404
+- **Discovered**: 2026-04-03
+- **Symptoms**: The CLAUDE.md diagnostic checklist references a "Labour" endpoint, but `/api/productions/1/labour` returns 404. The actual data is served via `/api/productions/1/helpers` (entities) and `/api/productions/1/boat-functions?context=labour` (functions).
+- **Likely cause**: There is no `/labour` route in app.py — the Crew > Labour tab uses the helpers module internally.
+- **Files involved**: `app.py`, `static/app-monolith.js`
+- **Estimated effort**: Quick — either add a `/labour` alias route or update CLAUDE.md checklist to use correct endpoint names
 
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22
