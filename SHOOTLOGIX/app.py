@@ -6269,11 +6269,14 @@ def api_dashboard(prod_id):
     }
 
     # Fuel
+    # Budget estimate: use the same hardcoded budget figures as get_budget()
+    fuel_budget_estimate = 145000 + 10300 + 21000 + 3000  # boat + vehicle + generator + heavy machinery
+    # Actual consumption: computed from fuel_entries
     fuel_entries = get_fuel_entries(prod_id)
     cur_diesel = float(get_setting("fuel_price_diesel", "0"))
     cur_petrol = float(get_setting("fuel_price_petrol", "0"))
     locked_prices = get_fuel_locked_prices()
-    fuel_total = 0
+    fuel_actual = 0
     fuel_liters = 0
     for e in fuel_entries:
         liters = e.get("liters", 0) or 0
@@ -6284,10 +6287,10 @@ def api_dashboard(prod_id):
             price = locked_prices[date]["diesel_price"] if ft == "DIESEL" else locked_prices[date]["petrol_price"]
         else:
             price = cur_diesel if ft == "DIESEL" else cur_petrol
-        fuel_total += liters * price
+        fuel_actual += liters * price
     departments["fuel"] = {
-        "estimate": fuel_total,
-        "actual": fuel_total,
+        "estimate": fuel_budget_estimate,
+        "actual": fuel_actual,
         "count": len(fuel_entries),
         "liters": round(fuel_liters, 0),
     }
@@ -6326,12 +6329,14 @@ def api_dashboard(prod_id):
 
     # FNB
     fnb_budget = get_fnb_budget_data(prod_id)
-    fnb_total = 0
+    fnb_purchase = 0
+    fnb_consumption = 0
     for cat in fnb_budget.get("categories", []):
-        fnb_total += (cat.get("consumption_total", 0) or 0) + (cat.get("purchase_total", 0) or 0)
+        fnb_purchase += (cat.get("purchase_total", 0) or 0)
+        fnb_consumption += (cat.get("consumption_total", 0) or 0)
     departments["fnb"] = {
-        "estimate": fnb_total,
-        "actual": fnb_total,
+        "estimate": fnb_purchase,
+        "actual": fnb_consumption,
         "count": len(fnb_budget.get("categories", [])),
     }
 

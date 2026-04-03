@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-03 — [P1] Fix dashboard fuel budget estimate and FnB estimate/actual split
+
+**Problem**: The dashboard total estimate showed $630,723 instead of the correct $810,023. The fuel department showed $0 estimate even though the budget includes $179,300 in fuel costs. Additionally, the FnB department conflated purchase totals (estimates) with consumption totals (actuals) into a single number.
+
+**Root cause**: The dashboard's fuel department (app.py lines 6271-6293) only computed actual fuel consumption from `fuel_entries` records. Since no fuel entries had been recorded yet, both estimate and actual showed $0. Meanwhile, the budget endpoint (`get_budget()` in database.py) correctly used hardcoded fuel budget estimates ($145K boat fuel, $10.3K vehicle, $21K generator, $3K heavy machinery). The FnB department summed purchase + consumption together and used the same value for both estimate and actual.
+
+**Fix**:
+- `app.py` (dashboard route): Fuel department now uses the same budget estimate figures as `get_budget()` ($179,300 total) for the `estimate` field, while keeping actual consumption from fuel_entries for the `actual` field.
+- `app.py` (dashboard route): FnB department now correctly separates `purchase_total` as `estimate` and `consumption_total` as `actual`.
+
+**Verification**:
+- Dashboard now shows `total_estimate: $810,023` (matches budget endpoint)
+- Fuel department: `estimate: $179,300, actual: $0` (was both $0)
+- FnB department: `estimate: $0, actual: $0` (correctly split, was both $0)
+- All 45 existing tests pass
+- Budget endpoint unchanged and consistent
+- No regressions on other tabs
+
+**Branch**: fix/2026-04-03-dashboard-fuel-estimate
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats empty tables (requires data model decision: unify into boats table with category filter, or keep separate tables)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

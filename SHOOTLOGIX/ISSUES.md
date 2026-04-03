@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] Dashboard fuel budget estimate was $0 — FIXED 2026-04-03
+- **Discovered**: 2026-04-03
+- **Symptoms**: Dashboard total estimate showed $630K instead of $810K. Fuel department showed estimate=$0, actual=$0.
+- **Root cause**: Dashboard fuel section only computed actual consumption from `fuel_entries` (empty). Budget endpoint used hardcoded estimates ($179,300) but dashboard did not.
+- **Fix**: Dashboard now uses same fuel budget estimates as `get_budget()`. Also fixed FnB to properly split purchase (estimate) vs consumption (actual).
+- **Status**: FIXED in branch `fix/2026-04-03-dashboard-fuel-estimate`
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
