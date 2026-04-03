@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-03 — [P0] Fix Timeline API crash — invalid column references in locations query
+
+**Problem**: The Timeline API endpoint (`/api/productions/:id/timeline`) crashed with HTTP 500: `sqlite3.OperationalError: no such column: site`. The entire timeline view was completely broken.
+
+**Root cause**: The timeline locations query at `app.py:7893` referenced a `site` column that doesn't exist in the `locations` table (correct column: `location_type`). Additionally, the `location_schedules` sub-query referenced `prep`, `filming`, `wrap` columns that don't exist (the table uses a single `status` column with values like `'F'`, `'P'`, `'W'`).
+
+**Fix**:
+- `app.py` line 7893: Changed `SELECT id, name, site` → `SELECT id, name, location_type`
+- `app.py` line 7896: Changed `SELECT id, date, prep, filming, wrap` → `SELECT id, date, status`
+- Updated phase extraction logic to parse the `status` column value instead of separate boolean columns
+- Updated subgroup reference from `loc['site']` to `loc['location_type']`
+
+**Verification**:
+- Timeline API now returns HTTP 200 with 81 resources (46 boats, 21 locations, 14 vehicles)
+- Location resources have correct `subgroup` values (e.g., `tribal_camp`, `game`)
+- All other endpoints unchanged (boats, locations, budget, documents — all 200)
+- Python syntax check passes
+
+**Branch**: fix/2026-04-03-timeline-api-crash-locations
+**Side effects**: None
+**Next priority**: Labour API returns 404 (route may not exist); Picture Boats and Security Boats lists still empty (P1)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

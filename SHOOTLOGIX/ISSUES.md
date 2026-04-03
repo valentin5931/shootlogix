@@ -1,5 +1,16 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~Timeline API crash — no such column: site~~ FIXED 2026-04-03
+- **Fix**: Replaced `site` with `location_type` and `prep/filming/wrap` with `status` column in timeline locations query
+- **Branch**: fix/2026-04-03-timeline-api-crash-locations
+
+## [P0] Labour API returns 404
+- **Discovered**: 2026-04-03
+- **Symptoms**: `GET /api/productions/1/labour` returns 404. No Flask route exists for this path. The Crew > Labour tab in the frontend likely calls this endpoint and gets no data.
+- **Likely cause**: The route was never created. Workers are stored as `helpers` (route exists at `/api/productions/:id/helpers`), and guards have their own route at `/api/productions/:id/guard-camp-workers`. A `/labour` alias route may need to be added, or the frontend JS needs to call the correct endpoint.
+- **Files involved**: `app.py` (routes), `static/app-monolith.js` (frontend fetch calls)
+- **Estimated effort**: Quick fix — add route alias or fix frontend URL
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
