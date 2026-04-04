@@ -3521,8 +3521,8 @@ const App = (() => {
 
   function _findAssignment(assignmentId) {
     // Search all state assignment arrays
-    for (const arr of [state.assignments, state.pbAssignments, state.sbAssignments,
-                        state.transportAssignments, state.helperAssignments, state.gcAssignments]) {
+    for (const arr of [state.assignments, state.pictureAssignments, state.sbAssignments,
+                        state.transportAssignments, state.labourAssignments, state.gcAssignments]) {
       if (!arr) continue;
       const found = arr.find(a => a.id === assignmentId);
       if (found) return found;
@@ -12452,7 +12452,7 @@ const App = (() => {
       }
       // Number keys 1-0 for quick tab navigation (not in inputs)
       if (!isInput && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const numTabs = ['dashboard', 'pdt', 'locations', 'boats', 'picture-boats', 'security-boats', 'transport', 'fuel', 'labour', 'guards'];
+        const numTabs = ['today', 'pdt', 'locations', 'fleet', 'transport', 'fuel', 'crew', 'fnb', 'budget', 'checklist'];
         const idx = '1234567890'.indexOf(e.key);
         if (idx >= 0 && idx < numTabs.length) {
           e.preventDefault();
@@ -13029,9 +13029,9 @@ const App = (() => {
       dateEl.value = today;
     }
     const date = dateEl.value;
-    if (!state.production) return;
+    if (!state.prodId) return;
     try {
-      const data = await api('GET', `/api/productions/${state.production.id}/checklists?date=${date}`);
+      const data = await api('GET', `/api/productions/${state.prodId}/checklists?date=${date}`);
       _renderChecklist(data);
     } catch (e) {
       $('checklist-content').innerHTML = `<p style="color:var(--text-muted)">No checklist for this date.</p>`;
@@ -13041,18 +13041,18 @@ const App = (() => {
 
   async function generateChecklist() {
     const dateEl = $('checklist-date');
-    if (!dateEl.value || !state.production) return;
+    if (!dateEl.value || !state.prodId) return;
     try {
-      const data = await api('POST', `/api/productions/${state.production.id}/checklists/generate?date=${dateEl.value}`);
+      const data = await api('POST', `/api/productions/${state.prodId}/checklists/generate?date=${dateEl.value}`);
       _renderChecklist(data);
       toast(`Checklist generated: ${(data.items || []).length} items`);
     } catch (e) { toast(e.message, 'error'); }
   }
 
   async function toggleChecklistItem(itemId, checkbox) {
-    if (!state.production) return;
+    if (!state.prodId) return;
     try {
-      await api('PUT', `/api/productions/${state.production.id}/checklists/items/${itemId}/check`, {
+      await api('PUT', `/api/productions/${state.prodId}/checklists/items/${itemId}/check`, {
         checked: checkbox.checked
       });
       const container = $('checklist-content');

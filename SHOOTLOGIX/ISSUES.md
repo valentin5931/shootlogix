@@ -1,5 +1,38 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [FIXED 2026-04-04] [P1] Mobile menu missing Checklist tab + keyboard shortcuts broken
+- **Fixed in**: fix/2026-04-04-mobile-menu-keyboard-shortcuts
+- **Details**: See CHANGELOG.md entry for 2026-04-04
+
+## [FIXED 2026-04-04] [P1] Checklist tab completely non-functional (state.production undefined)
+- **Fixed in**: fix/2026-04-04-mobile-menu-keyboard-shortcuts
+- **Details**: All checklist functions guarded on `state.production` which was never set. Changed to `state.prodId`.
+
+## [FIXED 2026-04-04] [P1] _findAssignment() uses wrong state property names
+- **Fixed in**: fix/2026-04-04-mobile-menu-keyboard-shortcuts
+- **Details**: `state.pbAssignments` → `state.pictureAssignments`, `state.helperAssignments` → `state.labourAssignments`
+
+## [P1] "Auto-fill Tides" button throws TypeError on every click
+- **Discovered**: 2026-04-04
+- **Symptoms**: Clicking the "Auto-fill tides" button in the PDT toolbar throws `TypeError: App.autoFillTides is not a function`
+- **Likely cause**: The button in `index.html` (line 173) calls `App.autoFillTides()` but this function was never implemented in `app-monolith.js`. The backend `/api/tides` endpoint exists.
+- **Files involved**: `static/app-monolith.js`, `templates/index.html`
+- **Estimated effort**: Medium — need to write the JS function to fetch tides and populate schedule
+
+## [P1] Timeline tab always shows blank
+- **Discovered**: 2026-04-04
+- **Symptoms**: Clicking the Timeline tab shows an empty panel. No error displayed.
+- **Likely cause**: `setTab('timeline')` checks `typeof App.renderTimeline === 'function'` — but `renderTimeline` is never defined in `app-monolith.js` or exported. The `timeline.js` file defines `App.renderTimeline = () => Timeline.init()` but `Timeline.init()` renders into `#timeline-content` which may not have the expected structure.
+- **Files involved**: `static/js/timeline.js`, `static/app-monolith.js`
+- **Estimated effort**: Medium — need to verify timeline.js integration and ensure init() renders correctly
+
+## [P1] Guards tab doesn't reset guardLocSchedules on re-visit (stale data)
+- **Discovered**: 2026-04-04
+- **Symptoms**: After navigating away from Guards and back, the Location Guards sub-tab may show outdated data
+- **Likely cause**: `setTab('guards')` resets `state.guardSchedules` but the default sub-tab uses `state.guardLocSchedules` instead
+- **Files involved**: `static/app-monolith.js` (lines 1010, 1355)
+- **Estimated effort**: Quick — change reset to target `state.guardLocSchedules`
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
