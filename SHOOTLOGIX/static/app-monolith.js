@@ -1411,7 +1411,7 @@ const App = (() => {
       btn.classList.toggle('active', btn.dataset.tab === state.tab);
     });
     // "More" button active if current tab is one of the secondary tabs
-    const primaryTabs = ['dashboard', 'pdt', 'boats', 'budget'];
+    const primaryTabs = ['today', 'pdt', 'fleet', 'budget'];
     const moreBtn = $('bnav-more-btn');
     if (moreBtn) {
       moreBtn.classList.toggle('active', !primaryTabs.includes(state.tab) && state.tab !== 'admin');
@@ -12452,7 +12452,7 @@ const App = (() => {
       }
       // Number keys 1-0 for quick tab navigation (not in inputs)
       if (!isInput && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const numTabs = ['dashboard', 'pdt', 'locations', 'boats', 'picture-boats', 'security-boats', 'transport', 'fuel', 'labour', 'guards'];
+        const numTabs = ['today', 'pdt', 'locations', 'fleet', 'transport', 'fuel', 'crew', 'fnb', 'budget', 'checklist'];
         const idx = '1234567890'.indexOf(e.key);
         if (idx >= 0 && idx < numTabs.length) {
           e.preventDefault();
