@@ -1,5 +1,24 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-04 — [P0] Fix Checklist tab — broken API calls due to wrong state property
+
+**Problem**: The Checklist tab was completely non-functional. Clicking it showed an empty state with no way to load or generate checklists. All three checklist functions (load, generate, toggle item) silently failed.
+
+**Root cause**: The checklist module used `state.production.id` for API calls, but `state.production` is never set anywhere in the app. The rest of the codebase uses `state.prodId`. The guard checks (`if (!state.production) return`) caused all three functions to exit immediately without making any API call.
+
+**Fix**:
+- `static/app-monolith.js` (lines 13032, 13034, 13044, 13046, 13053, 13055): Replaced all 6 occurrences of `state.production` / `state.production.id` with `state.prodId`.
+
+**Verification**:
+- Checklist tab now correctly calls `/api/productions/{id}/checklists` endpoints
+- JS delimiter balance check passes (braces, parens, brackets all balanced)
+- No remaining references to `state.production` in the codebase
+- All other tabs still function correctly (no regressions)
+
+**Branch**: fix/2026-04-04-checklist-tab-broken-api-calls
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats empty lists (data needs to be seeded or UI needs to guide users to create entries)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
