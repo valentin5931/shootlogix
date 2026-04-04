@@ -12451,12 +12451,23 @@ const App = (() => {
         openShortcutsPanel();
       }
       // Number keys 1-0 for quick tab navigation (not in inputs)
+      // Keys 4-6 route through the unified Fleet tab; 9-0 through Crew
       if (!isInput && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const numTabs = ['dashboard', 'pdt', 'locations', 'boats', 'picture-boats', 'security-boats', 'transport', 'fuel', 'labour', 'guards'];
-        const idx = '1234567890'.indexOf(e.key);
-        if (idx >= 0 && idx < numTabs.length) {
+        const numActions = {
+          '1': () => setTab('dashboard'),
+          '2': () => setTab('pdt'),
+          '3': () => setTab('locations'),
+          '4': () => { _fleetSubTab = 'boats';          setTab('fleet'); },
+          '5': () => { _fleetSubTab = 'picture-boats';  setTab('fleet'); },
+          '6': () => { _fleetSubTab = 'security-boats'; setTab('fleet'); },
+          '7': () => setTab('transport'),
+          '8': () => setTab('fuel'),
+          '9': () => { _crewSubTab = 'labour'; setTab('crew'); },
+          '0': () => { _crewSubTab = 'guards'; setTab('crew'); },
+        };
+        if (numActions[e.key]) {
           e.preventDefault();
-          setTab(numTabs[idx]);
+          numActions[e.key]();
         }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {

@@ -1,5 +1,25 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-04 — [P1] Fix keyboard shortcuts bypassing unified Fleet/Crew tabs
+
+**Problem**: Keyboard shortcuts (number keys 4-6, 9-0) navigated directly to sub-tabs (boats, picture-boats, security-boats, labour, guards) instead of going through the unified Fleet/Crew parent tabs. This caused users to land on sub-tabs without the sub-navigation bar, making it impossible to switch between related tabs (e.g., Boats → Picture Boats). Breadcrumbs also didn't show the correct parent context.
+
+**Root cause**: The keyboard shortcut handler used a flat array mapping numbers to tab IDs (`['dashboard', 'pdt', 'locations', 'boats', 'picture-boats', ...]`), calling `setTab()` directly on sub-tab IDs. The `setTab()` function only renders the sub-navigation bar when called with the unified tab IDs (`fleet` or `crew`).
+
+**Fix**:
+- `static/app-monolith.js` (line ~12454): Replaced flat array with an action map. Keys 4-6 now set `_fleetSubTab` then call `setTab('fleet')`. Keys 9-0 now set `_crewSubTab` then call `setTab('crew')`.
+- `templates/index.html` (shortcuts panel): Updated labels to show hierarchical navigation (e.g., "Fleet › Boats", "Crew › Labor").
+
+**Verification**:
+- JS syntax check passes
+- App starts and all API endpoints return 200
+- Keyboard shortcuts now route through unified tabs, rendering sub-navigation bar correctly
+- Shortcuts panel displays updated labels
+
+**Branch**: fix/2026-04-04-keyboard-shortcuts-bypass-unified-tabs
+**Side effects**: None
+**Next priority**: Add missing confirmation dialogs for 9 delete operations without user confirmation (P1 — destructive actions)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

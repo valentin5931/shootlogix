@@ -1,11 +1,10 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM — RESOLVED
 - **Discovered**: 2026-03-22
+- **Resolved**: 2026-04-04 (sub-nav layout fixed in 2026-03-23; keyboard shortcut bypass fixed in 2026-04-04)
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Resolution**: Sub-nav height is now tracked via CSS var `--subnav-bar-h`. Keyboard shortcuts (4-6, 9-0) now route through unified Fleet/Crew tabs instead of bypassing them.
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
@@ -34,6 +33,13 @@
 - **Likely cause**: Guards need to be created separately from guard posts
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
+
+## [P1] Missing confirmation dialogs for 9 delete operations
+- **Discovered**: 2026-04-04
+- **Symptoms**: Deleting picture-boat assignments, transport assignments, security-boat assignments, fuel locked prices, and FnB entries has no confirmation dialog — the action executes immediately on click.
+- **Likely cause**: These delete operations were added without `showConfirm()` wrappers, unlike the 33 other delete operations that do have confirmations.
+- **Files involved**: `static/app-monolith.js` (lines 2170, 2949, 6327, 6712, 8824, 11539, 11567, 11581, 11588)
+- **Estimated effort**: Quick fix — wrap each in `showConfirm()`
 
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22
