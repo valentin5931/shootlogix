@@ -948,16 +948,20 @@ const App = (() => {
       }
     }
 
-    // Trigger the sub-tab's render function
-    if (target === 'boats')           { _tabCtx = 'boats';   renderBoats(); }
-    if (target === 'picture-boats')   { _tabCtx = 'picture'; renderPictureBoats(); }
-    if (target === 'security-boats')  { _loadAndRenderSecurityBoats(); }
+    // Update state.tab so FAB, keyboard shortcuts, and context work correctly
+    state.tab = target;
 
-    // Keep Fleet tab visually active
+    // Trigger the sub-tab's render function
+    if (target === 'boats')           { _tabCtx = 'boats';    renderBoats(); }
+    if (target === 'picture-boats')   { _tabCtx = 'picture';  renderPictureBoats(); }
+    if (target === 'security-boats')  { _tabCtx = 'security'; _loadAndRenderSecurityBoats(); }
+
+    // Keep Fleet tab visually active in the top nav
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tab === 'fleet');
     });
 
+    _updateFab();
   }
 
   function fleetSetSubTab(sub) {
@@ -1005,15 +1009,19 @@ const App = (() => {
       document.documentElement.style.setProperty('--subnav-bar-h', subNav.offsetHeight + 'px');
     }
 
+    // Update state.tab so FAB, keyboard shortcuts, and context work correctly
+    state.tab = target;
+
     // Trigger the sub-tab's render function
     if (target === 'labour') { _tabCtx = 'labour'; _loadAndRenderLabour(); }
     if (target === 'guards') { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
 
-    // Keep Crew tab visually active
+    // Keep Crew tab visually active in the top nav
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tab === 'crew');
     });
 
+    _updateFab();
   }
 
   function crewSetSubTab(sub) {

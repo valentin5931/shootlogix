@@ -1,5 +1,34 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-04 — [P0] Fix FAB add button hidden on Fleet/Crew sub-tabs + missing security _tabCtx
+
+**Problem**:
+1. The "+" FAB (Floating Action Button) was invisible on Fleet > Picture Boats, Fleet > Security Boats, Crew > Labor, and Crew > Guards sub-tabs, making it impossible to add new entities from those views.
+2. The `_tabCtx` variable was not set to `'security'` when switching to the Security Boats sub-tab via Fleet navigation, causing the assignment modal to use wrong function lists.
+
+**Root cause**:
+- `renderFleetUnified()` and `renderCrewUnified()` did not update `state.tab` to the active sub-tab value. Since `state.tab` remained `'fleet'` or `'crew'` (which have no FAB_CONFIG entry), `_updateFab()` hid the FAB button.
+- The security-boats branch in `renderFleetUnified()` was missing `_tabCtx = 'security'`, unlike the boats and picture-boats branches which correctly set their context.
+
+**Fix**:
+- `static/app-monolith.js`: `renderFleetUnified()` now sets `state.tab = target` (the active sub-tab: 'boats', 'picture-boats', or 'security-boats') before rendering, and calls `_updateFab()` after. Also added `_tabCtx = 'security'` for security-boats sub-tab.
+- `static/app-monolith.js`: `renderCrewUnified()` now sets `state.tab = target` (the active sub-tab: 'labour' or 'guards') before rendering, and calls `_updateFab()` after.
+
+**Verification**:
+- Fleet > Boats: FAB shows "+ Boat" ✅
+- Fleet > Picture Boats: FAB shows "+ Boat" ✅ (was hidden before)
+- Fleet > Security Boats: FAB shows "+ Boat" ✅ (was hidden before)
+- Crew > Labor: FAB shows "+ Worker" ✅ (was hidden before)
+- Crew > Guards: FAB shows "+ Guard" ✅ (was hidden before)
+- Ctrl+Z undo keyboard shortcuts now work correctly on fleet/crew sub-tabs
+- Security boats assignment modal now uses correct security function list
+- JS syntax check passes
+- All 45 tests pass
+
+**Branch**: fix/2026-04-04-fab-hidden-fleet-crew-subtabs
+**Side effects**: None — `state.tab` was already being set to sub-tab values when using direct navigation (e.g. setTab('picture-boats')); this fix makes fleet/crew sub-nav consistent with that behavior.
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data seeding issue)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
