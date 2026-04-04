@@ -1,5 +1,31 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-04 — [P0] Fix Timeline API crash — missing columns site, prep, filming, wrap
+
+**Problem**: The `/api/productions/:id/timeline` endpoint crashed with a 500 error (`sqlite3.OperationalError: no such column: site`), making the Timeline tab completely non-functional. Additionally, the timeline.js frontend could not authenticate or determine the active production.
+
+**Root cause**:
+1. The timeline query at `app.py:7893` referenced `locations.site` which doesn't exist in the schema (correct column is `location_type`).
+2. The same query referenced `location_schedules.prep`, `location_schedules.filming`, `location_schedules.wrap` — columns that don't exist. The actual schema uses a single `status` column with values like 'F' (filming), 'P' (prep), 'W' (wrap).
+3. `timeline.js` read auth token from `localStorage('sl_token')` but the monolith stores it as `access_token`.
+4. `timeline.js` relied on `window._SL.state.prodId` (dead module system) to get the production ID, which is never set by the monolith.
+
+**Fix**:
+- `app.py` (line 7893): Changed `SELECT id, name, site` → `SELECT id, name, location_type` and added `deleted_at IS NULL` filter
+- `app.py` (lines 7896-7906): Rewrote location schedule query to use `SELECT id, date, status` and derive phase from `status` column
+- `app.py` (line 7909): Changed `loc['site']` → `loc['location_type']` for subgroup label
+- `static/js/timeline.js` (line 44): Read `access_token` first, fall back to `sl_token`
+- `static/js/timeline.js` (line 441): Fall back to `localStorage('currentProdId')` when `window._SL` is unavailable
+
+**Verification**:
+- Timeline API now returns 200 with 82 resources (47 boats, 14 vehicles, 21 locations), 32 shooting days
+- 14 out of 21 locations have schedule assignments with correct phase data
+- All other endpoints remain unaffected (boats, locations, fnb, guards, etc.)
+
+**Branch**: fix/2026-04-04-timeline-api-500-missing-columns
+**Side effects**: None
+**Next priority**: Other 404 endpoints the frontend may call (e.g. schedule, budget-summary); empty data issues (P1: picture-boats, security-boats, transport, guards all return 0 items)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
