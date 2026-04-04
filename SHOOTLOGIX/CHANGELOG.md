@@ -1,5 +1,33 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-04 — [P0] Fix Picture Boats state variable mismatch + missing data reload
+
+**Problem**:
+1. Pull-to-refresh on the Picture Boats tab stored data in wrong state variables (`state.pbFunctions`/`state.pbAssignments` instead of `state.pictureFunctions`/`state.pictureAssignments`), causing the tab to render stale/empty data after refresh.
+2. Switching to Picture Boats via Fleet sub-nav called `renderPictureBoats()` without reloading data first, unlike Security Boats which correctly calls `_loadAndRenderSecurityBoats()`.
+3. `_findAssignment()` referenced 3 non-existent state variables (`state.pbAssignments`, `state.sbAssignments`, `state.helperAssignments`), causing assignment lookups to silently skip Picture Boats, Security Boats, and Labour assignments.
+
+**Root cause**:
+- When Picture Boats rendering was added, the `_reloadCurrentTab()` function used shorthand variable names (`pb*`/`sb*`) that didn't match the canonical names used everywhere else (`picture*`/`security*`/`labour*`).
+- The fleet sub-tab switching for Picture Boats was missing the `_loadAndRender*()` wrapper that Security Boats and other tabs have.
+
+**Fix**:
+- `static/app-monolith.js`: Created `_loadAndRenderPictureBoats()` async function (loads data with skeleton states, then renders) — mirrors `_loadAndRenderSecurityBoats()`.
+- `renderFleetUnified()` now calls `_loadAndRenderPictureBoats()` instead of `renderPictureBoats()` directly.
+- `setTab('picture-boats')` now calls `_loadAndRenderPictureBoats()`.
+- `_reloadCurrentTab()` now delegates to `_loadAndRenderPictureBoats()` instead of inline code with wrong variable names.
+- `_findAssignment()` fixed: `state.pbAssignments` -> `state.pictureAssignments`, `state.sbAssignments` -> `state.securityAssignments`, `state.helperAssignments` -> `state.labourAssignments`.
+
+**Verification**:
+- JS syntax check passes
+- All API endpoints return 200
+- Picture Boats data is now correctly reloaded when switching tabs or pulling to refresh
+- `_findAssignment()` now correctly searches all assignment arrays
+
+**Branch**: fix/2026-04-04-picture-boats-state-mismatch
+**Side effects**: None
+**Next priority**: Picture Boats and Security Boats tables are empty (P1 data issue — functions exist but no boat entities seeded)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
