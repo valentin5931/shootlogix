@@ -1,5 +1,9 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## ~~[P1] Keyboard shortcuts map to hidden/outdated tabs~~ FIXED 2026-04-04
+- **Fixed in**: fix/2026-04-04-keyboard-shortcuts-wrong-tabs
+- **Summary**: Number keys 1-0 and bottom nav primaryTabs referenced old tab names. Updated to match visible navigation.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

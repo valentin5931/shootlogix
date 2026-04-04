@@ -1,5 +1,18 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-04 — [P1] Fix keyboard shortcuts mapping to hidden/outdated tabs
+
+**Problem**: Keyboard shortcuts (number keys 1-0) navigated to hidden or outdated tabs (Dashboard, Boats, Picture Boats, Security Boats, Labour, Guards) instead of the current visible tab layout. The shortcuts help panel (? key) also displayed the old labels.
+**Root cause**: The `numTabs` array in the keydown handler and the `primaryTabs` array for bottom nav were never updated when the tab structure was refactored to use unified Fleet/Crew views and the Today tab replaced Dashboard.
+**Fix**:
+- `static/app-monolith.js` line 12455: Updated `numTabs` to `['today', 'pdt', 'locations', 'fleet', 'transport', 'fuel', 'crew', 'fnb', 'budget', 'checklist']`
+- `static/app-monolith.js` line 1414: Updated `primaryTabs` to `['today', 'pdt', 'fleet', 'budget']`
+- `templates/index.html` lines 929-938: Updated keyboard shortcuts help panel labels to match
+**Verification**: All 45 tests pass. JS bracket balance verified. Shortcuts now match visible topbar tabs.
+**Branch**: fix/2026-04-04-keyboard-shortcuts-wrong-tabs
+**Side effects**: None
+**Next priority**: P1 — Picture Boats / Security Boats empty data (separate tables not populated)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
