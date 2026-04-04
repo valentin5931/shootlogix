@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-04 — [P1] Seed picture boats and security boats entities
+
+**Problem**: Picture Boats and Security Boats tabs showed empty lists ("No picture boats" / "No security boats"). The API endpoints `/api/productions/1/picture-boats` and `/api/productions/1/security-boats` returned `[]`.
+
+**Root cause**: The data_loader `_seed_picture_boats()` and `_seed_security_boats()` only created boat_functions (role definitions like YELLOW, RED, SAFETY GAMES, etc.) but never created actual boat entities in the `picture_boats` and `security_boats` tables. Additionally, `_seed_security_boats()` was missing from the existing-production restart path in `bootstrap()`, so it was never called on subsequent app starts.
+
+**Fix**:
+- `data_loader.py`: Added `PICTURE_BOAT_DATA` (6 boats: PB YELLOW 1/2, PB RED 1/2, PB NEUTRAL 1, PB EXILE) and `SECURITY_BOAT_DATA` (6 boats: SB GAMES, SB COUNCIL, SB ARENA, SB EVAC, SB MEDICAL, SB STANDBY) seed data arrays.
+- Updated `_seed_picture_boats()` and `_seed_security_boats()` to seed both boat entities and functions, with idempotent checks for each.
+- Added `create_picture_boat` and `create_picture_boat_assignment` to imports from `database.py`.
+- Added `_seed_security_boats(prod_id)` call to the existing-production restart path in `bootstrap()`.
+
+**Verification**:
+- `/api/productions/1/picture-boats` returns 6 boats (was 0)
+- `/api/productions/1/security-boats` returns 6 boats (was 0)
+- All 12 existing API endpoints return 200 (no regressions)
+- All 45 existing tests pass
+
+**Branch**: fix/2026-04-04-seed-picture-security-boats
+**Side effects**: None
+**Next priority**: Helpers and guard-camp-workers are still empty (P1) — need similar entity seeding
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

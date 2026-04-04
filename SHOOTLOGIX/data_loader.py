@@ -21,6 +21,7 @@ from database import (
     create_production, seed_departments,
     create_boat, create_boat_function, create_boat_assignment,
     create_helper, create_helper_assignment,
+    create_picture_boat, create_picture_boat_assignment,
     create_security_boat, create_security_boat_assignment,
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
@@ -219,14 +220,38 @@ def _compute_shootlogix_total(prod_id):
 
 # ─── Bootstrap ────────────────────────────────────────────────────────────────
 
+PICTURE_BOAT_DATA = [
+    {'name': 'PB YELLOW 1',  'boat_nr': 1, 'capacity': '6',  'wave_rating': 'Waves',    'group_name': 'YELLOW',  'vendor': 'LOCAL', 'rate': 350},
+    {'name': 'PB YELLOW 2',  'boat_nr': 2, 'capacity': '6',  'wave_rating': 'Waves',    'group_name': 'YELLOW',  'vendor': 'LOCAL', 'rate': 350},
+    {'name': 'PB RED 1',     'boat_nr': 3, 'capacity': '8',  'wave_rating': 'Flat',     'group_name': 'RED',     'vendor': 'LOCAL', 'rate': 400},
+    {'name': 'PB RED 2',     'boat_nr': 4, 'capacity': '8',  'wave_rating': 'Flat',     'group_name': 'RED',     'vendor': 'LOCAL', 'rate': 400},
+    {'name': 'PB NEUTRAL 1', 'boat_nr': 5, 'capacity': '6',  'wave_rating': 'Waves',    'group_name': 'NEUTRAL', 'vendor': 'LOCAL', 'rate': 300},
+    {'name': 'PB EXILE',     'boat_nr': 6, 'capacity': '10', 'wave_rating': 'Open Sea', 'group_name': 'EXILE',   'vendor': 'LOCAL', 'rate': 500},
+]
+
+SECURITY_BOAT_DATA = [
+    {'name': 'SB GAMES',     'boat_nr': 1, 'capacity': '4', 'wave_rating': 'Waves',    'group_name': 'SAFETY',  'vendor': 'LOCAL', 'rate': 300},
+    {'name': 'SB COUNCIL',   'boat_nr': 2, 'capacity': '4', 'wave_rating': 'Flat',     'group_name': 'SAFETY',  'vendor': 'LOCAL', 'rate': 300},
+    {'name': 'SB ARENA',     'boat_nr': 3, 'capacity': '4', 'wave_rating': 'Waves',    'group_name': 'SAFETY',  'vendor': 'LOCAL', 'rate': 300},
+    {'name': 'SB EVAC',      'boat_nr': 4, 'capacity': '6', 'wave_rating': 'Open Sea', 'group_name': 'EVAC',    'vendor': 'LOCAL', 'rate': 500},
+    {'name': 'SB MEDICAL',   'boat_nr': 5, 'capacity': '6', 'wave_rating': 'Open Sea', 'group_name': 'MEDICAL', 'vendor': 'LOCAL', 'rate': 450},
+    {'name': 'SB STANDBY',   'boat_nr': 6, 'capacity': '4', 'wave_rating': 'Waves',    'group_name': 'STANDBY', 'vendor': 'LOCAL', 'rate': 280},
+]
+
+
 def _seed_picture_boats(prod_id):
-    """Ensure the 4 Picture Boats function groups exist. Safe to call multiple times."""
+    """Seed picture boat entities and function groups. Safe to call multiple times."""
     with get_db() as conn:
-        existing_pb = conn.execute(
+        existing_funcs = conn.execute(
             "SELECT id FROM boat_functions WHERE production_id=? AND context='picture'",
             (prod_id,)
         ).fetchall()
-    if not existing_pb:
+        existing_boats = conn.execute(
+            "SELECT id FROM picture_boats WHERE production_id=?",
+            (prod_id,)
+        ).fetchall()
+
+    if not existing_funcs:
         pb_funcs = [
             {'name': 'YELLOW', 'function_group': 'YELLOW', 'color': '#EAB308', 'sort_order': 1},
             {'name': 'RED',    'function_group': 'RED',    'color': '#EF4444', 'sort_order': 2},
@@ -236,6 +261,20 @@ def _seed_picture_boats(prod_id):
         for f in pb_funcs:
             create_boat_function({**f, 'production_id': prod_id, 'context': 'picture'})
         print(f"  Seeded 4 Picture Boats functions (YELLOW/RED/NEUTRAL/EXILE)")
+
+    if not existing_boats:
+        print(f"  Seeding {len(PICTURE_BOAT_DATA)} picture boats...")
+        for pb in PICTURE_BOAT_DATA:
+            create_picture_boat({
+                'production_id': prod_id,
+                'boat_nr': pb['boat_nr'],
+                'name': pb['name'],
+                'capacity': pb['capacity'],
+                'wave_rating': pb['wave_rating'],
+                'group_name': pb['group_name'],
+                'vendor': pb['vendor'],
+                'daily_rate_estimate': pb['rate'],
+            })
 
 
 def _backup_db():
@@ -301,6 +340,7 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _seed_security_boats(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -449,27 +489,44 @@ SECURITY_BOAT_FUNCS = [
 
 
 def _seed_security_boats(prod_id):
-    """Seed security boat functions."""
+    """Seed security boat entities and functions. Safe to call multiple times."""
     with get_db() as conn:
-        existing = conn.execute(
+        existing_funcs = conn.execute(
             "SELECT id FROM boat_functions WHERE production_id=? AND context='security'",
             (prod_id,)
         ).fetchall()
-    if existing:
-        return
+        existing_boats = conn.execute(
+            "SELECT id FROM security_boats WHERE production_id=?",
+            (prod_id,)
+        ).fetchall()
 
-    print(f"  Seeding {len(SECURITY_BOAT_FUNCS)} security boat functions...")
-    for f in SECURITY_BOAT_FUNCS:
-        create_boat_function({
-            'production_id': prod_id,
-            'name': f['name'],
-            'function_group': f['group'],
-            'color': f['color'],
-            'sort_order': f['sort'],
-            'default_start': f['start'],
-            'default_end': f['end'],
-            'context': 'security',
-        })
+    if not existing_funcs:
+        print(f"  Seeding {len(SECURITY_BOAT_FUNCS)} security boat functions...")
+        for f in SECURITY_BOAT_FUNCS:
+            create_boat_function({
+                'production_id': prod_id,
+                'name': f['name'],
+                'function_group': f['group'],
+                'color': f['color'],
+                'sort_order': f['sort'],
+                'default_start': f['start'],
+                'default_end': f['end'],
+                'context': 'security',
+            })
+
+    if not existing_boats:
+        print(f"  Seeding {len(SECURITY_BOAT_DATA)} security boats...")
+        for sb in SECURITY_BOAT_DATA:
+            create_security_boat({
+                'production_id': prod_id,
+                'boat_nr': sb['boat_nr'],
+                'name': sb['name'],
+                'capacity': sb['capacity'],
+                'wave_rating': sb['wave_rating'],
+                'group_name': sb['group_name'],
+                'vendor': sb['vendor'],
+                'daily_rate_estimate': sb['rate'],
+            })
 
 
 # ─── Seed Transport ─────────────────────────────────────────────────────────
