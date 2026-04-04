@@ -1,5 +1,17 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] FIXED — Timeline API crash (missing columns site, prep, filming, wrap)
+- **Discovered**: 2026-04-04
+- **Fixed**: 2026-04-04
+- **Branch**: fix/2026-04-04-timeline-api-500-missing-columns
+
+## [P0] Several API endpoints return 404 — frontend may call non-existent routes
+- **Discovered**: 2026-04-04
+- **Symptoms**: Flask logs show 404 for `/api/productions/1/schedule`, `/api/productions/1/budget-summary`. These may be called by dashboard or other JS code outside the monolith.
+- **Likely cause**: Routes were never created, or JS references outdated URL patterns. The actual budget endpoint is `/api/productions/:id/budget`, boat assignments are at `/assignments`.
+- **Files involved**: `app.py` (routes), `static/app-monolith.js`, `static/js/dashboard-v2.js`
+- **Estimated effort**: Medium — need to audit all JS fetch calls vs Flask routes
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
