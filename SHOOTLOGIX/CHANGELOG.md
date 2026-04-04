@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-04 — [P0] Fix Timeline API crash — no such column: site / prep
+
+**Problem**: The `/api/productions/<id>/timeline` endpoint crashed with a 500 error (`sqlite3.OperationalError: no such column: site`). After fixing the first error, a second crash occurred (`no such column: prep`).
+
+**Root cause**: The timeline endpoint's location queries referenced columns that don't exist in the actual database schema:
+1. `locations` table was queried with `SELECT id, name, site` but has no `site` column — the correct column is `location_type`
+2. `location_schedules` table was queried with `SELECT id, date, prep, filming, wrap` but uses a single `status` column (values: 'P', 'F', 'W') instead of separate boolean columns
+
+**Fix**:
+- `app.py` (line ~7893): Changed `SELECT id, name, site FROM locations` → `SELECT id, name, location_type FROM locations`
+- `app.py` (line ~7893): Changed `SELECT id, date, prep, filming, wrap FROM location_schedules WHERE location_id=?` → `SELECT id, date, status FROM location_schedules WHERE location_id=?`
+- Updated the phase-building logic to use the single `status` field instead of three booleans
+- Updated `subgroup` to use `loc['location_type']` instead of `loc['site']`
+
+**Verification**:
+- Timeline endpoint now returns 200 with 81 resources (46 boats, 14 vehicles, 21 locations)
+- Location resources correctly grouped by `location_type` (tribal_camp, game, reward, etc.)
+- Location assignments correctly populated from `status` field
+- All other endpoints unaffected (boats, locations, budget, guard-posts all still 200)
+- Python syntax check passes
+
+**Branch**: fix/2026-04-04-timeline-crash-no-site-column
+**Side effects**: None
+**Next priority**: Transport API returns empty despite 14 vehicles in DB (possible table name mismatch in `get_transport_schedules` querying `vehicles` instead of `transport_vehicles`)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
