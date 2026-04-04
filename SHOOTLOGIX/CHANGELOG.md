@@ -1,5 +1,32 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-04 — [P1] Seed picture boats and security boats with entities and assignments
+
+**Problem**: Picture Boats and Security Boats tabs showed empty lists. The data seeder created functions (YELLOW/RED/NEUTRAL/EXILE for picture, 6 SAFETY roles for security) but never created actual boat entities or assignments. Users couldn't use these modules at all.
+
+**Root cause**: `_seed_picture_boats()` and `_seed_security_boats()` in `data_loader.py` only created `boat_functions` entries (the roles), but never populated the `picture_boats` / `security_boats` tables with actual boats, nor created any assignments linking boats to functions.
+
+**Fix**:
+- `data_loader.py`: Added `PICTURE_BOAT_DATA` (4 boats: PB YELLOW/RED/NEUTRAL/EXILE at $350/day) and `SECURITY_BOAT_DATA` (6 boats: SB GAMES/COUNCIL/ARENA/EVAC/MEDICAL/STANDBY at $300-500/day)
+- Updated `_seed_picture_boats()` to also create picture boat entities and assignments (each boat→its function, Mar 20→Apr 25)
+- Updated `_seed_security_boats()` to also create security boat entities and assignments (using each function's own date range)
+- Added `create_picture_boat` and `create_picture_boat_assignment` to imports
+- Seeding is idempotent: checks for existing boats before inserting
+
+**Verification**:
+- `/api/productions/1/picture-boats` now returns 4 boats (was 0)
+- `/api/productions/1/picture-boat-assignments` returns 4 assignments (was 0)
+- `/api/productions/1/security-boats` returns 6 boats (was 0)
+- `/api/productions/1/security-boat-assignments` returns 6 assignments (was 0)
+- Today tab shows picture_boats (4) and security_boats (6) data
+- Budget grand_total_estimate increased from $810K to $965K (reflects new boat costs)
+- Export CSV for both modules returns HTTP 200
+- Idempotent: restart does not duplicate boats
+
+**Branch**: fix/2026-04-04-seed-picture-security-boats
+**Side effects**: None — only adds new seed data, no schema changes
+**Next priority**: P1 — Helpers/Guards lists empty (need seed data or user guidance)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

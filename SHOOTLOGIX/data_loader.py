@@ -21,6 +21,7 @@ from database import (
     create_production, seed_departments,
     create_boat, create_boat_function, create_boat_assignment,
     create_helper, create_helper_assignment,
+    create_picture_boat, create_picture_boat_assignment,
     create_security_boat, create_security_boat_assignment,
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
@@ -219,8 +220,16 @@ def _compute_shootlogix_total(prod_id):
 
 # ─── Bootstrap ────────────────────────────────────────────────────────────────
 
+PICTURE_BOAT_DATA = [
+    {'name': 'PB YELLOW',  'func': 'YELLOW',  'rate': 350, 'sort': 1, 'wave': 'Waves',    'cap': 8},
+    {'name': 'PB RED',     'func': 'RED',     'rate': 350, 'sort': 2, 'wave': 'Waves',    'cap': 8},
+    {'name': 'PB NEUTRAL', 'func': 'NEUTRAL', 'rate': 350, 'sort': 3, 'wave': 'Waves',    'cap': 8},
+    {'name': 'PB EXILE',   'func': 'EXILE',   'rate': 350, 'sort': 4, 'wave': 'Moderate', 'cap': 6},
+]
+
+
 def _seed_picture_boats(prod_id):
-    """Ensure the 4 Picture Boats function groups exist. Safe to call multiple times."""
+    """Ensure the 4 Picture Boats function groups AND boats exist. Safe to call multiple times."""
     with get_db() as conn:
         existing_pb = conn.execute(
             "SELECT id FROM boat_functions WHERE production_id=? AND context='picture'",
@@ -236,6 +245,47 @@ def _seed_picture_boats(prod_id):
         for f in pb_funcs:
             create_boat_function({**f, 'production_id': prod_id, 'context': 'picture'})
         print(f"  Seeded 4 Picture Boats functions (YELLOW/RED/NEUTRAL/EXILE)")
+
+    # Seed picture boat entities if none exist
+    with get_db() as conn:
+        existing_boats = conn.execute(
+            "SELECT id FROM picture_boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchall()
+    if existing_boats:
+        return
+
+    print(f"  Seeding {len(PICTURE_BOAT_DATA)} picture boats...")
+    # Get function IDs for creating assignments
+    with get_db() as conn:
+        funcs = conn.execute(
+            "SELECT id, name FROM boat_functions WHERE production_id=? AND context='picture'",
+            (prod_id,)
+        ).fetchall()
+    func_map = {f['name']: f['id'] for f in funcs}
+
+    for i, pb in enumerate(PICTURE_BOAT_DATA, 1):
+        boat_id = create_picture_boat({
+            'production_id': prod_id,
+            'boat_nr': i,
+            'name': pb['name'],
+            'daily_rate_estimate': pb['rate'],
+            'wave_rating': pb['wave'],
+            'capacity': pb['cap'],
+            'group_name': 'Camera',
+        })
+        # Create assignment linking boat to its function
+        func_id = func_map.get(pb['func'])
+        if func_id and boat_id:
+            create_picture_boat_assignment({
+                'boat_function_id': func_id,
+                'picture_boat_id': boat_id,
+                'start_date': '2026-03-20',
+                'end_date': '2026-04-25',
+                'pricing_type': 'standard',
+                'include_sunday': 0,
+            })
+    print(f"  Seeded {len(PICTURE_BOAT_DATA)} picture boats with assignments")
 
 
 def _backup_db():
@@ -447,29 +497,76 @@ SECURITY_BOAT_FUNCS = [
     {'name': 'SAFETY STANDBY', 'group': 'STANDBY','color': '#3B82F6', 'sort': 6, 'start': '2026-03-20', 'end': '2026-04-25'},
 ]
 
+SECURITY_BOAT_DATA = [
+    {'name': 'SB GAMES',   'func': 'SAFETY GAMES',   'rate': 350, 'sort': 1, 'cap': 6},
+    {'name': 'SB COUNCIL', 'func': 'SAFETY COUNCIL', 'rate': 350, 'sort': 2, 'cap': 6},
+    {'name': 'SB ARENA',   'func': 'SAFETY ARENA',   'rate': 350, 'sort': 3, 'cap': 6},
+    {'name': 'SB EVAC',    'func': 'SAFETY EVAC',    'rate': 500, 'sort': 4, 'cap': 10},
+    {'name': 'SB MEDICAL', 'func': 'SAFETY MEDICAL', 'rate': 400, 'sort': 5, 'cap': 8},
+    {'name': 'SB STANDBY', 'func': 'SAFETY STANDBY', 'rate': 300, 'sort': 6, 'cap': 6},
+]
+
 
 def _seed_security_boats(prod_id):
-    """Seed security boat functions."""
+    """Seed security boat functions AND boats. Safe to call multiple times."""
     with get_db() as conn:
         existing = conn.execute(
             "SELECT id FROM boat_functions WHERE production_id=? AND context='security'",
             (prod_id,)
         ).fetchall()
-    if existing:
+    if not existing:
+        print(f"  Seeding {len(SECURITY_BOAT_FUNCS)} security boat functions...")
+        for f in SECURITY_BOAT_FUNCS:
+            create_boat_function({
+                'production_id': prod_id,
+                'name': f['name'],
+                'function_group': f['group'],
+                'color': f['color'],
+                'sort_order': f['sort'],
+                'default_start': f['start'],
+                'default_end': f['end'],
+                'context': 'security',
+            })
+
+    # Seed security boat entities if none exist
+    with get_db() as conn:
+        existing_boats = conn.execute(
+            "SELECT id FROM security_boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchall()
+    if existing_boats:
         return
 
-    print(f"  Seeding {len(SECURITY_BOAT_FUNCS)} security boat functions...")
-    for f in SECURITY_BOAT_FUNCS:
-        create_boat_function({
+    print(f"  Seeding {len(SECURITY_BOAT_DATA)} security boats...")
+    with get_db() as conn:
+        funcs = conn.execute(
+            "SELECT id, name FROM boat_functions WHERE production_id=? AND context='security'",
+            (prod_id,)
+        ).fetchall()
+    func_map = {f['name']: f['id'] for f in funcs}
+
+    for i, sb in enumerate(SECURITY_BOAT_DATA, 1):
+        boat_id = create_security_boat({
             'production_id': prod_id,
-            'name': f['name'],
-            'function_group': f['group'],
-            'color': f['color'],
-            'sort_order': f['sort'],
-            'default_start': f['start'],
-            'default_end': f['end'],
-            'context': 'security',
+            'boat_nr': i,
+            'name': sb['name'],
+            'daily_rate_estimate': sb['rate'],
+            'wave_rating': 'Waves',
+            'capacity': sb['cap'],
+            'group_name': 'Safety',
         })
+        func_id = func_map.get(sb['func'])
+        func_data = next((f for f in SECURITY_BOAT_FUNCS if f['name'] == sb['func']), None)
+        if func_id and boat_id and func_data:
+            create_security_boat_assignment({
+                'boat_function_id': func_id,
+                'security_boat_id': boat_id,
+                'start_date': func_data['start'],
+                'end_date': func_data['end'],
+                'pricing_type': 'standard',
+                'include_sunday': 1,
+            })
+    print(f"  Seeded {len(SECURITY_BOAT_DATA)} security boats with assignments")
 
 
 # ─── Seed Transport ─────────────────────────────────────────────────────────
