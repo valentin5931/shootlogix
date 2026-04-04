@@ -1,5 +1,31 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-04 — [P1] Fix missing Checklist in mobile menu + broken keyboard shortcuts
+
+**Problem**:
+1. The Checklist tab was missing from the mobile hamburger menu — mobile users had no way to access the daily checklist.
+2. Keyboard shortcuts (number keys 1-0) mapped to hidden sub-tabs (boats, picture-boats, security-boats, labour, guards) instead of the visible top-level tabs (fleet, crew, etc.), causing broken navigation and no visible tab highlight.
+3. Missing topbar separator before the Checklist tab in the desktop navigation.
+
+**Root cause**:
+- The Checklist tab was added to the desktop topbar but never added to the mobile menu in `index.html`.
+- The keyboard shortcut array was written before the fleet/crew unified view was implemented, so it still referenced the old individual sub-tabs.
+
+**Fix**:
+- `templates/index.html`: Added Checklist button to the mobile menu items list, matching the style of other mobile menu entries. Added missing `<div class="topbar-sep">` before the Checklist button in the desktop topbar.
+- `static/app-monolith.js`: Updated the `numTabs` keyboard shortcut array from `['dashboard', 'pdt', 'locations', 'boats', 'picture-boats', 'security-boats', 'transport', 'fuel', 'labour', 'guards']` to `['today', 'pdt', 'locations', 'fleet', 'transport', 'fuel', 'crew', 'fnb', 'budget', 'checklist']`, matching the visible top-level tabs.
+
+**Verification**:
+- Mobile menu now shows Checklist between Budget and Documents.
+- Keyboard shortcuts 1-0 now navigate to visible tabs: Today, Schedule, Locations, Fleet, Transport, Fuel, Crew, Catering, Budget, Checklist.
+- Desktop topbar shows proper separator before Checklist.
+- JS syntax check passes.
+- All API endpoints return 200, no regressions.
+
+**Branch**: fix/2026-04-04-mobile-menu-keyboard-shortcuts
+**Side effects**: None. Keyboard shortcut mapping changed — users who memorized old keys (4=boats, etc.) will need to adapt.
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data in main boats table only). Users must add boats via the Picture Boats / Security Boats UI.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

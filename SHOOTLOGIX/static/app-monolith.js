@@ -12452,7 +12452,7 @@ const App = (() => {
       }
       // Number keys 1-0 for quick tab navigation (not in inputs)
       if (!isInput && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const numTabs = ['dashboard', 'pdt', 'locations', 'boats', 'picture-boats', 'security-boats', 'transport', 'fuel', 'labour', 'guards'];
+        const numTabs = ['today', 'pdt', 'locations', 'fleet', 'transport', 'fuel', 'crew', 'fnb', 'budget', 'checklist'];
         const idx = '1234567890'.indexOf(e.key);
         if (idx >= 0 && idx < numTabs.length) {
           e.preventDefault();

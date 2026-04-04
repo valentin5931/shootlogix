@@ -1,5 +1,9 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [FIXED 2026-04-04] [P1] Mobile menu missing Checklist tab + keyboard shortcuts broken
+- **Fixed in**: fix/2026-04-04-mobile-menu-keyboard-shortcuts
+- **Details**: See CHANGELOG.md entry for 2026-04-04
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
