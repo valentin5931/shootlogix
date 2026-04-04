@@ -24,7 +24,12 @@
 
 **Branch**: fix/2026-04-04-mobile-menu-keyboard-shortcuts
 **Side effects**: None. Keyboard shortcut mapping changed — users who memorized old keys (4=boats, etc.) will need to adapt.
-**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data in main boats table only). Users must add boats via the Picture Boats / Security Boats UI.
+
+### Additional fixes in same branch:
+- **Checklist tab broken**: All 3 checklist functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) referenced `state.production` (never defined) instead of `state.prodId`. The entire Checklist tab was silently non-functional. Fixed 6 occurrences.
+- **`_findAssignment()` wrong property names**: `state.pbAssignments` → `state.pictureAssignments`, `state.helperAssignments` → `state.labourAssignments`. Assignment lookup was silently skipping picture-boat and labour assignments.
+
+**Next priority**: P1 — "Auto-fill Tides" button throws TypeError (function not implemented); Timeline tab renders blank (renderTimeline never defined).
 
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
