@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-04 — [P0] Fix Timeline API crash — invalid column references
+
+**Problem**: The Timeline API endpoint (`/api/productions/<id>/timeline`) returned a 500 error with `sqlite3.OperationalError: no such column: site`. The endpoint was completely broken and unusable.
+
+**Root cause**: The timeline query at `app.py:7893` referenced two non-existent columns:
+1. `site` in the `locations` table — the actual column is `location_type`
+2. `prep`, `filming`, `wrap` in the `location_schedules` table — the actual schema uses a single `status` column (values like `'F'` for filming)
+
+These queries were written against an assumed schema that doesn't match the actual database structure.
+
+**Fix**:
+- `app.py:7893`: Changed `SELECT id, name, site` to `SELECT id, name, location_type` for locations query
+- `app.py:7896`: Changed `SELECT id, date, prep, filming, wrap` to `SELECT id, date, status` for location_schedules query
+- `app.py:7900-7908`: Replaced prep/filming/wrap boolean phase logic with direct use of the `status` field
+- `app.py:7912`: Changed `loc['site']` to `loc['location_type']` for subgroup display
+
+**Verification**:
+- Timeline API returns 200 with 81 resources (21 locations) — was 500
+- All 13 other API endpoints return 200 (no regressions)
+- All 45 existing tests pass
+
+**Branch**: fix/2026-04-04-timeline-api-crash-no-such-column-site
+**Side effects**: None
+**Next priority**: PDT schedule GET endpoint missing (404); remaining P1 UX issues
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
