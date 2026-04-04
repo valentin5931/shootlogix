@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-04 — [P1] Fix silent error handling in showConfirm destructive actions
+
+**Problem**: When a user confirms a destructive action (delete vehicle, delete fuel machinery, delete worker, delete guard) and the API call fails, the error is silently swallowed. The user gets no feedback — the confirmation dialog closes, but the entity is not actually deleted. The UI may show stale state.
+
+**Root cause**: `_confirmOk()` in `app-monolith.js` called the async callback without `await` and without error handling. Any promise rejection from the callback became an unhandled promise rejection — invisible to the user. Additionally, 4 `showConfirm` callbacks for DELETE operations lacked individual try/catch blocks.
+
+**Fix**:
+- `static/app-monolith.js` line ~7178: Made `_confirmOk()` async, added `await` and try/catch with toast error feedback
+- Line ~6266: Added try/catch to transport vehicle delete callback
+- Line ~6944: Added try/catch to fuel machinery delete callback
+- Line ~7587: Added try/catch to labour worker delete callback
+- Line ~10526: Added try/catch to guard camp worker delete callback
+
+**Verification**:
+- JS syntax check passes
+- All 45 tests pass
+- App starts and serves correctly
+- Confirm dialog callbacks now properly await async operations and show error toasts on failure
+
+**Branch**: fix/2026-04-04-showconfirm-silent-errors
+**Side effects**: None — all other showConfirm callbacks that already had try/catch are unaffected
+**Next priority**: P1 — Picture Boats and Security Boats empty list issue (data seeding); or P1 UX — add missing confirmation to assignment removal operations (lines 2949, 6327, 8824)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

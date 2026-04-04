@@ -1,5 +1,23 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] Assignment removal lacks confirmation dialogs
+- **Discovered**: 2026-04-04
+- **Symptoms**: Clicking "Remove" on an assignment in Picture Boats (line 2949), Transport (line 6327), or Security Boats (line 8824) immediately deletes the assignment without asking for confirmation.
+- **Likely cause**: These removal callbacks call `api('DELETE', ...)` directly without wrapping in `showConfirm()`.
+- **Files involved**: `static/app-monolith.js` (lines 2949, 6327, 8824)
+- **Estimated effort**: Quick fix — wrap each in `showConfirm` with try/catch
+
+## [P1] Export date range picker not ported to monolith
+- **Discovered**: 2026-04-04
+- **Symptoms**: The AXE2.1 date range picker feature was only implemented in the dead `static/modules/` files (which rely on `window._SL` that doesn't exist). The active monolith export functions (`exportCSV`, `tbExportCSV`, etc.) call `authDownload()` without date parameters, so all exports include all dates.
+- **Likely cause**: Feature was added to the module system but never ported when the monolith became the primary codebase.
+- **Files involved**: `static/app-monolith.js` (export functions), `static/modules/*.js` (reference implementation)
+- **Estimated effort**: Medium — need to create a date range modal in the monolith and wire it to all export buttons
+
+## [FIXED] [P1] Silent errors in showConfirm destructive actions
+- **Fixed**: 2026-04-04
+- **Branch**: fix/2026-04-04-showconfirm-silent-errors
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
