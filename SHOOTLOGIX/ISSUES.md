@@ -1,5 +1,15 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~Timeline API crash (no such column: site / prep)~~ — FIXED 2026-04-04
+- **Fixed in**: fix/2026-04-04-timeline-crash-no-site-column
+
+## [P1] Transport API returns empty despite 14 vehicles in database
+- **Discovered**: 2026-04-04
+- **Symptoms**: `/api/productions/1/transport` returns `[]` but `transport_vehicles` table has 14 rows
+- **Likely cause**: `get_transport_schedules()` in `database.py` queries `vehicles` table (which doesn't exist) instead of `transport_vehicles`, and joins on `transport_schedules` which may also not match the actual assignment table name
+- **Files involved**: `database.py` (line ~3052), `app.py` (line ~1892)
+- **Estimated effort**: Quick fix — rename table references
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
