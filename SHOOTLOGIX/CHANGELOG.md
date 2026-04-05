@@ -1,5 +1,23 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P1] Add missing confirmation dialogs for assignment deletion
+
+**Problem**: Clicking the ✕ (remove) button on boat, picture boat, transport, and security boat assignment cards immediately deletes the assignment without any confirmation dialog. This is dangerous since assignments are critical production scheduling data that can be accidentally deleted with a single misclick.
+
+**Root cause**: The `removeAssignmentById`, `pbRemoveAssignmentById`, `tbRemoveAssignmentById`, and `sbRemoveAssignmentById` functions in `app-monolith.js` directly called the DELETE API without wrapping in `showConfirm()`. The equivalent labour (`lbRemoveAssignmentById`) and guard camp (`gcRemoveAssignmentById`) functions already had confirmation dialogs — this was an inconsistency.
+
+**Fix**: `static/app-monolith.js` — Wrapped all 4 functions in `showConfirm('Remove this assignment?', async () => { ... })` to match the existing pattern used by labour and guard camp modules.
+
+**Verification**:
+- Node.js syntax check passes
+- All 45 existing tests pass
+- All API endpoints return 200
+- JS file served correctly (634K)
+
+**Branch**: fix/2026-04-05-assignment-delete-confirm
+**Side effects**: None — users now see a confirmation dialog before assignment deletion (consistent with labour/guards behavior)
+**Next priority**: P0 — Timeline API crash (already in PR on branch fix/2026-04-05-timeline-api-crash)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
