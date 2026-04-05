@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P1] Seed picture boats and security boats data
+
+**Problem**: The Picture Boats and Security Boats sub-tabs under Fleet displayed empty lists. The `/api/productions/1/picture-boats` and `/api/productions/1/security-boats` endpoints returned `[]` because the `picture_boats` and `security_boats` database tables had no data. Only the boat functions (roles/categories like YELLOW, RED, SAFETY GAMES, etc.) were seeded, not the actual boat entities.
+
+**Root cause**: The data loader's `_seed_picture_boats()` and `_seed_security_boats()` functions only created `boat_functions` entries (the assignment roles), but never inserted actual boat records into the `picture_boats` and `security_boats` tables. All 46 boats from the BATEAUX migration went into the main `boats` table.
+
+**Fix**:
+- `data_loader.py`: Added `PICTURE_BOAT_DATA` (6 boats: PCC 1, PCC 2, PERICO 1, BONGO 1, BONGO 2, QUETZAL) and `SECURITY_BOAT_DATA` (4 boats: EVAC, EVAC BOAT, MISHKA, MISHKA 24/7) seed data arrays.
+- Added `_seed_picture_boat_entities()` and `_seed_security_boat_entities()` functions with `picture_boats_seed_v1` / `security_boats_seed_v1` setting flags for idempotency.
+- Integrated both seed functions into `bootstrap()` — called for both existing-production and first-time setup paths.
+- Added `create_picture_boat` to the imports from `database.py`.
+
+**Verification**:
+- `/api/productions/1/picture-boats` now returns 6 boats (was `[]`)
+- `/api/productions/1/security-boats` now returns 4 boats (was `[]`)
+- All other endpoints unchanged (no regressions)
+- Idempotent: re-running bootstrap skips seeding when flags are set
+- JS syntax check passes, Python syntax check passes
+
+**Branch**: fix/2026-04-05-seed-picture-security-boats
+**Side effects**: None
+**Next priority**: Test Picture Boats and Security Boats assignment workflow (drag-drop boats onto functions); remaining P1 items (helpers, guards empty lists)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

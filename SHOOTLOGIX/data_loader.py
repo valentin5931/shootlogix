@@ -21,6 +21,7 @@ from database import (
     create_production, seed_departments,
     create_boat, create_boat_function, create_boat_assignment,
     create_helper, create_helper_assignment,
+    create_picture_boat,
     create_security_boat, create_security_boat_assignment,
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
@@ -301,6 +302,8 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _seed_picture_boat_entities(prod_id)
+        _seed_security_boat_entities(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -340,8 +343,10 @@ def bootstrap():
               f"delta={bv.get('delta')}")
 
     _seed_picture_boats(prod_id)
+    _seed_picture_boat_entities(prod_id)
     _seed_helpers(prod_id)
     _seed_security_boats(prod_id)
+    _seed_security_boat_entities(prod_id)
     _seed_transport(prod_id)
     _seed_location_sites(prod_id)
     _seed_guard_posts(prod_id)
@@ -470,6 +475,85 @@ def _seed_security_boats(prod_id):
             'default_end': f['end'],
             'context': 'security',
         })
+
+
+# ─── Seed Picture Boat & Security Boat entities ─────────────────────────────
+
+PICTURE_BOAT_DATA = [
+    {'name': 'PCC 1',          'boat_nr': 1, 'capacity': '8',  'group_name': 'Games',    'daily_rate_estimate': 321, 'wave_rating': 'Waves', 'vendor': ''},
+    {'name': 'PCC 2',          'boat_nr': 2, 'capacity': '10', 'group_name': 'Games',    'daily_rate_estimate': 674, 'wave_rating': 'Waves', 'vendor': ''},
+    {'name': 'PERICO 1',       'boat_nr': 3, 'capacity': '10', 'group_name': 'Games',    'daily_rate_estimate': 674, 'wave_rating': 'Waves', 'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'BONGO 1',        'boat_nr': 4, 'capacity': '10', 'group_name': 'Reality',  'daily_rate_estimate': 482, 'wave_rating': 'Waves', 'vendor': ''},
+    {'name': 'BONGO 2',        'boat_nr': 5, 'capacity': '10', 'group_name': 'Reality',  'daily_rate_estimate': 482, 'wave_rating': 'Waves', 'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'QUETZAL',        'boat_nr': 6, 'capacity': '12', 'group_name': 'Games',    'daily_rate_estimate': 500, 'wave_rating': 'Waves', 'vendor': ''},
+]
+
+SECURITY_BOAT_DATA = [
+    {'name': 'EVAC',           'boat_nr': 1, 'capacity': '15', 'group_name': 'SAFETY',   'daily_rate_estimate': 880, 'wave_rating': 'Waves', 'vendor': ''},
+    {'name': 'EVAC BOAT',      'boat_nr': 2, 'capacity': '12', 'group_name': 'SAFETY',   'daily_rate_estimate': 800, 'wave_rating': 'Waves', 'vendor': ''},
+    {'name': 'MISHKA',         'boat_nr': 3, 'capacity': '8',  'group_name': 'SAFETY',   'daily_rate_estimate': 321, 'wave_rating': 'Waves', 'vendor': ''},
+    {'name': 'MISHKA 24/7',    'boat_nr': 4, 'capacity': '8',  'group_name': 'MEDICAL',  'daily_rate_estimate': 642, 'wave_rating': 'Waves', 'vendor': ''},
+]
+
+
+def _seed_picture_boat_entities(prod_id):
+    """Seed picture boat entities (the actual boats, not functions).
+    Uses a setting flag for idempotency — only runs once."""
+    flag = "picture_boats_seed_v1"
+    if get_setting(flag):
+        return
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM picture_boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchone()[0]
+    if existing > 0:
+        set_setting(flag, "1")
+        return
+
+    print(f"  Seeding {len(PICTURE_BOAT_DATA)} picture boats...")
+    for i, pb in enumerate(PICTURE_BOAT_DATA):
+        create_picture_boat({
+            'production_id': prod_id,
+            'boat_nr': pb['boat_nr'],
+            'name': pb['name'],
+            'capacity': pb['capacity'],
+            'group_name': pb['group_name'],
+            'daily_rate_estimate': pb['daily_rate_estimate'],
+            'wave_rating': pb['wave_rating'],
+            'vendor': pb.get('vendor', ''),
+        })
+    set_setting(flag, "1")
+
+
+def _seed_security_boat_entities(prod_id):
+    """Seed security boat entities (the actual boats, not functions).
+    Uses a setting flag for idempotency — only runs once."""
+    flag = "security_boats_seed_v1"
+    if get_setting(flag):
+        return
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM security_boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchone()[0]
+    if existing > 0:
+        set_setting(flag, "1")
+        return
+
+    print(f"  Seeding {len(SECURITY_BOAT_DATA)} security boats...")
+    for sb in SECURITY_BOAT_DATA:
+        create_security_boat({
+            'production_id': prod_id,
+            'boat_nr': sb['boat_nr'],
+            'name': sb['name'],
+            'capacity': sb['capacity'],
+            'group_name': sb['group_name'],
+            'daily_rate_estimate': sb['daily_rate_estimate'],
+            'wave_rating': sb['wave_rating'],
+            'vendor': sb.get('vendor', ''),
+        })
+    set_setting(flag, "1")
 
 
 # ─── Seed Transport ─────────────────────────────────────────────────────────
