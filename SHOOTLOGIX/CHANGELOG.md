@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P1] Seed picture boats and security boats data
+
+**Problem**: Picture Boats and Security Boats tabs showed empty lists. The API endpoints `/api/productions/1/picture-boats` and `/api/productions/1/security-boats` returned `[]`.
+
+**Root cause**: The seed functions `_seed_picture_boats()` and `_seed_security_boats()` in `data_loader.py` only created `boat_functions` (role definitions like YELLOW/RED/NEUTRAL/EXILE and SAFETY/EVAC/MEDICAL/STANDBY), but never created actual boat entities in the `picture_boats` and `security_boats` tables. Additionally, `_seed_security_boats()` was missing from the existing-production bootstrap path, so security boat functions were only seeded on first-time bootstrap.
+
+**Fix**:
+- `data_loader.py`: Added `PICTURE_BOAT_DATA` (4 camera boats: PB YELLOW/RED/NEUTRAL/EXILE) and `SECURITY_BOAT_DATA` (6 safety boats: SB GAMES/COUNCIL/ARENA/EVAC/MEDICAL/STANDBY)
+- Updated `_seed_picture_boats()` and `_seed_security_boats()` to create boat entities in their respective tables (same pattern as `_seed_transport()`)
+- Added `_seed_security_boats()` to the existing-production bootstrap path
+- Added `create_picture_boat` and `create_picture_boat_assignment` to imports
+
+**Verification**:
+- `/api/productions/1/picture-boats` returns 4 boats
+- `/api/productions/1/security-boats` returns 6 boats
+- CRUD operations (create/edit/delete) work on both boat types
+- All other endpoints unchanged — no regressions
+- Python syntax check passes
+
+**Branch**: fix/2026-04-05-seed-picture-security-boats
+**Side effects**: None
+**Next priority**: Timeline endpoint returns non-JSON (possible P1); Transport/Helpers/Guards/Fuel still have 0 user-created entities (P1 — data needs manual entry or additional seeding)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
