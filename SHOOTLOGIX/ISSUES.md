@@ -1,5 +1,17 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] Checklist tab completely broken — FIXED 2026-04-05
+- **Discovered**: 2026-04-05
+- **Symptoms**: Checklist tab loads the UI shell (date picker, Generate button) but never fetches or displays data. No errors shown to user.
+- **Root cause**: Code uses `state.production` / `state.production.id` which is never set; rest of codebase uses `state.prodId`.
+- **Fix**: Replaced all `state.production` → `state.prodId` in checklist functions.
+- **Branch**: fix/2026-04-05-checklist-tab-broken-state-production
+
+## [P1] ISSUES.md corrections (discovered 2026-04-05)
+- Transport/Helpers "empty" was partially wrong: `/api/productions/1/transport` returns `get_transport_schedules()` (schedule data, which is empty). The actual vehicle list is at `/api/productions/1/transport-vehicles` and returns 14 vehicles correctly.
+- Picture Boats / Security Boats "empty" is a data seeding issue, not a code bug. The tables exist and CRUD works. No boats were ever seeded into `picture_boats` or `security_boats` tables; all boats are in the main `boats` table.
+- Guard Posts has 8 entries; Guard Camp Workers has 0 (no data seeded).
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

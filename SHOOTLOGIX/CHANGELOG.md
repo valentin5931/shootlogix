@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P0] Fix Checklist tab completely non-functional — wrong state property
+
+**Problem**: The Checklist tab silently fails to load, generate, or interact with checklists. Clicking the tab shows the date input and Generate button, but no data ever loads and no errors are shown.
+
+**Root cause**: The checklist code (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) references `state.production` and `state.production.id`, but this property is never set in `app-monolith.js`. The rest of the codebase uses `state.prodId` (198 occurrences). The checklist code was likely copied from `app.js` (which uses a different state structure) without adapting the property names. The guard clause `if (!state.production) return;` always evaluates to true, causing all three functions to bail out silently.
+
+**Fix**: Replaced all 6 occurrences of `state.production`/`state.production.id` with `state.prodId` in `static/app-monolith.js` (lines 13032-13055):
+- `loadChecklist()`: `state.production` → `state.prodId`, `state.production.id` → `state.prodId`
+- `generateChecklist()`: same
+- `toggleChecklistItem()`: same
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- All 45 pytest tests pass
+- No other references to `state.production` (non-plural) remain in `app-monolith.js`
+- API endpoints (`/api/productions/1/checklists`) confirmed working (200 OK)
+
+**Branch**: fix/2026-04-05-checklist-tab-broken-state-production
+**Side effects**: None
+**Next priority**: P1 — Picture Boats/Security Boats tables empty (data seeding issue, not a code bug); investigate other potential `state.production` mismatches in module files
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
