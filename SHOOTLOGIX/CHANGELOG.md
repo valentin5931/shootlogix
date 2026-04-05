@@ -1,5 +1,35 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P0] Fix 25 missing onclick handlers in app-monolith.js
+
+**Problem**: 25 functions referenced by onclick handlers in `index.html` were not defined or exported in `app-monolith.js`. Clicking any of these buttons threw `TypeError: App.xxx is not a function`. Most critically, the **hamburger menu** (`toggleMobileMenu`) was broken, making the app completely unusable on mobile devices. Also broken: Activity panel, Notifications panel, Comments panel, Export date modal, Function editing, Price override, FAB context menu, Auto-fill tides, and several Admin panel functions.
+
+**Root cause**: When the app was refactored from a module-based architecture (`static/modules/*.js` using `window._SL`) to a monolith (`app-monolith.js`), these 25 functions were never ported. The module files exist but are never loaded by `index.html`.
+
+**Fix**:
+- `static/app-monolith.js`: Added full implementations for all 25 missing functions:
+  - `toggleMobileMenu` — mobile hamburger menu navigation
+  - `toggleActivityPanel`, `closeActivityPanel`, `loadActivity`, `loadMoreActivity` — Activity feed panel
+  - `toggleNotifPanel`, `closeNotifPanel`, `markAllNotificationsRead` — Notifications panel
+  - `openCommentsPanel`, `closeCommentsPanel`, `submitComment`, `deleteComment`, `handleCommentKeydown` — Comments
+  - `closeExportDateModal`, `confirmExportDate`, `exportDateShortcut` — Export date picker
+  - `saveFunction`, `onPriceOverrideChange` — Function CRUD and price override
+  - `_toggleFabMenu` — FAB context menu
+  - `autoFillTides` — Tide data auto-fill for PDT
+  - `adminPermLoadMembers`, `adminPermLoadPerms`, `adminShowSaveTemplate`, `adminEpLoadPerms`, `adminEpAdd`, `adminLoadAccessLogs`, `adminExportAccessLogs` — Admin panel
+- All functions added to the IIFE return block (exports)
+
+**Verification**:
+- Node.js syntax check passes
+- All 45 Python tests pass (no regressions)
+- Bracket count balanced (15859/15859)
+- Automated check confirms 0 functions missing from exports
+- App starts and serves all API endpoints correctly
+
+**Branch**: fix/2026-04-05-missing-onclick-handlers
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables empty (data seeding issue); also remaining P1 UX issues from CLAUDE.md audit
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

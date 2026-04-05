@@ -13102,6 +13102,731 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  MOBILE MENU (hamburger)
+  // ═══════════════════════════════════════════════════════════
+  function toggleMobileMenu() {
+    const menu = $('mobile-menu');
+    if (!menu) return;
+    const isOpen = !menu.classList.contains('hidden');
+    if (isOpen) {
+      menu.classList.add('hidden');
+      document.body.style.overflow = '';
+    } else {
+      menu.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      menu.querySelectorAll('.mobile-menu-item[data-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === state.tab);
+      });
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  ACTIVITY PANEL (P5.3)
+  // ═══════════════════════════════════════════════════════════
+  let _activityOpen = false;
+  let _activityData = [];
+  let _activityGrouped = {};
+  let _activityPage = 0;
+  const _ACTIVITY_PAGE_SIZE = 100;
+
+  const _ACTIVITY_MODULE_ICONS = {
+    pdt: { icon: '\u{1F4C5}', color: '#94A3B8' },
+    fleet: { icon: '\u2693', color: '#3B82F6' },
+    'picture-boats': { icon: '\u{1F4F7}', color: '#8B5CF6' },
+    'security-boats': { icon: '\u{1F6E1}', color: '#EF4444' },
+    transport: { icon: '\u{1F69B}', color: '#22C55E' },
+    fuel: { icon: '\u26FD', color: '#F59E0B' },
+    labour: { icon: '\u{1F465}', color: '#F59E0B' },
+    guards: { icon: '\u{1F482}', color: '#06B6D4' },
+    locations: { icon: '\u{1F4CD}', color: '#22C55E' },
+    fnb: { icon: '\u{1F37D}', color: '#F97316' },
+  };
+  const _ACTIVITY_ACTION_CONFIG = {
+    create: { label: 'Added', badge: '+', color: '#22C55E', bg: '#22C55E18' },
+    update: { label: 'Updated', badge: '~', color: '#3B82F6', bg: '#3B82F618' },
+    delete: { label: 'Removed', badge: '\u00D7', color: '#EF4444', bg: '#EF444418' },
+    lock:   { label: 'Locked', badge: '\u{1F512}', color: '#F59E0B', bg: '#F59E0B18' },
+    unlock: { label: 'Unlocked', badge: '\u{1F513}', color: '#8B5CF6', bg: '#8B5CF618' },
+    cascade:{ label: 'Cascaded', badge: '\u2197', color: '#06B6D4', bg: '#06B6D418' },
+  };
+  const _ACTIVITY_MODULE_LABELS = {
+    pdt: 'PDT (Schedule)', fleet: 'Fleet (Boats)', 'picture-boats': 'Picture Boats',
+    'security-boats': 'Security Boats', transport: 'Transport', fuel: 'Fuel',
+    labour: 'Labour', guards: 'Guards', locations: 'Locations', fnb: 'FNB (Food & Beverage)',
+  };
+
+  function _actRelativeTime(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00Z'));
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 7) return `${diffDay}d ago`;
+    return dateStr.slice(0, 10);
+  }
+
+  function _actFormatTime(dateStr) {
+    if (!dateStr || dateStr.length < 16) return '';
+    return dateStr.slice(11, 16);
+  }
+
+  function _actFormatDateHeader(dateStr) {
+    if (!dateStr || dateStr === 'unknown') return 'Unknown date';
+    try {
+      const d = new Date(dateStr + 'T00:00:00');
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      if (dateStr === today.toISOString().slice(0, 10)) return 'Today';
+      if (dateStr === yesterday.toISOString().slice(0, 10)) return 'Yesterday';
+      return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    } catch { return dateStr; }
+  }
+
+  function _actRenderEntry(entry) {
+    const mod = _ACTIVITY_MODULE_ICONS[entry.module] || { icon: '\u2699', color: '#6b7280' };
+    const act = _ACTIVITY_ACTION_CONFIG[entry.action] || _ACTIVITY_ACTION_CONFIG.update;
+    const time = _actFormatTime(entry.timestamp);
+    const relTime = _actRelativeTime(entry.timestamp);
+    const undoneClass = entry.undone ? ' activity-entry-undone' : '';
+    let changesHTML = '';
+    if (entry.changes && entry.changes.length > 0) {
+      changesHTML = `<div class="activity-changes">
+        ${entry.changes.slice(0, 5).map(c => `<div class="activity-change-row">
+          <span class="activity-change-field">${esc(c.field)}</span>
+          <span class="activity-change-old">${esc(String(c.old == null ? 'empty' : c.old))}</span>
+          <span class="activity-change-arrow">&rarr;</span>
+          <span class="activity-change-new">${esc(String(c.new == null ? 'empty' : c.new))}</span>
+        </div>`).join('')}
+        ${entry.changes.length > 5 ? `<div class="activity-change-more">+${entry.changes.length - 5} more</div>` : ''}
+      </div>`;
+    }
+    return `<div class="activity-entry${undoneClass}" data-module="${entry.module}">
+      <div class="activity-timeline-dot">
+        <div class="activity-timeline-line"></div>
+        <div class="activity-dot" style="background:${act.color}"></div>
+      </div>
+      <div class="activity-entry-content">
+        <div class="activity-entry-header">
+          <span class="activity-module-icon">${mod.icon}</span>
+          <span class="activity-action-tag" style="background:${act.bg};color:${act.color}">${esc(act.label)}</span>
+          <span class="activity-entry-time" title="${esc(entry.timestamp || '')}">${esc(time)} - ${esc(relTime)}</span>
+        </div>
+        <div class="activity-entry-desc">${esc(entry.description || '')}</div>
+        ${changesHTML}
+        <div class="activity-entry-user">${esc(entry.user || '')}</div>
+      </div>
+    </div>`;
+  }
+
+  function _actRenderGrouped() {
+    const feed = $('activity-feed');
+    if (!feed) return;
+    if (_activityData.length === 0) {
+      feed.innerHTML = '<div class="activity-empty">No activity found</div>';
+      return;
+    }
+    let html = '';
+    const dates = Object.keys(_activityGrouped).sort().reverse();
+    for (const date of dates) {
+      const entries = _activityGrouped[date];
+      html += `<div class="activity-date-group">
+        <div class="activity-date-header">
+          <span class="activity-date-label">${esc(_actFormatDateHeader(date))}</span>
+          <span class="activity-date-count">${entries.length} action${entries.length > 1 ? 's' : ''}</span>
+        </div>
+        <div class="activity-date-entries">
+          ${entries.map(e => _actRenderEntry(e)).join('')}
+        </div>
+      </div>`;
+    }
+    feed.innerHTML = html;
+  }
+
+  async function toggleActivityPanel() {
+    if (_activityOpen) { closeActivityPanel(); return; }
+    _activityOpen = true;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+    loadActivity();
+  }
+
+  function closeActivityPanel() {
+    _activityOpen = false;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  async function loadActivity() {
+    _activityPage = 0;
+    _activityData = [];
+    _activityGrouped = {};
+    const feed = $('activity-feed');
+    if (feed) feed.innerHTML = '<div class="activity-loading">Loading...</div>';
+    await _fetchActivity();
+  }
+
+  async function _fetchActivity() {
+    if (!state.prodId) return;
+    const module = $('activity-filter-module')?.value || '';
+    const userId = $('activity-filter-user')?.value || '';
+    const action = $('activity-filter-action')?.value || '';
+    const dateFrom = $('activity-filter-from')?.value || '';
+    const dateTo = $('activity-filter-to')?.value || '';
+    const params = new URLSearchParams();
+    params.set('limit', _ACTIVITY_PAGE_SIZE);
+    if (module) params.set('module', module);
+    if (userId) params.set('user_id', userId);
+    if (action) params.set('action_type', action);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    try {
+      const res = await authFetch(`/api/productions/${state.prodId}/activity?${params.toString()}`);
+      if (!res.ok) throw new Error('Failed to load activity');
+      const data = await res.json();
+      let entries = data.entries || [];
+      if (action) entries = entries.filter(e => e.action === action);
+      _activityData = entries;
+      _activityGrouped = {};
+      for (const e of entries) {
+        const dk = e.date || 'unknown';
+        if (!_activityGrouped[dk]) _activityGrouped[dk] = [];
+        _activityGrouped[dk].push(e);
+      }
+      _actRenderGrouped();
+      if (_activityPage === 0 && data.modules) {
+        const sel = $('activity-filter-module');
+        if (sel) {
+          const cv = sel.value;
+          sel.innerHTML = '<option value="">All modules</option>';
+          for (const mod of data.modules) {
+            sel.innerHTML += `<option value="${mod}">${esc(_ACTIVITY_MODULE_LABELS[mod] || mod)}</option>`;
+          }
+          sel.value = cv;
+        }
+      }
+      if (_activityPage === 0) {
+        const sel = $('activity-filter-user');
+        if (sel) {
+          const cv = sel.value;
+          const users = new Map();
+          for (const entry of entries) { if (entry.user_id && entry.user) users.set(entry.user_id, entry.user); }
+          sel.innerHTML = '<option value="">All users</option>';
+          for (const [id, nick] of users) sel.innerHTML += `<option value="${id}">${esc(nick)}</option>`;
+          sel.value = cv;
+        }
+      }
+      const loadMoreBtn = $('activity-load-more');
+      if (loadMoreBtn) loadMoreBtn.style.display = entries.length >= _ACTIVITY_PAGE_SIZE ? '' : 'none';
+    } catch (e) {
+      const feed = $('activity-feed');
+      if (feed) feed.innerHTML = '<div class="activity-empty">Failed to load activity</div>';
+    }
+  }
+
+  function loadMoreActivity() {
+    _activityPage++;
+    _fetchActivity();
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  NOTIFICATIONS PANEL (AXE 9.2)
+  // ═══════════════════════════════════════════════════════════
+  let _notifPanelOpen = false;
+  let _notifData = [];
+  let _unreadCount = 0;
+
+  function _notifUpdateBadge() {
+    const badge = $('notif-badge');
+    if (!badge) return;
+    if (_unreadCount > 0) {
+      badge.textContent = _unreadCount > 99 ? '99+' : _unreadCount;
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  function _notifFmtTime(iso) {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso + 'Z');
+      const now = new Date();
+      const diff = (now - d) / 1000;
+      if (diff < 60) return 'just now';
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch { return iso; }
+  }
+
+  function _notifTypeIcon(type) {
+    const icons = {
+      assignment_created: '+', assignment_updated: '~', assignment_deleted: '\u00D7',
+      pdt_modified: '\u{1F4C5}', budget_exceeded: '!', comment_added: '\u{1F4AC}',
+    };
+    return icons[type] || '~';
+  }
+
+  function _renderNotifications() {
+    const list = $('notif-list');
+    if (!list) return;
+    if (!_notifData.length) {
+      list.innerHTML = '<div class="notif-empty">No notifications</div>';
+      return;
+    }
+    list.innerHTML = _notifData.map(n => {
+      const time = _notifFmtTime(n.created_at);
+      const unread = !n.is_read;
+      return `<div class="notif-item ${unread ? 'notif-unread' : ''}" data-id="${n.id}">
+        <div class="notif-icon">${_notifTypeIcon(n.type)}</div>
+        <div class="notif-content">
+          <div class="notif-title">${esc(n.title || '')}</div>
+          ${n.body ? `<div class="notif-body">${esc(n.body)}</div>` : ''}
+          <div class="notif-time">${esc(time)}</div>
+        </div>
+        ${unread ? '<div class="notif-dot"></div>' : ''}
+      </div>`;
+    }).join('');
+  }
+
+  async function toggleNotifPanel() {
+    _notifPanelOpen = !_notifPanelOpen;
+    const panel = $('notif-panel');
+    if (!panel) return;
+    panel.classList.toggle('hidden', !_notifPanelOpen);
+    if (_notifPanelOpen) {
+      const list = $('notif-list');
+      if (list) list.innerHTML = '<div class="notif-loading">Loading...</div>';
+      try {
+        const res = await authFetch(`/api/notifications?production_id=${state.prodId}&limit=50`);
+        if (!res.ok) throw new Error('Failed');
+        _notifData = await res.json();
+        _renderNotifications();
+      } catch { if ($('notif-list')) $('notif-list').innerHTML = '<div class="notif-empty">Failed to load</div>'; }
+    }
+  }
+
+  function closeNotifPanel() {
+    _notifPanelOpen = false;
+    const panel = $('notif-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function markAllNotificationsRead() {
+    try {
+      await authFetch(`/api/notifications/read-all?production_id=${state.prodId}`, { method: 'POST' });
+      _notifData.forEach(n => n.is_read = 1);
+      _unreadCount = 0;
+      _notifUpdateBadge();
+      _renderNotifications();
+      toast('All notifications marked as read', 'success');
+    } catch { toast('Failed to mark all as read', 'error'); }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  COMMENTS PANEL (AXE 9.1)
+  // ═══════════════════════════════════════════════════════════
+  let _commentsPanelOpen = false;
+  let _commentsEntity = { type: null, id: null };
+  let _commentsData = [];
+
+  function _commentFmtTime(iso) {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso + 'Z');
+      const now = new Date();
+      const diff = (now - d) / 1000;
+      if (diff < 60) return 'just now';
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch { return iso; }
+  }
+
+  function _renderCommentsList() {
+    const list = $('comments-list');
+    if (!list) return;
+    if (!_commentsData.length) {
+      list.innerHTML = '<div class="comments-empty">No comments yet</div>';
+      return;
+    }
+    list.innerHTML = _commentsData.map(c => {
+      const time = _commentFmtTime(c.created_at);
+      const canDel = authState.user && (authState.user.is_admin || c.user_id === authState.user.id);
+      return `<div class="comment-item" data-id="${c.id}">
+        <div class="comment-header">
+          <span class="comment-author">${esc(c.user_nickname || 'Unknown')}</span>
+          <span class="comment-time">${esc(time)}</span>
+          ${canDel ? `<button class="comment-delete" onclick="App.deleteComment(${c.id})" title="Delete">&times;</button>` : ''}
+        </div>
+        <div class="comment-body">${esc(c.body || '')}</div>
+      </div>`;
+    }).join('');
+  }
+
+  async function _loadCommentsData() {
+    const list = $('comments-list');
+    if (!list) return;
+    list.innerHTML = '<div class="comments-loading">Loading...</div>';
+    try {
+      const res = await authFetch(`/api/productions/${state.prodId}/comments?entity_type=${_commentsEntity.type}&entity_id=${_commentsEntity.id}`);
+      if (!res.ok) throw new Error('Failed');
+      _commentsData = await res.json();
+      _renderCommentsList();
+    } catch { if ($('comments-list')) $('comments-list').innerHTML = '<div class="comments-empty">Failed to load comments</div>'; }
+  }
+
+  async function openCommentsPanel(entityType, entityId) {
+    _commentsEntity = { type: entityType, id: entityId };
+    _commentsPanelOpen = true;
+    const panel = $('comments-panel');
+    if (!panel) return;
+    panel.classList.remove('hidden');
+    const title = $('comments-panel-title');
+    if (title) title.textContent = `Comments: ${entityType} #${entityId}`;
+    const input = $('comments-input');
+    if (input) input.value = '';
+    await _loadCommentsData();
+  }
+
+  function closeCommentsPanel() {
+    _commentsPanelOpen = false;
+    const panel = $('comments-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function submitComment() {
+    const input = $('comments-input');
+    const body = (input?.value || '').trim();
+    if (!body) return;
+    input.disabled = true;
+    try {
+      const res = await authFetch(`/api/productions/${state.prodId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entity_type: _commentsEntity.type, entity_id: _commentsEntity.id, body })
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || 'Failed'); }
+      input.value = '';
+      await _loadCommentsData();
+      toast('Comment added', 'success');
+    } catch (e) { toast(e.message || 'Failed to add comment', 'error'); }
+    finally { input.disabled = false; input.focus(); }
+  }
+
+  async function deleteComment(commentId) {
+    if (!confirm('Delete this comment?')) return;
+    try {
+      const res = await authFetch(`/api/comments/${commentId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed');
+      await _loadCommentsData();
+      toast('Comment deleted', 'success');
+    } catch { toast('Failed to delete comment', 'error'); }
+  }
+
+  function handleCommentKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  EXPORT DATE MODAL
+  // ═══════════════════════════════════════════════════════════
+  let _exportDateCallback = null;
+  let _exportDateModule = null;
+
+  function closeExportDateModal() {
+    const overlay = $('export-date-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    _exportDateCallback = null;
+    _exportDateModule = null;
+  }
+
+  async function confirmExportDate() {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    const dateFrom = fromEl ? fromEl.value : '';
+    const dateTo = toEl ? toEl.value : '';
+    closeExportDateModal();
+    if (_exportDateCallback) _exportDateCallback(dateFrom, dateTo);
+  }
+
+  function exportDateShortcut(type) {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    if (!fromEl || !toEl) return;
+    const now = new Date();
+    if (type === 'week') {
+      const day = now.getDay();
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      fromEl.value = monday.toISOString().slice(0, 10);
+      toEl.value = sunday.toISOString().slice(0, 10);
+    } else if (type === 'last-week') {
+      const day = now.getDay();
+      const lastMonday = new Date(now);
+      lastMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1) - 7);
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastMonday.getDate() + 6);
+      fromEl.value = lastMonday.toISOString().slice(0, 10);
+      toEl.value = lastSunday.toISOString().slice(0, 10);
+    } else if (type === 'all') {
+      fromEl.value = '';
+      toEl.value = '';
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  SAVE FUNCTION (edit/create boat functions)
+  // ═══════════════════════════════════════════════════════════
+  function _rerenderCtx(ctx) {
+    if (ctx === 'picture') renderPbRoleCards();
+    else if (ctx === 'transport') renderTbRoleCards();
+    else if (ctx === 'security') renderSecurityBoats();
+    else if (ctx === 'labour') renderLbRoleCards();
+    else if (ctx === 'guard_camp') renderGcRoleCards();
+    else renderRoleCards();
+  }
+
+  async function saveFunction() {
+    const name = $('nf-name').value.trim();
+    if (!name) { toast('Name is required', 'error'); return; }
+    const ctx = $('add-func-overlay')?.dataset.ctx || 'boats';
+    const editId = $('nf-edit-id')?.value;
+    const data = {
+      name,
+      function_group: $('nf-group')?.value,
+      color:          $('nf-color')?.value,
+      default_start:  $('nf-start')?.value || null,
+      default_end:    $('nf-end')?.value   || null,
+      specs:          $('nf-specs')?.value.trim() || null,
+    };
+    try {
+      if (editId) {
+        const updated = await api('PUT', `/api/boat-functions/${editId}`, data);
+        const funcArrays = {
+          boats: 'functions', picture: 'pictureFunctions', transport: 'transportFunctions',
+          security: 'securityFunctions', labour: 'labourFunctions', guard_camp: 'gcFunctions',
+        };
+        const arr = state[funcArrays[ctx] || 'functions'];
+        const idx = arr.findIndex(f => f.id === parseInt(editId));
+        if (idx !== -1) Object.assign(arr[idx], updated);
+        closeAddFunctionModal(true);
+        _rerenderCtx(ctx);
+        toast(`Function "${updated.name}" updated`);
+      } else {
+        data.sort_order = ctx === 'picture' ? state.pictureFunctions.length : ctx === 'labour' ? state.labourFunctions.length : ctx === 'guard_camp' ? state.gcFunctions.length : state.functions.length;
+        data.context = ctx;
+        const func = await api('POST', `/api/productions/${state.prodId}/boat-functions`, data);
+        if (ctx === 'picture') state.pictureFunctions.push(func);
+        else if (ctx === 'transport') state.transportFunctions.push(func);
+        else if (ctx === 'security') state.securityFunctions.push(func);
+        else if (ctx === 'labour') state.labourFunctions.push(func);
+        else if (ctx === 'guard_camp') state.gcFunctions.push(func);
+        else state.functions.push(func);
+        closeAddFunctionModal(true);
+        _rerenderCtx(ctx);
+        toast(`Function "${func.name}" created`);
+      }
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  PRICE OVERRIDE CHANGE
+  // ═══════════════════════════════════════════════════════════
+  function onPriceOverrideChange() {
+    const poInput = $('am-price-override');
+    const orGroup = $('am-override-reason-group');
+    if (!poInput || !orGroup) return;
+    const val = parseFloat(poInput.value);
+    orGroup.style.display = (val > 0) ? '' : 'none';
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  FAB MENU (floating action button context menu)
+  // ═══════════════════════════════════════════════════════════
+  let _fabMenuOpen = false;
+
+  function _toggleFabMenu() {
+    if (_fabMenuOpen) {
+      const menu = $('fab-context-menu');
+      if (menu) { menu.classList.add('hidden'); menu.style.display = 'none'; }
+      _fabMenuOpen = false;
+      return;
+    }
+    _fabMenuOpen = true;
+    let menu = $('fab-context-menu');
+    if (!menu) {
+      menu = document.createElement('div');
+      menu.id = 'fab-context-menu';
+      menu.className = 'fab-context-menu';
+      document.body.appendChild(menu);
+    }
+    menu.innerHTML = '<div style="color:var(--text-3);padding:.5rem;font-size:.8rem">No context actions</div>';
+    menu.classList.remove('hidden');
+    menu.style.display = 'flex';
+    setTimeout(() => {
+      document.addEventListener('click', function _fabOut(e) {
+        const m = $('fab-context-menu');
+        if (m && !m.contains(e.target) && e.target.id !== 'fab-btn') {
+          m.classList.add('hidden'); m.style.display = 'none'; _fabMenuOpen = false;
+        }
+        document.removeEventListener('click', _fabOut);
+      }, { once: true });
+    }, 10);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  AUTO-FILL TIDES
+  // ═══════════════════════════════════════════════════════════
+  async function autoFillTides() {
+    const days = state.shootingDays;
+    if (!days || !days.length) { toast('No shooting days to fill', 'error'); return; }
+    const dates = days.map(d => d.date).filter(Boolean).sort();
+    if (!dates.length) { toast('No dates found', 'error'); return; }
+    const start = dates[0];
+    const end = dates[dates.length - 1];
+    toast('Fetching tide data...');
+    try {
+      const tideData = await api('GET', `/api/tides?lat=8.35&lng=-79.05&start=${start}&end=${end}`);
+      const tideMap = {};
+      (tideData || []).forEach(t => { tideMap[t.date] = t; });
+      let updated = 0;
+      for (const day of days) {
+        const td = tideMap[day.date];
+        if (!td || td.height == null) continue;
+        const existingH = day.events && day.events.length ? day.events[0].maree_hauteur : day.maree_hauteur;
+        if (existingH != null) continue;
+        await api('PUT', `/api/productions/${state.prodId}/shooting-days/${day.id}`, { maree_hauteur: td.height, maree_statut: td.status });
+        updated++;
+      }
+      await loadShootingDays();
+      renderPDT();
+      toast(`Tides filled for ${updated} day${updated !== 1 ? 's' : ''}`);
+    } catch (e) { toast('Error fetching tides: ' + e.message, 'error'); }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  ADMIN PANEL — missing functions
+  // ═══════════════════════════════════════════════════════════
+  async function adminPermLoadMembers() {
+    const projSel = $('admin-perm-project');
+    const userSel = $('admin-perm-user');
+    if (!projSel || !userSel) return;
+    const projId = projSel.value;
+    if (!projId) return;
+    try {
+      const members = await api('GET', `/api/admin/projects/${projId}/members`);
+      userSel.innerHTML = '<option value="">Select user</option>';
+      for (const m of members) {
+        userSel.innerHTML += `<option value="${m.user_id}">${esc(m.nickname)} (${esc(m.role)})</option>`;
+      }
+    } catch (e) { toast('Failed to load members: ' + e.message, 'error'); }
+  }
+
+  async function adminPermLoadPerms() {
+    const userSel = $('admin-perm-user');
+    const list = $('admin-perm-list');
+    if (!userSel || !list) return;
+    const userId = userSel.value;
+    if (!userId) { list.innerHTML = ''; return; }
+    try {
+      const perms = await api('GET', `/api/admin/users/${userId}/permissions`);
+      list.innerHTML = (perms || []).map(p =>
+        `<div style="padding:.3rem .5rem;font-size:.8rem;background:var(--bg-surface);border-radius:4px;margin-bottom:.2rem">
+          ${esc(p.permission || p.name || JSON.stringify(p))}
+        </div>`
+      ).join('') || '<div style="color:var(--text-4);font-size:.8rem">No permissions</div>';
+    } catch (e) { list.innerHTML = `<div style="color:var(--red);font-size:.8rem">${esc(e.message)}</div>`; }
+  }
+
+  function adminShowSaveTemplate() {
+    const name = prompt('Template name:');
+    if (!name || !name.trim()) return;
+    api('POST', `/api/admin/templates`, { name: name.trim(), production_id: state.prodId })
+      .then(() => toast('Template saved', 'success'))
+      .catch(e => toast('Error: ' + e.message, 'error'));
+  }
+
+  async function adminEpLoadPerms() {
+    const userSel = $('admin-ep-user');
+    const typeSel = $('admin-ep-type');
+    const list = $('admin-ep-list');
+    if (!userSel || !typeSel || !list) return;
+    const userId = userSel.value;
+    const entityType = typeSel.value;
+    if (!userId) { list.innerHTML = ''; return; }
+    try {
+      const perms = await api('GET', `/api/admin/users/${userId}/entity-permissions?entity_type=${entityType || ''}`);
+      list.innerHTML = (perms || []).map(p =>
+        `<div style="padding:.3rem .5rem;font-size:.8rem;background:var(--bg-surface);border-radius:4px;margin-bottom:.2rem;display:flex;justify-content:space-between">
+          <span>${esc(p.entity_type || '')}:${p.entity_id || ''} — ${esc(p.permission || '')}</span>
+        </div>`
+      ).join('') || '<div style="color:var(--text-4);font-size:.8rem">No entity permissions</div>';
+    } catch (e) { list.innerHTML = `<div style="color:var(--red);font-size:.8rem">${esc(e.message)}</div>`; }
+  }
+
+  async function adminEpAdd() {
+    const userId = $('admin-ep-user')?.value;
+    const entityType = $('admin-ep-type')?.value;
+    const entityId = $('admin-ep-entity-id')?.value;
+    const permission = $('admin-ep-permission')?.value;
+    if (!userId || !entityType || !entityId || !permission) {
+      toast('All fields are required', 'error'); return;
+    }
+    try {
+      await api('POST', `/api/admin/users/${userId}/entity-permissions`, {
+        entity_type: entityType, entity_id: parseInt(entityId), permission
+      });
+      toast('Permission added', 'success');
+      adminEpLoadPerms();
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function adminLoadAccessLogs() {
+    const list = $('admin-logs-list');
+    if (!list) return;
+    const userId = $('admin-logs-user')?.value || '';
+    const date = $('admin-logs-date')?.value || '';
+    const endpoint = $('admin-logs-endpoint')?.value || '';
+    const params = new URLSearchParams();
+    if (userId) params.set('user_id', userId);
+    if (date) params.set('date', date);
+    if (endpoint) params.set('endpoint', endpoint);
+    params.set('limit', '100');
+    try {
+      const logs = await api('GET', `/api/admin/access-logs?${params.toString()}`);
+      list.innerHTML = (logs || []).map(l =>
+        `<div style="padding:.3rem .5rem;font-size:.75rem;background:var(--bg-surface);border-radius:4px;margin-bottom:.2rem;display:flex;gap:.5rem">
+          <span style="color:var(--text-3)">${esc(l.timestamp || '')}</span>
+          <span>${esc(l.nickname || l.user_id || '')}</span>
+          <span style="color:var(--blue)">${esc(l.method || '')} ${esc(l.endpoint || '')}</span>
+          <span style="color:var(--text-4)">${l.status || ''}</span>
+        </div>`
+      ).join('') || '<div style="color:var(--text-4);font-size:.8rem">No logs found</div>';
+    } catch (e) { list.innerHTML = `<div style="color:var(--red);font-size:.8rem">${esc(e.message)}</div>`; }
+  }
+
+  function adminExportAccessLogs() {
+    const userId = $('admin-logs-user')?.value || '';
+    const date = $('admin-logs-date')?.value || '';
+    const endpoint = $('admin-logs-endpoint')?.value || '';
+    const params = new URLSearchParams();
+    if (userId) params.set('user_id', userId);
+    if (date) params.set('date', date);
+    if (endpoint) params.set('endpoint', endpoint);
+    params.set('format', 'csv');
+    authDownload(`/api/admin/access-logs?${params.toString()}`);
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13246,6 +13971,26 @@ const App = (() => {
     openShortcutsPanel, closeShortcutsPanel,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
+    // Mobile menu
+    toggleMobileMenu,
+    // Activity panel (P5.3)
+    toggleActivityPanel, closeActivityPanel, loadActivity, loadMoreActivity,
+    // Notifications panel (AXE 9.2)
+    toggleNotifPanel, closeNotifPanel, markAllNotificationsRead,
+    // Comments panel (AXE 9.1)
+    openCommentsPanel, closeCommentsPanel, submitComment, deleteComment, handleCommentKeydown,
+    // Export date modal
+    closeExportDateModal, confirmExportDate, exportDateShortcut,
+    // Function edit/create
+    saveFunction, onPriceOverrideChange,
+    // FAB context menu
+    _toggleFabMenu,
+    // Tides
+    autoFillTides,
+    // Admin panel extras
+    adminPermLoadMembers, adminPermLoadPerms, adminShowSaveTemplate,
+    adminEpLoadPerms, adminEpAdd,
+    adminLoadAccessLogs, adminExportAccessLogs,
     init,
   };
 })();
