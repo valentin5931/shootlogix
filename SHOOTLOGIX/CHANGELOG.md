@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P1] Fix Boats and Picture Boats tabs not reloading data on tab switch
+
+**Problem**: Boats and Picture Boats tabs only loaded data once at app startup. Navigating away and back showed stale data — unlike all other tabs (Transport, Labour, Guards, Security Boats, Fuel) which reload fresh data on every tab visit. Additionally, the `_reloadCurrentTab()` function for Picture Boats stored data to wrong state variables (`state.pbFunctions` / `state.pbAssignments` instead of `state.pictureFunctions` / `state.pictureAssignments`), causing data loss on manual refresh.
+
+**Root cause**: `setTab()` and `renderFleetUnified()` called `renderBoats()` / `renderPictureBoats()` (render only), while all other tabs used `_loadAndRender*()` patterns that fetch fresh data before rendering. This inconsistency was introduced when the fleet sub-tab system was built — the load functions existed but weren't wired into tab navigation.
+
+**Fix**:
+- `static/app-monolith.js`: Added `_loadAndRenderBoats()` and `_loadAndRenderPictureBoats()` async functions that show loading skeletons, fetch data via API, then render.
+- Updated `setTab()` to call `_loadAndRenderBoats()` / `_loadAndRenderPictureBoats()` instead of render-only functions.
+- Updated `renderFleetUnified()` (fleet sub-tab switching) similarly.
+- Replaced inline reload logic in `_reloadCurrentTab()` with calls to the new functions, fixing the state variable mismatch bug.
+
+**Verification**:
+- JS syntax check passes (node -c)
+- All API endpoints return correct data (boats: 46, transport: 14, dashboard: 200)
+- No Flask errors in server log
+- All Fleet sub-tabs (Boats, Picture Boats, Security Boats) now consistently reload data
+
+**Branch**: fix/2026-04-05-boats-pictureboats-stale-data
+**Side effects**: None — existing behavior preserved, just adds data reload before render
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data model issue — boats all in main `boats` table). Users need to create entries via UI.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

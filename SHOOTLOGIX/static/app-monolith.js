@@ -914,7 +914,21 @@ const App = (() => {
     state.pictureAssignments = assignments;
   }
 
-  // ── Fleet unified tab ──────────────────────────────────────
+  async function _loadAndRenderBoats() {
+    const rg = $('role-groups'); if (rg) rg.innerHTML = _skeletonCards(3);
+    const sc = $('schedule-container'); if (sc) sc.innerHTML = _skeletonTable();
+    try { await loadBoatsData(); } catch(e) { toast('Error loading boats: ' + e.message, 'error'); }
+    renderBoats();
+  }
+
+  async function _loadAndRenderPictureBoats() {
+    const rg = $('pb-role-groups'); if (rg) rg.innerHTML = _skeletonCards(3);
+    const sc = $('pb-schedule-container'); if (sc) sc.innerHTML = _skeletonTable();
+    try { await loadPictureBoatsData(); } catch(e) { toast('Error loading picture boats: ' + e.message, 'error'); }
+    renderPictureBoats();
+  }
+
+  // ── Fleet unified tab ───────��──────────────────────────���───
   // Fleet shows a sub-navigation, then activates the appropriate existing tab view
   let _fleetSubTab = 'boats'; // boats | picture-boats | security-boats
 
@@ -948,9 +962,9 @@ const App = (() => {
       }
     }
 
-    // Trigger the sub-tab's render function
-    if (target === 'boats')           { _tabCtx = 'boats';   renderBoats(); }
-    if (target === 'picture-boats')   { _tabCtx = 'picture'; renderPictureBoats(); }
+    // Trigger the sub-tab's load + render function
+    if (target === 'boats')           { _tabCtx = 'boats';   _loadAndRenderBoats(); }
+    if (target === 'picture-boats')   { _tabCtx = 'picture'; _loadAndRenderPictureBoats(); }
     if (target === 'security-boats')  { _loadAndRenderSecurityBoats(); }
 
     // Keep Fleet tab visually active
@@ -1344,8 +1358,8 @@ const App = (() => {
 
     if (tab === 'dashboard')       renderDashboard();
     if (tab === 'pdt')             { if (_pdtView === 'calendar') { _initCalMonth(); renderPDTCalendar(); } else renderPDT(); }
-    if (tab === 'boats')           { _tabCtx = 'boats';     renderBoats(); }
-    if (tab === 'picture-boats')   { _tabCtx = 'picture';   renderPictureBoats(); }
+    if (tab === 'boats')           { _tabCtx = 'boats';     _loadAndRenderBoats(); }
+    if (tab === 'picture-boats')   { _tabCtx = 'picture';   _loadAndRenderPictureBoats(); }
     if (tab === 'transport')       { _tabCtx = 'transport'; _loadAndRenderTransport(); }
     if (tab === 'fuel')            _loadAndRenderFuel();
     if (tab === 'budget')          renderBudget();
@@ -13000,8 +13014,8 @@ const App = (() => {
     const tab = state.tab;
     try {
       if (tab === 'pdt')             { state.shootingDays = await api('GET', `/api/productions/${state.prodId}/shooting-days`); renderPDT(); }
-      else if (tab === 'boats')      { const [b,f,a] = await Promise.all([api('GET',`/api/productions/${state.prodId}/boats`), api('GET',`/api/productions/${state.prodId}/boat-functions?context=boats`), api('GET',`/api/productions/${state.prodId}/assignments`)]); state.boats=b; state.functions=f; state.assignments=a; renderBoats(); }
-      else if (tab === 'picture-boats')   { const [b,f,a] = await Promise.all([api('GET',`/api/productions/${state.prodId}/picture-boats`), api('GET',`/api/productions/${state.prodId}/boat-functions?context=picture`), api('GET',`/api/productions/${state.prodId}/picture-boat-assignments`)]); state.pictureBoats=b; state.pbFunctions=f; state.pbAssignments=a; renderPictureBoats(); }
+      else if (tab === 'boats')           { await _loadAndRenderBoats(); }
+      else if (tab === 'picture-boats')   { await _loadAndRenderPictureBoats(); }
       else if (tab === 'security-boats')  { await _loadAndRenderSecurityBoats(); }
       else if (tab === 'transport')       { await _loadAndRenderTransport(); }
       else if (tab === 'fuel')            { await _loadAndRenderFuel(); }
