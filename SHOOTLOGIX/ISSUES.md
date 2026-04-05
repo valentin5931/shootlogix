@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] SCHEDULE_START / SCHEDULE_END hardcoded in app-monolith.js
+- **Discovered**: 2026-04-05
+- **Symptoms**: All schedule grids (boats, picture boats, transport, fuel) use hardcoded dates `2026-02-15` to `2026-05-05` instead of deriving the date range from the production's `start_date`/`end_date` (available via `/api/productions`).
+- **Likely cause**: The constants `SCHEDULE_START` and `SCHEDULE_END` (line ~97-98) were set during initial development and never made dynamic.
+- **Files involved**: `static/app-monolith.js` (lines 97-98, and ~6 usages in `_locDates()` and schedule rendering)
+- **Estimated effort**: Medium — need to load production dates during init and replace all references
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

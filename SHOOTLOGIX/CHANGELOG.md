@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P0] Fix Checklist tab completely broken + PDT hardcoded date range
+
+**Problem**:
+1. The Checklist tab (load, generate, toggle items) silently did nothing when clicked — the entire module was non-functional.
+2. The PDT (schedule) tab showed a hardcoded date range "Mar 25 → Apr 25, 2026" instead of computing it from actual shooting day data.
+
+**Root cause**:
+1. Three functions in `app-monolith.js` (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) guarded their logic with `if (!state.production) return;`. However, `state.production` was never set anywhere in the codebase — only `state.prodId` is set during `_selectProject()`. This caused all three functions to silently return without calling the API.
+2. The PDT date range was a hardcoded string literal rather than being computed from the first/last shooting day dates.
+
+**Fix**:
+- `static/app-monolith.js`: Replaced all 6 references to `state.production` / `state.production.id` with `state.prodId` in the checklist module (lines ~13032-13055).
+- `static/app-monolith.js`: Replaced hardcoded "Mar 25 → Apr 25, 2026" with dynamic computation from `days[0].date` and `days[days.length-1].date`.
+
+**Verification**:
+- Checklist API endpoints return 200 with correct data (96 items for 2026-03-25)
+- JS syntax check passes
+- All 45 tests pass
+- PDT date range now reflects actual shooting day dates
+
+**Branch**: fix/2026-04-05-checklist-tab-broken
+**Side effects**: None
+**Next priority**: P1 — Dynamic SCHEDULE_START/SCHEDULE_END from production dates (currently hardcoded to 2026-02-15 / 2026-05-05)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
