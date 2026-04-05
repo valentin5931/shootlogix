@@ -7890,26 +7890,29 @@ def api_timeline(prod_id):
             })
 
         # --- Locations ---
-        locations = conn.execute("SELECT id, name, site FROM locations WHERE production_id=?", (prod_id,)).fetchall()
+        locations = conn.execute("SELECT id, name, location_type FROM locations WHERE production_id=?", (prod_id,)).fetchall()
         for loc in locations:
             schedules = conn.execute(
-                "SELECT id, date, prep, filming, wrap FROM location_schedules WHERE location_id=?",
+                "SELECT id, date, status FROM location_schedules WHERE location_id=?",
                 (loc['id'],)
             ).fetchall()
-            loc_assignments = []
+            # Group schedules by date to combine multiple status entries (P/F/W)
+            from collections import defaultdict
+            date_phases = defaultdict(list)
+            date_ids = {}
             for s in schedules:
-                phases = []
-                if s['prep']: phases.append('P')
-                if s['filming']: phases.append('F')
-                if s['wrap']: phases.append('W')
-                if phases:
-                    loc_assignments.append({
-                        'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
-                        'status': 'confirmed', 'phases': '/'.join(phases)
-                    })
+                if s['status']:
+                    date_phases[s['date']].append(s['status'])
+                    date_ids.setdefault(s['date'], s['id'])
+            loc_assignments = []
+            for date, phases in date_phases.items():
+                loc_assignments.append({
+                    'id': date_ids[date], 'start_date': date, 'end_date': date,
+                    'status': 'confirmed', 'phases': '/'.join(sorted(set(phases)))
+                })
             resources.append({
                 'id': f"loc-{loc['id']}", 'name': loc['name'], 'type': 'location', 'group': 'Locations',
-                'subgroup': loc['site'] or 'Location',
+                'subgroup': loc['location_type'] or 'Location',
                 'assignments': loc_assignments
             })
 

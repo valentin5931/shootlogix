@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P1] Fix Timeline tab — completely non-functional due to 3 bugs
+
+**Problem**: Clicking the Timeline tab did nothing. The Gantt timeline view was completely broken.
+
+**Root cause**: Three separate bugs:
+1. `timeline.js` loads before `app-monolith.js`, so `App` is undefined when it tries to register `App.renderTimeline`. The registration silently fails.
+2. `timeline.js` used `window._SL.state.prodId` to get the production ID, but `window._SL` doesn't exist in the monolith architecture. It uses `localStorage.getItem('currentProdId')`.
+3. `timeline.js` used `localStorage.getItem('sl_token')` for auth, but the monolith stores the token as `access_token`.
+4. The `/api/productions/<id>/timeline` Flask route crashed with 500 errors due to two wrong column names: `site` (should be `location_type`) in the locations query and `prep/filming/wrap` (should be `status`) in the location_schedules query. The location_schedules schema stores one row per date/status, not boolean columns.
+
+**Fix**:
+- `static/app-monolith.js` (line 1362): Call `Timeline.init()` directly instead of relying on `App.renderTimeline` registration
+- `static/js/timeline.js`: Deferred `App.renderTimeline` registration to `DOMContentLoaded`; changed `window._SL.state.prodId` to `localStorage.getItem('currentProdId')`; changed `sl_token` to `access_token`
+- `app.py` (line ~7893): Fixed locations query to use `location_type` instead of `site`; rewrote location_schedules query to match actual schema (single `status` column with 'P'/'F'/'W' values, grouped by date)
+
+**Verification**:
+- `/api/productions/1/timeline` now returns 200 with 82 resources (47 boats, 14 vehicles, 21 locations), 32 shooting days
+- All 45 existing tests still pass
+- All other API endpoints verified (dashboard, boats, budget, PDT, locations, exports — all 200)
+- JS syntax check passes (balanced braces/parens)
+
+**Branch**: fix/2026-04-05-timeline-tab-broken
+**Side effects**: None
+**Next priority**: The P0 about fleet/crew sub-tab event handlers in ISSUES.md may be resolved (needs browser testing). Remaining P1s are empty data tables (picture boats, security boats, transport, helpers, guards, FNB — users need to add data through UI).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

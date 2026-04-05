@@ -41,7 +41,7 @@ const Timeline = (() => {
 
   // ── Helpers ────────────────────────────────────────────────
   function _api(url) {
-    const token = localStorage.getItem('sl_token');
+    const token = localStorage.getItem('access_token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = 'Bearer ' + token;
     return fetch(url, { headers }).then(r => {
@@ -438,7 +438,8 @@ const Timeline = (() => {
 
   // ── Data loading ───────────────────────────────────────────
   async function _loadData() {
-    const prodId = window._SL ? window._SL.state.prodId : null;
+    const prodId = localStorage.getItem('currentProdId')
+      || (window._SL ? window._SL.state.prodId : null);
     if (!prodId) {
       _container.innerHTML = '<div style="padding:2rem;color:var(--text-3)">No production selected.</div>';
       return;
@@ -470,7 +471,9 @@ const Timeline = (() => {
   return { init, render };
 })();
 
-// Register on App for tab system
-if (typeof App !== 'undefined') {
-  App.renderTimeline = () => Timeline.init();
-}
+// Register on App for tab system (deferred — App may not exist yet at script load time)
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof App !== 'undefined') {
+    App.renderTimeline = () => Timeline.init();
+  }
+});

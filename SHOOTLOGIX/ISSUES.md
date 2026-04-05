@@ -1,5 +1,10 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [FIXED] [P1] Timeline tab completely non-functional
+- **Discovered**: 2026-04-05
+- **Fixed**: 2026-04-05 — Branch: fix/2026-04-05-timeline-tab-broken
+- **Root cause**: 3 JS bugs (script load order, wrong state reference `window._SL`, wrong token key `sl_token`) + 2 Flask bugs (wrong column names `site` and `prep/filming/wrap` in timeline route)
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
