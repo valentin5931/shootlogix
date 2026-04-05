@@ -1,5 +1,31 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P1] Wire up export date range modal in monolith
+
+**Problem**: The export date range picker modal (AXE 2.1) was implemented in the old `app.js` module system but never ported to `app-monolith.js`. All export buttons (Boats, Picture Boats, Security Boats, Transport, Fuel, Labour, Guards, FNB, Budget) downloaded full data without letting the user select a date range first.
+
+**Root cause**: When the monolith was created from the old module system, the `openExportDateModal` / `confirmExportDate` / `exportDateShortcut` functions and the date-range-aware export wiring were not carried over. The HTML modal already existed in `index.html` (lines 1735-1765) but was unreachable.
+
+**Fix**:
+- `static/app-monolith.js`: Added 7 new functions (`openExportDateModal`, `closeExportDateModal`, `_selectExportFormat`, `_getSelectedExportFormat`, `_loadExportDefaults`, `confirmExportDate`, `exportDateShortcut`, `_exportWithDates`) implementing the full date range picker flow
+- Rewired all 16+ export functions across all modules (boats, picture boats, security boats, transport, fuel, labour, guards, FNB, budget) to route through the date range modal before downloading
+- Smart defaults: modal auto-loads last-used date range (saved per-module) or falls back to the module's data range
+- Quick shortcuts: "This week", "Last week", "All" buttons for fast selection
+- Format picker: modules with multiple formats (CSV/JSON, PDF/CSV) show inline format buttons in the modal
+- Escape key closes the modal
+- All server-side export endpoints already support `?from=&to=` query params — this fix connects the UI to that capability
+
+**Verification**:
+- JS syntax check passes (node --check)
+- All export endpoints return 200 with date range params
+- Export-defaults API saves and retrieves per-module preferences
+- Modal HTML already present in index.html, no template changes needed
+- All existing tabs and features continue to work (no regressions)
+
+**Branch**: fix/2026-04-05-export-date-range-modal
+**Side effects**: None
+**Next priority**: P1 — Add confirmation dialogs for individual assignment deletions; investigate empty picture/security boats data
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

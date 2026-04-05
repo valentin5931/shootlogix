@@ -1,5 +1,24 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [RESOLVED] Export date range modal not wired in monolith
+- **Discovered**: 2026-04-05
+- **Resolved**: 2026-04-05 — Branch fix/2026-04-05-export-date-range-modal
+- **Fix**: Added openExportDateModal and all supporting functions to app-monolith.js; wired all 16+ export buttons to use the modal
+
+## [P1] No confirmation dialog for individual assignment deletions
+- **Discovered**: 2026-04-05
+- **Symptoms**: `removeAssignmentById` and `pbRemoveAssignmentById` delete assignments without confirmation prompt
+- **Likely cause**: These functions were added for quick-action from schedule popovers and skip the `showConfirm()` step
+- **Files involved**: `static/app-monolith.js` (lines ~2935, ~2947)
+- **Estimated effort**: Quick fix — wrap in showConfirm()
+
+## [P1] PDF exports crash with 500 when PyMuPDF unavailable
+- **Discovered**: 2026-04-05
+- **Symptoms**: `/export/budget-pdf`, `/export/daily-report-pdf`, `/export/vendor-summary-pdf` return 500 Internal Server Error with no user feedback
+- **Likely cause**: `import fitz` at the top of each handler crashes if pymupdf is not installed; no try/except around the import
+- **Files involved**: `app.py` (lines 5444, 5469, 5512, 5634, 5877)
+- **Estimated effort**: Quick fix — wrap imports in try/except, return 503 with helpful message
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

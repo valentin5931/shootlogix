@@ -4315,8 +4315,18 @@ const App = (() => {
   }
 
   function toggleExport() { $('export-menu').classList.toggle('hidden'); }
-  function exportCSV()  { authDownload(`/api/productions/${state.prodId}/export/csv`);  $('export-menu').classList.add('hidden'); }
-  function exportJSON() { authDownload(`/api/productions/${state.prodId}/export/json`); $('export-menu').classList.add('hidden'); }
+  function exportCSV()  {
+    $('export-menu').classList.add('hidden');
+    openExportDateModal('boats', 'Boats', [{ key: 'csv', label: 'CSV' }, { key: 'json', label: 'JSON' }], (from, to, fmt) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/${fmt === 'json' ? 'json' : 'csv'}`, from, to);
+    });
+  }
+  function exportJSON() {
+    $('export-menu').classList.add('hidden');
+    openExportDateModal('boats', 'Boats', [{ key: 'json', label: 'JSON' }, { key: 'csv', label: 'CSV' }], (from, to, fmt) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/${fmt === 'json' ? 'json' : 'csv'}`, from, to);
+    });
+  }
 
   // ═══════════════════════════════════════════════════════════
   //  PICTURE BOATS TAB
@@ -4945,8 +4955,18 @@ const App = (() => {
   }
 
   function pbToggleExport() { $('pb-export-menu').classList.toggle('hidden'); }
-  function pbExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/picture-boats/csv`);  $('pb-export-menu').classList.add('hidden'); }
-  function pbExportJSON() { authDownload(`/api/productions/${state.prodId}/export/picture-boats/json`); $('pb-export-menu').classList.add('hidden'); }
+  function pbExportCSV()  {
+    $('pb-export-menu').classList.add('hidden');
+    openExportDateModal('picture_boats', 'Picture Boats', [{ key: 'csv', label: 'CSV' }, { key: 'json', label: 'JSON' }], (from, to, fmt) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/picture-boats/${fmt === 'json' ? 'json' : 'csv'}`, from, to);
+    });
+  }
+  function pbExportJSON() {
+    $('pb-export-menu').classList.add('hidden');
+    openExportDateModal('picture_boats', 'Picture Boats', [{ key: 'json', label: 'JSON' }, { key: 'csv', label: 'CSV' }], (from, to, fmt) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/picture-boats/${fmt === 'json' ? 'json' : 'csv'}`, from, to);
+    });
+  }
 
   // ═══════════════════════════════════════════════════════════
   //  BUDGET (consolidated)
@@ -5508,35 +5528,51 @@ const App = (() => {
   }
 
   function budgetExportXlsx() {
-    _asyncExport(
-      `/api/productions/${state.prodId}/export/budget-global/async`,
-      `/api/productions/${state.prodId}/export/budget-global`
-    );
+    openExportDateModal('budget', 'Budget (XLSX)', [], (from, to) => {
+      const params = [];
+      if (from) params.push(`from=${from}`);
+      if (to) params.push(`to=${to}`);
+      const qs = params.length ? '?' + params.join('&') : '';
+      _asyncExport(
+        `/api/productions/${state.prodId}/export/budget-global/async${qs}`,
+        `/api/productions/${state.prodId}/export/budget-global${qs}`
+      );
+    });
   }
 
   function budgetExportPdf() {
-    authDownload(`/api/productions/${state.prodId}/export/budget-pdf`);
+    openExportDateModal('budget', 'Budget (PDF)', [], (from, to) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/budget-pdf`, from, to);
+    });
   }
 
   function dailyReportPdf() {
-    authDownload(`/api/productions/${state.prodId}/export/daily-report-pdf`);
+    openExportDateModal('budget', 'Daily Report (PDF)', [], (from, to) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/daily-report-pdf`, from, to);
+    });
   }
 
   function vendorSummaryExport() {
-    // Show format picker: CSV or PDF
-    const fmt = confirm('OK = PDF format\nCancel = CSV format') ? 'pdf' : 'csv';
-    if (fmt === 'pdf') {
-      authDownload(`/api/productions/${state.prodId}/export/vendor-summary-pdf`);
-    } else {
-      authDownload(`/api/productions/${state.prodId}/export/vendor-summary`);
-    }
+    openExportDateModal('budget', 'Vendor Summary', [{ key: 'pdf', label: 'PDF' }, { key: 'csv', label: 'CSV' }], (from, to, fmt) => {
+      if (fmt === 'pdf') {
+        _exportWithDates(`/api/productions/${state.prodId}/export/vendor-summary-pdf`, from, to);
+      } else {
+        _exportWithDates(`/api/productions/${state.prodId}/export/vendor-summary`, from, to);
+      }
+    });
   }
 
   function logisticsExportXlsx() {
-    _asyncExport(
-      `/api/productions/${state.prodId}/export/logistics/async`,
-      `/api/productions/${state.prodId}/export/logistics`
-    );
+    openExportDateModal('budget', 'Logistics (XLSX)', [], (from, to) => {
+      const params = [];
+      if (from) params.push(`from=${from}`);
+      if (to) params.push(`to=${to}`);
+      const qs = params.length ? '?' + params.join('&') : '';
+      _asyncExport(
+        `/api/productions/${state.prodId}/export/logistics/async${qs}`,
+        `/api/productions/${state.prodId}/export/logistics${qs}`
+      );
+    });
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -6190,8 +6226,18 @@ const App = (() => {
   }
 
   function tbToggleExport() { $('tb-export-menu').classList.toggle('hidden'); }
-  function tbExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/transport/csv`);  $('tb-export-menu').classList.add('hidden'); }
-  function tbExportJSON() { authDownload(`/api/productions/${state.prodId}/export/transport/json`); $('tb-export-menu').classList.add('hidden'); }
+  function tbExportCSV()  {
+    $('tb-export-menu').classList.add('hidden');
+    openExportDateModal('transport', 'Transport', [{ key: 'csv', label: 'CSV' }, { key: 'json', label: 'JSON' }], (from, to, fmt) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/transport/${fmt === 'json' ? 'json' : 'csv'}`, from, to);
+    });
+  }
+  function tbExportJSON() {
+    $('tb-export-menu').classList.add('hidden');
+    openExportDateModal('transport', 'Transport', [{ key: 'json', label: 'JSON' }, { key: 'csv', label: 'CSV' }], (from, to, fmt) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/transport/${fmt === 'json' ? 'json' : 'csv'}`, from, to);
+    });
+  }
 
   function showAddTransportVehicleModal() {
     ['ntv-name','ntv-price','ntv-driver','ntv-vendor','ntv-notes','ntv-nr'].forEach(id => { const el = $(id); if(el) el.value = ''; });
@@ -7143,7 +7189,9 @@ const App = (() => {
   // ── Fuel Budget Export (KLAS7_FUEL_YYMMDD.csv) ─────────────────────────────
 
   function fuelBudgetExportCSV() {
-    authDownload(`/api/productions/${state.prodId}/export/fuel-budget/csv`);
+    openExportDateModal('fuel', 'Fuel Budget', [], (from, to) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/fuel-budget/csv`, from, to);
+    });
   }
 
   function fuelToggleExport() {
@@ -7151,13 +7199,17 @@ const App = (() => {
   }
 
   function fuelExportCSV() {
-    authDownload(`/api/productions/${state.prodId}/export/fuel/csv`);
     $('fuel-exp-menu').classList.add('hidden');
+    openExportDateModal('fuel', 'Fuel', [{ key: 'csv', label: 'CSV' }, { key: 'json', label: 'JSON' }], (from, to, fmt) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/fuel/${fmt === 'json' ? 'json' : 'csv'}`, from, to);
+    });
   }
 
   function fuelExportJSON() {
-    authDownload(`/api/productions/${state.prodId}/export/fuel/json`);
     $('fuel-exp-menu').classList.add('hidden');
+    openExportDateModal('fuel', 'Fuel', [{ key: 'json', label: 'JSON' }, { key: 'csv', label: 'CSV' }], (from, to, fmt) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/fuel/${fmt === 'json' ? 'json' : 'csv'}`, from, to);
+    });
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -7965,7 +8017,12 @@ const App = (() => {
 
   // ── Export ───────────────────────────────────────────────────
   function lbToggleExport() { $('lb-export-menu').classList.toggle('hidden'); }
-  function lbExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/labour/csv`); $('lb-export-menu').classList.add('hidden'); }
+  function lbExportCSV()  {
+    $('lb-export-menu').classList.add('hidden');
+    openExportDateModal('labour', 'Labor', [], (from, to) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/labour/csv`, from, to);
+    });
+  }
 
   // ── Budget view ──────────────────────────────────────────────
   function renderLbBudget() {
@@ -8854,8 +8911,18 @@ const App = (() => {
 
   // ── Security Boats Export ───────────────────────────────────
   function sbToggleExport() { $('sb-export-menu')?.classList.toggle('hidden'); }
-  function sbExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/security-boats/csv`);  $('sb-export-menu')?.classList.add('hidden'); }
-  function sbExportJSON() { authDownload(`/api/productions/${state.prodId}/export/security-boats/json`); $('sb-export-menu')?.classList.add('hidden'); }
+  function sbExportCSV()  {
+    $('sb-export-menu')?.classList.add('hidden');
+    openExportDateModal('security_boats', 'Security Boats', [{ key: 'csv', label: 'CSV' }, { key: 'json', label: 'JSON' }], (from, to, fmt) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/security-boats/${fmt === 'json' ? 'json' : 'csv'}`, from, to);
+    });
+  }
+  function sbExportJSON() {
+    $('sb-export-menu')?.classList.add('hidden');
+    openExportDateModal('security_boats', 'Security Boats', [{ key: 'json', label: 'JSON' }, { key: 'csv', label: 'CSV' }], (from, to, fmt) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/security-boats/${fmt === 'json' ? 'json' : 'csv'}`, from, to);
+    });
+  }
 
   // ── Security Boat CRUD modals ──────────────────────────────
   function showAddSecurityBoatModal(editId) {
@@ -11014,7 +11081,12 @@ const App = (() => {
 
   // ── Export ───────────────────────────────────────────────────
   function gcToggleExport() { $('gc-export-menu').classList.toggle('hidden'); }
-  function gcExportCSV()  { authDownload(`/api/productions/${state.prodId}/export/guard-camp/csv`); $('gc-export-menu').classList.add('hidden'); }
+  function gcExportCSV()  {
+    $('gc-export-menu').classList.add('hidden');
+    openExportDateModal('guards', 'Guards (Camp)', [], (from, to) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/guard-camp/csv`, from, to);
+    });
+  }
 
   // ── Budget view (combined: Location + Base Camp) ───────────
   async function renderGcBudget() {
@@ -11743,12 +11815,153 @@ const App = (() => {
 
   // ── FNB Export ────────────────────────────────────────────────
   function fnbExportCSV() {
-    // Server-side simplified export (totals by category, Up to Date + Estimate)
-    authDownload(`/api/productions/${state.prodId}/export/fnb-budget/csv`);
+    openExportDateModal('fnb', 'Catering', [], (from, to) => {
+      _exportWithDates(`/api/productions/${state.prodId}/export/fnb-budget/csv`, from, to);
+    });
   }
 
 
 
+
+  // ═══════════════════════════════════════════════════════════
+  //  EXPORT DATE RANGE MODAL (AXE 2.1)
+  // ═══════════════════════════════════════════════════════════
+
+  let _exportDateCallback = null;
+  let _exportDateModule = null;
+
+  function openExportDateModal(module, title, formats, callback) {
+    _exportDateCallback = callback;
+    _exportDateModule = module;
+    const overlay = $('export-date-overlay');
+    const titleEl = $('export-date-title');
+    const subtitleEl = $('export-date-subtitle');
+    const formatsEl = $('export-date-formats');
+    if (!overlay) { callback(null, null, formats?.[0]?.key || 'csv'); return; }
+
+    titleEl.textContent = title || 'Export';
+    subtitleEl.textContent = `Select date range for ${title || 'export'}`;
+
+    // Format buttons
+    if (formats && formats.length > 1) {
+      formatsEl.innerHTML = `
+        <div style="font-size:.7rem;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem">Format</div>
+        <div style="display:flex;gap:.35rem;flex-wrap:wrap" id="export-format-btns">
+          ${formats.map((f, i) => `
+            <button class="btn btn-sm export-fmt-btn" data-fmt="${f.key}"
+              style="font-size:.72rem;padding:.25rem .6rem;border:1px solid var(--border);${i === 0 ? 'background:#3B82F6;color:#fff;border-color:#3B82F6' : 'background:var(--bg-surface);color:var(--text-2)'}"
+              onclick="App._selectExportFormat('${f.key}')">${f.label}</button>
+          `).join('')}
+        </div>`;
+    } else {
+      formatsEl.innerHTML = '';
+    }
+
+    // Load smart defaults from server
+    _loadExportDefaults(module);
+
+    overlay.classList.remove('hidden');
+    setTimeout(() => $('export-date-from')?.focus(), 100);
+  }
+
+  function closeExportDateModal() {
+    const overlay = $('export-date-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    _exportDateCallback = null;
+    _exportDateModule = null;
+  }
+
+  function _selectExportFormat(fmt) {
+    document.querySelectorAll('.export-fmt-btn').forEach(b => {
+      if (b.dataset.fmt === fmt) {
+        b.style.background = '#3B82F6'; b.style.color = '#fff'; b.style.borderColor = '#3B82F6';
+      } else {
+        b.style.background = 'var(--bg-surface)'; b.style.color = 'var(--text-2)'; b.style.borderColor = 'var(--border)';
+      }
+    });
+  }
+
+  function _getSelectedExportFormat() {
+    const active = document.querySelector('.export-fmt-btn[style*="#3B82F6"]');
+    return active ? active.dataset.fmt : 'csv';
+  }
+
+  async function _loadExportDefaults(module) {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    if (!fromEl || !toEl) return;
+    try {
+      const defaults = await api('GET', `/api/productions/${state.prodId}/export-defaults/${module}`);
+      if (defaults.from) fromEl.value = defaults.from;
+      else fromEl.value = '';
+      if (defaults.to) toEl.value = defaults.to;
+      else toEl.value = '';
+    } catch (e) {
+      // Fallback: use shooting days range
+      if (state.shootingDays && state.shootingDays.length) {
+        const dates = state.shootingDays.map(d => d.date).filter(Boolean).sort();
+        fromEl.value = dates[0] || '';
+        toEl.value = dates[dates.length - 1] || '';
+      } else {
+        fromEl.value = '';
+        toEl.value = '';
+      }
+    }
+  }
+
+  async function confirmExportDate() {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    const dateFrom = fromEl ? fromEl.value : '';
+    const dateTo = toEl ? toEl.value : '';
+    const fmt = _getSelectedExportFormat();
+
+    // Save preference for next time
+    if (_exportDateModule && state.prodId) {
+      api('POST', `/api/productions/${state.prodId}/export-defaults/${_exportDateModule}`,
+          { from: dateFrom, to: dateTo }).catch(() => {});
+    }
+
+    closeExportDateModal();
+    if (_exportDateCallback) _exportDateCallback(dateFrom, dateTo, fmt);
+  }
+
+  function exportDateShortcut(type) {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    if (!fromEl || !toEl) return;
+
+    const now = new Date();
+    if (type === 'week') {
+      const day = now.getDay();
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      fromEl.value = monday.toISOString().slice(0, 10);
+      toEl.value = sunday.toISOString().slice(0, 10);
+    } else if (type === 'last-week') {
+      const day = now.getDay();
+      const lastMonday = new Date(now);
+      lastMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1) - 7);
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastMonday.getDate() + 6);
+      fromEl.value = lastMonday.toISOString().slice(0, 10);
+      toEl.value = lastSunday.toISOString().slice(0, 10);
+    } else if (type === 'all') {
+      fromEl.value = '';
+      toEl.value = '';
+    }
+  }
+
+  function _exportWithDates(baseUrl, dateFrom, dateTo) {
+    let url = baseUrl;
+    const params = [];
+    if (dateFrom) params.push(`from=${dateFrom}`);
+    if (dateTo) params.push(`to=${dateTo}`);
+    if (params.length) url += (url.includes('?') ? '&' : '?') + params.join('&');
+    authDownload(url);
+  }
 
   // ═══════════════════════════════════════════════════════════
   //  INIT
@@ -12389,6 +12602,7 @@ const App = (() => {
         // Close alerts panel (AXE 7.3)
         if (_alertsPanelOpen) { toggleAlertsPanel(); }
         closeShortcutsPanel();
+        closeExportDateModal();
         const moreSheet = $('bnav-more-sheet');
         if (moreSheet && !moreSheet.classList.contains('hidden')) { moreSheet.classList.add('hidden'); }
         closeDayModal();
@@ -13222,6 +13436,9 @@ const App = (() => {
     adminRenameProject, adminArchiveProject,
     adminChangeRole, adminRemoveMember,
     toggleTheme,
+    // Export date range modal (AXE 2.1)
+    openExportDateModal, closeExportDateModal, confirmExportDate, exportDateShortcut,
+    _selectExportFormat,
     // Dashboard
     renderDashboard,
     // Fleet unified
