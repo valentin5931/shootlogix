@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P1] Populate picture_boats table from boats table migration
+
+**Problem**: The Picture Boats tab (Fleet > Picture Boats) showed "No picture boats" despite 46 boats existing in the database. The `/api/productions/1/picture-boats` endpoint returned an empty array.
+
+**Root cause**: All boats were stored in the `boats` table with `category='picture'`, but the Picture Boats tab reads from a separate `picture_boats` table (which was empty). The `picture_boat_assignments` table was also empty — all 26 assignments were in `boat_assignments` referencing boats in the `boats` table.
+
+**Fix**: Added an idempotent migration in `database.py` (`_migrate_db()`) that:
+1. Copies all 46 boats with `category='picture'` from `boats` → `picture_boats`
+2. Copies all 26 related `boat_assignments` → `picture_boat_assignments` with correct ID mapping
+3. Uses a `settings` flag (`p1_picture_boats_migrated`) to ensure it only runs once
+
+**Verification**:
+- `/api/productions/1/picture-boats` now returns 46 boats (was 0)
+- `/api/productions/1/picture-boat-assignments` now returns 26 assignments (was 0)
+- `/api/productions/1/boat-functions?context=picture` returns 4 functions
+- No orphaned assignments (all `picture_boat_id` references are valid)
+- Python syntax check passes
+- All other endpoints unaffected (no regressions)
+
+**Branch**: fix/2026-04-05-populate-picture-boats-from-boats-table
+**Side effects**: None — original `boats` table data is preserved (not deleted)
+**Next priority**: Security boats are still 0 (no security-category boats exist in source data — may need user to create them). Helpers, guards, fuel, and transport are also empty (likely need user-created data).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

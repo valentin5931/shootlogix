@@ -1419,6 +1419,73 @@ def _migrate_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_access_logs_user_id ON access_logs(user_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_access_logs_timestamp ON access_logs(timestamp)")
 
+        # P1-FIX: Migrate boats with category='picture' into picture_boats table
+        # All production boats were stored in the `boats` table with category='picture',
+        # but the Picture Boats tab reads from the separate `picture_boats` table (which is empty).
+        # This migration copies those boats and their assignments to the correct tables.
+        r_pb_mig = conn.execute("SELECT value FROM settings WHERE key='p1_picture_boats_migrated'").fetchone()
+        if not r_pb_mig:
+            pb_count = conn.execute("SELECT COUNT(*) as c FROM picture_boats").fetchone()["c"]
+            if pb_count == 0:
+                # Get all picture-category boats from the boats table
+                src_boats = conn.execute(
+                    "SELECT * FROM boats WHERE category='picture'"
+                ).fetchall()
+                if src_boats:
+                    # Columns to copy (all shared columns except id and category)
+                    copy_cols = [
+                        "production_id", "boat_nr", "name", "capacity", "night_ok",
+                        "wave_rating", "captain", "vendor", "group_name", "notes",
+                        "daily_rate_estimate", "daily_rate_actual", "image_path",
+                        "sort_order", "physical_vessel_id", "version", "deleted_at", "currency"
+                    ]
+                    col_list = ", ".join(copy_cols)
+                    placeholders = ", ".join("?" * len(copy_cols))
+
+                    # Build old_id -> new_id mapping
+                    id_map = {}
+                    for boat in src_boats:
+                        vals = [boat[c] for c in copy_cols]
+                        cur = conn.execute(
+                            f"INSERT INTO picture_boats ({col_list}) VALUES ({placeholders})",
+                            vals
+                        )
+                        id_map[boat["id"]] = cur.lastrowid
+
+                    # Migrate boat_assignments for these boats to picture_boat_assignments
+                    asgn_copy_cols = [
+                        "boat_function_id", "boat_name_override", "start_date", "end_date",
+                        "price_override", "notes", "assignment_status", "day_overrides",
+                        "created_at", "updated_at", "pricing_type", "include_sunday",
+                        "override_reason", "exclude_holidays"
+                    ]
+                    old_boat_ids = list(id_map.keys())
+                    if old_boat_ids:
+                        ph = ", ".join("?" * len(old_boat_ids))
+                        asgns = conn.execute(
+                            f"SELECT * FROM boat_assignments WHERE boat_id IN ({ph})",
+                            old_boat_ids
+                        ).fetchall()
+                        asgn_col_list = "picture_boat_id, " + ", ".join(asgn_copy_cols)
+                        asgn_ph = ", ".join("?" * (len(asgn_copy_cols) + 1))
+                        migrated_asgns = 0
+                        for a in asgns:
+                            new_pb_id = id_map.get(a["boat_id"])
+                            if new_pb_id:
+                                vals = [new_pb_id] + [a[c] for c in asgn_copy_cols]
+                                conn.execute(
+                                    f"INSERT INTO picture_boat_assignments ({asgn_col_list}) VALUES ({asgn_ph})",
+                                    vals
+                                )
+                                migrated_asgns += 1
+
+                    print(f"Migration P1: copied {len(src_boats)} picture boats from boats table -> picture_boats, {migrated_asgns} assignments migrated")
+                else:
+                    print("Migration P1: no picture-category boats found in boats table")
+            else:
+                print(f"Migration P1: picture_boats already has {pb_count} rows, skipping")
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('p1_picture_boats_migrated', '1')")
+
 
 def _migrate_day_overrides_to_table(conn):
     """Parse existing day_overrides JSON from all assignment tables and insert into assignment_day_overrides."""
