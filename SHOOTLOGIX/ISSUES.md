@@ -1,5 +1,13 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] FIXED — 25 missing functions broke mobile menu and other interactive features
+- **Discovered**: 2026-04-05
+- **Fixed**: 2026-04-05
+- **Symptoms**: Mobile hamburger menu threw JS errors on every tap, making ALL mobile navigation broken. Activity panel, notifications, comments, export date modal, FAB context menu, tide auto-fill, and price override also threw errors.
+- **Root cause**: Functions were never ported from old `app.js` / `static/modules/*.js` to `app-monolith.js`
+- **Fix**: Ported 25 functions to `app-monolith.js` and exported them in the public API
+- **Branch**: fix/2026-04-05-missing-mobile-menu-functions
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

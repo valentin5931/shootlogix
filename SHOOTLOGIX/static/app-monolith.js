@@ -13102,6 +13102,369 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  Missing functions — ported from app.js / modules (P0 fix)
+  // ═══════════════════════════════════════════════════════════
+
+  // ── Mobile menu toggle (critical — 14 refs in index.html) ──
+  function toggleMobileMenu() {
+    const menu = $('mobile-menu');
+    if (!menu) return;
+    const isOpen = !menu.classList.contains('hidden');
+    if (isOpen) {
+      menu.classList.add('hidden');
+      document.body.style.overflow = '';
+    } else {
+      menu.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      menu.querySelectorAll('.mobile-menu-item[data-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === state.tab);
+      });
+    }
+  }
+
+  // ── FAB context menu (right-click on FAB) ──
+  function _toggleFabMenu() {
+    // Monolith uses single-action FAB; context menu not needed
+    fabAction();
+  }
+
+  // ── Export date modal ──
+  let _exportDateCallback = null;
+  let _exportDateModule = null;
+
+  function closeExportDateModal() {
+    const overlay = $('export-date-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    _exportDateCallback = null;
+    _exportDateModule = null;
+  }
+
+  async function confirmExportDate() {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    const dateFrom = fromEl ? fromEl.value : '';
+    const dateTo = toEl ? toEl.value : '';
+    closeExportDateModal();
+    if (_exportDateCallback) {
+      _exportDateCallback(dateFrom, dateTo);
+    }
+  }
+
+  function exportDateShortcut(type) {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    if (!fromEl || !toEl) return;
+    const now = new Date();
+    if (type === 'week') {
+      const day = now.getDay();
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      fromEl.value = monday.toISOString().slice(0, 10);
+      toEl.value = sunday.toISOString().slice(0, 10);
+    } else if (type === 'last-week') {
+      const day = now.getDay();
+      const lastMonday = new Date(now);
+      lastMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1) - 7);
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastMonday.getDate() + 6);
+      fromEl.value = lastMonday.toISOString().slice(0, 10);
+      toEl.value = lastSunday.toISOString().slice(0, 10);
+    } else if (type === 'all') {
+      fromEl.value = '';
+      toEl.value = '';
+    }
+  }
+
+  // ── Price override reason toggle ──
+  function onPriceOverrideChange() {
+    const poInput = $('am-price-override');
+    const orGroup = $('am-override-reason-group');
+    if (!poInput || !orGroup) return;
+    const val = parseFloat(poInput.value);
+    orGroup.style.display = (val > 0) ? '' : 'none';
+  }
+
+  // ── saveFunction — alias for createFunction (used in add-func modal) ──
+  const saveFunction = createFunction;
+
+  // ── Auto-fill tides ──
+  async function autoFillTides() {
+    const days = state.shootingDays;
+    if (!days.length) { toast('No shooting days to fill', 'error'); return; }
+    const dates = days.map(d => d.date).filter(Boolean).sort();
+    if (!dates.length) { toast('No dates found', 'error'); return; }
+    const start = dates[0];
+    const end = dates[dates.length - 1];
+    toast('Fetching tide data...');
+    try {
+      const tideData = await api('GET', `/api/tides?lat=8.35&lng=-79.05&start=${start}&end=${end}`);
+      const tideMap = {};
+      tideData.forEach(td => { tideMap[td.date] = td; });
+      let updated = 0;
+      for (const day of days) {
+        const td = tideMap[day.date];
+        if (!td || td.height == null) continue;
+        const existingH = day.events && day.events.length ? day.events[0].maree_hauteur : day.maree_hauteur;
+        if (existingH != null) continue;
+        if (day.events && day.events.length) {
+          for (const ev of day.events) {
+            await api('PUT', `/api/events/${ev.id}`, {
+              maree_hauteur: td.height,
+              maree_statut: td.direction || null,
+            });
+          }
+        }
+        updated++;
+      }
+      toast(`Tides updated for ${updated} day(s)`);
+      // Reload PDT data
+      const freshDays = await api('GET', `/api/productions/${state.prodId}/shooting-days`);
+      state.shootingDays = freshDays;
+    } catch (e) {
+      toast('Error fetching tides: ' + e.message, 'error');
+    }
+  }
+
+  // ── Activity panel ──
+  let _activityOpen = false;
+  let _activityPage = 0;
+
+  async function toggleActivityPanel() {
+    if (_activityOpen) { closeActivityPanel(); return; }
+    _activityOpen = true;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+    loadActivity();
+  }
+
+  function closeActivityPanel() {
+    _activityOpen = false;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  async function loadActivity() {
+    _activityPage = 0;
+    const feed = $('activity-feed');
+    if (feed) feed.innerHTML = '<div style="color:var(--text-4);text-align:center;padding:2rem">Loading...</div>';
+    if (!state.prodId) return;
+    try {
+      const params = new URLSearchParams();
+      params.set('limit', '50');
+      const module = $('activity-filter-module')?.value || '';
+      const userId = $('activity-filter-user')?.value || '';
+      const dateFrom = $('activity-filter-from')?.value || '';
+      const dateTo = $('activity-filter-to')?.value || '';
+      if (module) params.set('module', module);
+      if (userId) params.set('user_id', userId);
+      if (dateFrom) params.set('date_from', dateFrom);
+      if (dateTo) params.set('date_to', dateTo);
+      const data = await api('GET', `/api/productions/${state.prodId}/activity?${params.toString()}`);
+      const entries = data.entries || [];
+      if (!entries.length) {
+        if (feed) feed.innerHTML = '<div style="color:var(--text-4);text-align:center;padding:2rem">No activity found</div>';
+        return;
+      }
+      // Group by date
+      const grouped = {};
+      for (const e of entries) {
+        const dk = e.date || 'unknown';
+        if (!grouped[dk]) grouped[dk] = [];
+        grouped[dk].push(e);
+      }
+      let html = '';
+      for (const [date, items] of Object.entries(grouped)) {
+        html += `<div class="activity-date-group"><div class="activity-date-header">${date}</div>`;
+        for (const item of items) {
+          const icon = item.action === 'create' ? '+' : item.action === 'delete' ? '−' : '✎';
+          html += `<div class="activity-item">
+            <span class="activity-icon">${icon}</span>
+            <div class="activity-body">
+              <div class="activity-desc">${esc(item.human_description || item.description || '')}</div>
+              <div class="activity-meta">${esc(item.user_nickname || '')} · ${esc(item.time || '')}</div>
+            </div>
+          </div>`;
+        }
+        html += '</div>';
+      }
+      if (feed) feed.innerHTML = html;
+    } catch (e) {
+      if (feed) feed.innerHTML = '<div style="color:var(--text-4);text-align:center;padding:2rem">Failed to load activity</div>';
+    }
+  }
+
+  function loadMoreActivity() {
+    _activityPage++;
+    loadActivity();
+  }
+
+  // ── Notifications panel ──
+  function toggleNotifPanel() {
+    const overlay = $('notif-overlay');
+    if (!overlay) return;
+    overlay.classList.toggle('hidden');
+  }
+
+  function closeNotifPanel() {
+    const overlay = $('notif-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  function markAllNotificationsRead() {
+    const items = document.querySelectorAll('.notif-item.unread');
+    items.forEach(el => el.classList.remove('unread'));
+    const badge = $('notif-badge');
+    if (badge) badge.style.display = 'none';
+    toast('All notifications marked as read');
+  }
+
+  // ── Comments panel ──
+  function closeCommentsPanel() {
+    const overlay = $('comments-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  async function submitComment() {
+    const input = $('comment-input');
+    if (!input) return;
+    const body = input.value.trim();
+    if (!body) { toast('Comment cannot be empty', 'error'); return; }
+    const entityType = $('comment-entity-type')?.value || '';
+    const entityId = $('comment-entity-id')?.value || '';
+    try {
+      await api('POST', `/api/productions/${state.prodId}/comments`, {
+        entity_type: entityType,
+        entity_id: parseInt(entityId) || 0,
+        body,
+      });
+      input.value = '';
+      toast('Comment posted');
+    } catch (e) {
+      toast('Error posting comment: ' + e.message, 'error');
+    }
+  }
+
+  function handleCommentKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitComment();
+    }
+  }
+
+  // ── Admin panel extras ──
+  async function adminLoadAccessLogs() {
+    const container = $('admin-access-logs');
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--text-4)">Loading...</div>';
+    try {
+      const data = await api('GET', '/api/admin/access-logs');
+      if (!data.length) {
+        container.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--text-4)">No access logs</div>';
+        return;
+      }
+      let html = '<table class="admin-table"><thead><tr><th>User</th><th>Action</th><th>IP</th><th>Time</th></tr></thead><tbody>';
+      for (const log of data.slice(0, 100)) {
+        html += `<tr><td>${esc(log.nickname || '')}</td><td>${esc(log.action || '')}</td><td>${esc(log.ip || '')}</td><td>${esc(log.created_at || '')}</td></tr>`;
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--text-4)">Failed to load logs</div>';
+    }
+  }
+
+  function adminExportAccessLogs() {
+    authDownload('/api/admin/access-logs/export-csv');
+  }
+
+  async function adminPermLoadMembers() {
+    const sel = $('admin-perm-member');
+    if (!sel) return;
+    try {
+      const projId = $('admin-perm-project')?.value;
+      if (!projId) return;
+      const members = await api('GET', `/api/admin/projects/${projId}/members`);
+      sel.innerHTML = '<option value="">Select member</option>';
+      for (const m of members) {
+        sel.innerHTML += `<option value="${m.user_id}">${esc(m.nickname)} (${esc(m.role)})</option>`;
+      }
+    } catch (e) { toast('Failed to load members', 'error'); }
+  }
+
+  async function adminPermLoadPerms() {
+    const userId = $('admin-perm-member')?.value;
+    const projId = $('admin-perm-project')?.value;
+    const container = $('admin-perm-grid');
+    if (!userId || !projId || !container) return;
+    try {
+      const perms = await api('GET', `/api/admin/projects/${projId}/members/${userId}/permissions`);
+      let html = '<table class="admin-table"><thead><tr><th>Module</th><th>Access</th><th>Export</th><th>Import</th><th>Money R</th><th>Money W</th></tr></thead><tbody>';
+      for (const [mod, p] of Object.entries(perms.permissions || {})) {
+        html += `<tr><td>${esc(mod)}</td><td>${p.access ? '✓' : '✗'}</td><td>${p.can_export ? '✓' : '✗'}</td><td>${p.can_import ? '✓' : '✗'}</td><td>${p.money_read ? '✓' : '✗'}</td><td>${p.money_write ? '✓' : '✗'}</td></tr>`;
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    } catch (e) { container.innerHTML = '<div style="color:var(--text-4)">Failed to load permissions</div>'; }
+  }
+
+  async function adminEpLoadPerms() {
+    const userId = $('admin-ep-user')?.value;
+    const container = $('admin-ep-list');
+    if (!userId || !container) return;
+    try {
+      const data = await api('GET', `/api/admin/users/${userId}/entity-permissions`);
+      const perms = data.permissions || [];
+      if (!perms.length) {
+        container.innerHTML = '<div style="color:var(--text-4)">No entity-level permissions</div>';
+        return;
+      }
+      let html = '<table class="admin-table"><thead><tr><th>Entity</th><th>Permission</th><th></th></tr></thead><tbody>';
+      for (const p of perms) {
+        html += `<tr><td>${esc(p.entity_type)} #${p.entity_id}</td><td>${esc(p.permission)}</td><td><button class="btn btn-sm btn-danger" onclick="App.adminEpRemove(${p.id})">Remove</button></td></tr>`;
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    } catch (e) { container.innerHTML = '<div style="color:var(--text-4)">Failed to load permissions</div>'; }
+  }
+
+  async function adminEpAdd() {
+    const userId = $('admin-ep-user')?.value;
+    const entityType = $('admin-ep-entity-type')?.value;
+    const entityId = $('admin-ep-entity-id')?.value;
+    const permission = $('admin-ep-permission')?.value;
+    if (!userId || !entityType || !entityId || !permission) {
+      toast('All fields required', 'error'); return;
+    }
+    try {
+      await api('POST', `/api/admin/users/${userId}/entity-permissions`, {
+        entity_type: entityType,
+        entity_id: parseInt(entityId),
+        permission,
+      });
+      toast('Permission added');
+      adminEpLoadPerms();
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function adminEpRemove(permId) {
+    if (!confirm('Remove this permission?')) return;
+    const userId = $('admin-ep-user')?.value;
+    if (!userId) return;
+    try {
+      await api('DELETE', `/api/admin/users/${userId}/entity-permissions/${permId}`);
+      toast('Permission removed');
+      adminEpLoadPerms();
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  function adminShowSaveTemplate() {
+    const overlay = $('admin-template-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13246,6 +13609,27 @@ const App = (() => {
     openShortcutsPanel, closeShortcutsPanel,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
+    // Mobile menu & FAB context
+    toggleMobileMenu, _toggleFabMenu,
+    // Export date modal
+    closeExportDateModal, confirmExportDate, exportDateShortcut,
+    // Price override
+    onPriceOverrideChange,
+    // Function save (alias for createFunction)
+    saveFunction,
+    // Tides
+    autoFillTides,
+    // Activity panel
+    toggleActivityPanel, closeActivityPanel, loadActivity, loadMoreActivity,
+    // Notifications
+    toggleNotifPanel, closeNotifPanel, markAllNotificationsRead,
+    // Comments
+    closeCommentsPanel, submitComment, handleCommentKeydown,
+    // Admin extras
+    adminLoadAccessLogs, adminExportAccessLogs,
+    adminPermLoadMembers, adminPermLoadPerms,
+    adminEpLoadPerms, adminEpAdd, adminEpRemove,
+    adminShowSaveTemplate,
     init,
   };
 })();

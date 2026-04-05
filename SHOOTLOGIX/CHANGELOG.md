@@ -1,5 +1,34 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P0] Fix 25 missing functions in app-monolith.js — mobile menu completely broken
+
+**Problem**: 25 functions called from `index.html` onclick/event handlers did not exist in `app-monolith.js`. Most critically, `toggleMobileMenu()` was called 14 times (hamburger button, backdrop, close button, every mobile nav item) but was never ported from the old `app.js` to the monolith. This made the entire mobile navigation non-functional — every tap on the hamburger menu or mobile nav item threw `TypeError: App.toggleMobileMenu is not a function`.
+
+**Root cause**: When the app was migrated to a monolith architecture (`app-monolith.js`), several functions from the old modular system (`app.js`, `static/modules/*.js`) were not ported. The HTML template still referenced them via `App.functionName()` calls.
+
+**Fix**: Ported all 25 missing functions to `app-monolith.js` and exported them in the public API:
+- **Mobile navigation**: `toggleMobileMenu` (critical — 14 refs)
+- **FAB context menu**: `_toggleFabMenu` (right-click on FAB)
+- **Export date modal**: `closeExportDateModal`, `confirmExportDate`, `exportDateShortcut`
+- **Assignment modal**: `onPriceOverrideChange` (price override reason toggle)
+- **Function CRUD**: `saveFunction` (alias for `createFunction`)
+- **Tides**: `autoFillTides` (auto-fill tide data for shooting days)
+- **Activity panel**: `toggleActivityPanel`, `closeActivityPanel`, `loadActivity`, `loadMoreActivity`
+- **Notifications**: `toggleNotifPanel`, `closeNotifPanel`, `markAllNotificationsRead`
+- **Comments**: `closeCommentsPanel`, `submitComment`, `handleCommentKeydown`
+- **Admin extras**: `adminLoadAccessLogs`, `adminExportAccessLogs`, `adminPermLoadMembers`, `adminPermLoadPerms`, `adminEpLoadPerms`, `adminEpAdd`, `adminEpRemove`, `adminShowSaveTemplate`
+
+**Verification**:
+- JS syntax check passes (`node -c`)
+- App starts without errors
+- All existing tabs still work (boats: 46, functions: 121, assignments: 26)
+- Dashboard, budget, exports all functional
+- Zero `App.xxx is not a function` errors in HTML template references
+
+**Branch**: fix/2026-04-05-missing-mobile-menu-functions
+**Side effects**: None — all new functions are additive
+**Next priority**: P1 — Picture Boats and Security Boats entity tables are empty (functions exist but no boats to assign)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
