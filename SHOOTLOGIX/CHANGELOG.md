@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P1] Fix Picture Boats and Security Boats returning empty lists
+
+**Problem**: The Picture Boats and Security Boats sub-tabs under Fleet always showed "No picture boats" / "No security boats", even though 46 boats existed in the database.
+
+**Root cause**: The app had three separate tables (`boats`, `picture_boats`, `security_boats`) but all data was stored in the `boats` table with a `category` field. The `picture_boats` and `security_boats` tables were never populated — the data loader and migration scripts only inserted into the main `boats` table. The API endpoints for picture-boats and security-boats queried the empty separate tables.
+
+**Fix**:
+- `database.py`: Modified `get_picture_boats()` to query `boats WHERE category='picture'` instead of the empty `picture_boats` table. Same for `get_security_boats()` → `boats WHERE category='security'`. Updated `create_picture_boat()` and `create_security_boat()` to insert into `boats` with the correct category. Updated `update_*` and `delete_*` to operate on the `boats` table with category guards. Updated assignment JOINs to reference `boats` instead of the separate tables.
+- `app.py`: Updated all direct SQL queries that referenced `picture_boats` or `security_boats` tables to use `boats` with category filter (image migration, timeline, individual boat lookups).
+
+**Verification**:
+- `GET /api/productions/1/picture-boats` now returns 46 boats (was 0)
+- `GET /api/productions/1/security-boats` returns 0 (correct — no boats categorized as security yet)
+- Creating a new security boat via POST correctly inserts with `category='security'` and appears in the security boats list
+- Boats tab still shows all 46 boats (no regression)
+- Dashboard, assignments, and all other endpoints still work
+- Python syntax check passes on both files
+
+**Branch**: fix/2026-04-05-picture-security-boats-empty
+**Side effects**: None — the unused `picture_boats` and `security_boats` tables still exist but are no longer queried
+**Next priority**: P1 — Transport and Helpers lists are empty (same pattern: data exists elsewhere or needs user creation)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

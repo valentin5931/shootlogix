@@ -1047,14 +1047,14 @@ def api_create_picture_boat(prod_id):
         return jsonify({"error": "name required"}), 400
     pb_id = create_picture_boat(data)
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM picture_boats WHERE id=?", (pb_id,)).fetchone()
+        row = conn.execute("SELECT * FROM boats WHERE id=?", (pb_id,)).fetchone()
     return jsonify(dict(row)), 201
 
 
 @app.route("/api/picture-boats/<int:pb_id>", methods=["GET"])
 def api_get_picture_boat(pb_id):
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM picture_boats WHERE id=?", (pb_id,)).fetchone()
+        row = conn.execute("SELECT * FROM boats WHERE id=?", (pb_id,)).fetchone()
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -1067,7 +1067,7 @@ def api_update_picture_boat(pb_id):
     if ok is False:
         return jsonify({"error": "This record was modified by another user. Please refresh."}), 409
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM picture_boats WHERE id=?", (pb_id,)).fetchone()
+        row = conn.execute("SELECT * FROM boats WHERE id=?", (pb_id,)).fetchone()
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -1080,7 +1080,7 @@ def api_delete_picture_boat(pb_id):
 @app.route("/api/picture-boats/<int:pb_id>/duplicate", methods=["POST"])
 def api_duplicate_picture_boat(pb_id):
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM picture_boats WHERE id=?", (pb_id,)).fetchone()
+        row = conn.execute("SELECT * FROM boats WHERE id=?", (pb_id,)).fetchone()
     if not row:
         return jsonify({"error": "not found"}), 404
     data = dict(row)
@@ -1089,7 +1089,7 @@ def api_duplicate_picture_boat(pb_id):
     data.pop("image_path", None)
     new_id = create_picture_boat(data)
     with get_db() as conn:
-        new_row = conn.execute("SELECT * FROM picture_boats WHERE id=?", (new_id,)).fetchone()
+        new_row = conn.execute("SELECT * FROM boats WHERE id=?", (new_id,)).fetchone()
     return jsonify(dict(new_row)), 201
 
 
@@ -1108,7 +1108,7 @@ def api_upload_picture_boat_image(pb_id):
     rel_path = f"static/uploads/picture-boats/{filename}"
     update_picture_boat(pb_id, {"image_path": rel_path})
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM picture_boats WHERE id=?", (pb_id,)).fetchone()
+        row = conn.execute("SELECT * FROM boats WHERE id=?", (pb_id,)).fetchone()
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -1140,7 +1140,7 @@ def api_create_picture_boat_assignment(prod_id):
     # P2.3: cross-module vessel conflict warning
     if data.get("picture_boat_id") and data.get("start_date") and data.get("end_date"):
         with get_db() as conn:
-            pb = conn.execute("SELECT physical_vessel_id FROM picture_boats WHERE id=?", (data["picture_boat_id"],)).fetchone()
+            pb = conn.execute("SELECT physical_vessel_id FROM boats WHERE id=?", (data["picture_boat_id"],)).fetchone()
         if pb and pb["physical_vessel_id"]:
             warnings = check_vessel_cross_module_conflict(
                 pb["physical_vessel_id"], data["start_date"], data["end_date"],
@@ -1494,14 +1494,14 @@ def api_create_security_boat(prod_id):
         return jsonify({"error": "name required"}), 400
     sb_id = create_security_boat(data)
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM security_boats WHERE id=?", (sb_id,)).fetchone()
+        row = conn.execute("SELECT * FROM boats WHERE id=?", (sb_id,)).fetchone()
     return jsonify(dict(row)), 201
 
 
 @app.route("/api/security-boats/<int:sb_id>", methods=["GET"])
 def api_get_security_boat(sb_id):
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM security_boats WHERE id=?", (sb_id,)).fetchone()
+        row = conn.execute("SELECT * FROM boats WHERE id=?", (sb_id,)).fetchone()
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -1514,7 +1514,7 @@ def api_update_security_boat(sb_id):
     if ok is False:
         return jsonify({"error": "This record was modified by another user. Please refresh."}), 409
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM security_boats WHERE id=?", (sb_id,)).fetchone()
+        row = conn.execute("SELECT * FROM boats WHERE id=?", (sb_id,)).fetchone()
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -1527,7 +1527,7 @@ def api_delete_security_boat(sb_id):
 @app.route("/api/security-boats/<int:sb_id>/duplicate", methods=["POST"])
 def api_duplicate_security_boat(sb_id):
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM security_boats WHERE id=?", (sb_id,)).fetchone()
+        row = conn.execute("SELECT * FROM boats WHERE id=?", (sb_id,)).fetchone()
     if not row:
         return jsonify({"error": "not found"}), 404
     data = dict(row)
@@ -1536,7 +1536,7 @@ def api_duplicate_security_boat(sb_id):
     data.pop("image_path", None)
     new_id = create_security_boat(data)
     with get_db() as conn:
-        new_row = conn.execute("SELECT * FROM security_boats WHERE id=?", (new_id,)).fetchone()
+        new_row = conn.execute("SELECT * FROM boats WHERE id=?", (new_id,)).fetchone()
     return jsonify(dict(new_row)), 201
 
 
@@ -1555,7 +1555,7 @@ def api_upload_security_boat_image(sb_id):
     rel_path = f"static/uploads/security-boats/{filename}"
     update_security_boat(sb_id, {"image_path": rel_path})
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM security_boats WHERE id=?", (sb_id,)).fetchone()
+        row = conn.execute("SELECT * FROM boats WHERE id=?", (sb_id,)).fetchone()
     return jsonify(dict(row)) if row else ("", 404)
 
 
@@ -1583,7 +1583,7 @@ def api_create_security_boat_assignment(prod_id):
     # P2.3: cross-module vessel conflict warning
     if data.get("security_boat_id") and data.get("start_date") and data.get("end_date"):
         with get_db() as conn:
-            sb = conn.execute("SELECT physical_vessel_id FROM security_boats WHERE id=?", (data["security_boat_id"],)).fetchone()
+            sb = conn.execute("SELECT physical_vessel_id FROM boats WHERE id=?", (data["security_boat_id"],)).fetchone()
         if sb and sb["physical_vessel_id"]:
             warnings = check_vessel_cross_module_conflict(
                 sb["physical_vessel_id"], data["start_date"], data["end_date"],
@@ -3065,8 +3065,8 @@ def _auto_match_boat_photos():
                 matched += 1
                 continue
 
-        # --- PICTURE BOATS ---
-        pbs = conn.execute("SELECT id, name, image_path FROM picture_boats").fetchall()
+        # --- PICTURE BOATS (from boats table with category='picture') ---
+        pbs = conn.execute("SELECT id, name, image_path FROM boats WHERE category='picture'").fetchall()
         for pb in pbs:
             pid = pb['id']
             current = pb['image_path'] or ''
@@ -3074,7 +3074,7 @@ def _auto_match_boat_photos():
             if pid in uploaded_pbs:
                 rel = f"static/uploads/picture-boats/{uploaded_pbs[pid]}"
                 if current != rel:
-                    conn.execute("UPDATE picture_boats SET image_path=? WHERE id=?", (rel, pid))
+                    conn.execute("UPDATE boats SET image_path=? WHERE id=?", (rel, pid))
                     matched += 1
                 continue
             if current:
@@ -3093,11 +3093,11 @@ def _auto_match_boat_photos():
                     rel = f"static/uploads/picture-boats/{dst_name}"
                 else:
                     rel = f"static/boat_images/{src_file}"
-                conn.execute("UPDATE picture_boats SET image_path=? WHERE id=?", (rel, pid))
+                conn.execute("UPDATE boats SET image_path=? WHERE id=?", (rel, pid))
                 matched += 1
 
-        # --- SECURITY BOATS ---
-        sbs = conn.execute("SELECT id, name, image_path FROM security_boats").fetchall()
+        # --- SECURITY BOATS (from boats table with category='security') ---
+        sbs = conn.execute("SELECT id, name, image_path FROM boats WHERE category='security'").fetchall()
         for sb in sbs:
             sid = sb['id']
             current = sb['image_path'] or ''
@@ -3105,7 +3105,7 @@ def _auto_match_boat_photos():
             if sid in uploaded_sbs:
                 rel = f"static/uploads/security-boats/{uploaded_sbs[sid]}"
                 if current != rel:
-                    conn.execute("UPDATE security_boats SET image_path=? WHERE id=?", (rel, sid))
+                    conn.execute("UPDATE boats SET image_path=? WHERE id=?", (rel, sid))
                     matched += 1
                 continue
             if current:
@@ -3123,7 +3123,7 @@ def _auto_match_boat_photos():
                     rel = f"static/uploads/security-boats/{dst_name}"
                 else:
                     rel = f"static/boat_images/{src_file}"
-                conn.execute("UPDATE security_boats SET image_path=? WHERE id=?", (rel, sid))
+                conn.execute("UPDATE boats SET image_path=? WHERE id=?", (rel, sid))
                 matched += 1
 
     return matched
@@ -7825,7 +7825,7 @@ def api_timeline(prod_id):
             })
 
         # --- Picture boats ---
-        pboats = conn.execute("SELECT id, name, group_name FROM picture_boats WHERE production_id=?", (prod_id,)).fetchall()
+        pboats = conn.execute("SELECT id, name, group_name FROM boats WHERE production_id=? AND category='picture'", (prod_id,)).fetchall()
         for b in pboats:
             assignments = conn.execute(
                 "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM picture_boat_assignments WHERE picture_boat_id=?",
@@ -7838,7 +7838,7 @@ def api_timeline(prod_id):
             })
 
         # --- Security boats ---
-        sboats = conn.execute("SELECT id, name, group_name FROM security_boats WHERE production_id=?", (prod_id,)).fetchall()
+        sboats = conn.execute("SELECT id, name, group_name FROM boats WHERE production_id=? AND category='security'", (prod_id,)).fetchall()
         for b in sboats:
             assignments = conn.execute(
                 "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM security_boat_assignments WHERE security_boat_id=?",
