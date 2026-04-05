@@ -1,5 +1,25 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P1] Fix budget actual always $0 — amount_actual not using assignment price_override
+
+**Problem**: The dashboard "Total Actual" was always $0 and burn rate was $0/day, even though there were 26 boat assignments and 73 labour assignments with valid price_override rates totaling $630K+ in estimated spend.
+
+**Root cause**: In `database.py`, all 6 `get_*_assignments()` functions computed `rate_act` (used for `amount_actual`) only from the entity's `daily_rate_actual` field — which was never populated for any boat, helper, or vehicle. Unlike `rate_est` which correctly fell back to `price_override`, `rate_act` had no fallback and was always 0.
+
+**Fix**: Updated `rate_act` computation in all 6 assignment getter functions (`get_boat_assignments`, `get_picture_boat_assignments`, `get_security_boat_assignments`, `get_transport_assignments`, `get_helper_assignments`, `get_guard_camp_assignments`) to fall back to `price_override` then to the entity's `daily_rate_estimate` — matching the same chain as `rate_est`. Also added missing `amount_actual` field to guard camp assignments which didn't compute it at all.
+
+**Files changed**: `database.py` (lines 1969, 2129, 2301, 2598, 2767-2778, 2928)
+
+**Verification**:
+- Before: Dashboard total_actual=$0, burn_rate=$0/day, projected=$0
+- After: Dashboard total_actual=$630,723, burn_rate=$52,560/day, projected=$1,681,928
+- Budget tab grand_total_actual went from $0 to $630,723
+- All API endpoints return 200 (no regressions)
+
+**Branch**: fix/2026-04-05-budget-actual-always-zero
+**Side effects**: None — when users later set `daily_rate_actual` on entities, that value will take priority over `price_override`
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (need data seeding or UI guidance for users to populate them)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

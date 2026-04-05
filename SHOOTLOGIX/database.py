@@ -1966,7 +1966,7 @@ def get_boat_assignments(prod_id, context=None):
             d = dict(r)
             d["day_overrides"] = get_day_overrides_json(conn, "boats", d["id"])
             rate_est = d.get("price_override") or d.get("boat_daily_rate_estimate") or 0
-            rate_act = d.get("boat_daily_rate_actual") or 0
+            rate_act = d.get("boat_daily_rate_actual") or d.get("price_override") or d.get("boat_daily_rate_estimate") or 0
             wd = compute_working_days(d)
             d["working_days"]      = wd
             d["amount_estimate"]   = round(wd * rate_est, 2)
@@ -2126,7 +2126,7 @@ def get_picture_boat_assignments(prod_id):
             d = dict(r)
             d["day_overrides"] = get_day_overrides_json(conn, "picture_boats", d["id"])
             rate_est = d.get("price_override") or d.get("boat_daily_rate_estimate") or 0
-            rate_act = d.get("boat_daily_rate_actual") or 0
+            rate_act = d.get("boat_daily_rate_actual") or d.get("price_override") or d.get("boat_daily_rate_estimate") or 0
             wd = compute_working_days(d)
             d["working_days"]    = wd
             d["amount_estimate"] = round(wd * rate_est, 2)
@@ -2298,7 +2298,7 @@ def get_transport_assignments(prod_id):
             d = dict(r)
             d["day_overrides"] = get_day_overrides_json(conn, "transport", d["id"])
             rate_est = d.get("price_override") or d.get("vehicle_daily_rate_estimate") or 0
-            rate_act = d.get("vehicle_daily_rate_actual") or 0
+            rate_act = d.get("vehicle_daily_rate_actual") or d.get("price_override") or d.get("vehicle_daily_rate_estimate") or 0
             wd = compute_working_days(d)
             d["working_days"]    = wd
             d["amount_estimate"] = round(wd * rate_est, 2)
@@ -2595,7 +2595,7 @@ def get_helper_assignments(prod_id):
             d = dict(r)
             d["day_overrides"] = get_day_overrides_json(conn, "labour", d["id"])
             rate_est = d.get("price_override") or d.get("helper_daily_rate_estimate") or 0
-            rate_act = d.get("helper_daily_rate_actual") or 0
+            rate_act = d.get("helper_daily_rate_actual") or d.get("price_override") or d.get("helper_daily_rate_estimate") or 0
             wd = compute_working_days(d)
             d["working_days"]    = wd
             d["amount_estimate"] = round(wd * rate_est, 2)
@@ -2769,11 +2769,14 @@ def get_guard_camp_assignments(prod_id):
             if d.get("start_date") and d.get("end_date"):
                 wd = compute_working_days(d)
                 d["working_days"] = wd
-                rate = d.get("price_override") or d.get("helper_daily_rate_estimate") or 0
-                d["amount_estimate"] = round(wd * rate)
+                rate_est = d.get("price_override") or d.get("helper_daily_rate_estimate") or 0
+                rate_act = d.get("helper_daily_rate_actual") or d.get("price_override") or d.get("helper_daily_rate_estimate") or 0
+                d["amount_estimate"] = round(wd * rate_est)
+                d["amount_actual"]   = round(wd * rate_act, 2) if rate_act else None
             else:
                 d["working_days"] = 0
                 d["amount_estimate"] = 0
+                d["amount_actual"] = None
             result.append(d)
         return result
 
@@ -2925,7 +2928,7 @@ def get_security_boat_assignments(prod_id):
             d = dict(r)
             d["day_overrides"] = get_day_overrides_json(conn, "security_boats", d["id"])
             rate_est = d.get("price_override") or d.get("boat_daily_rate_estimate") or 0
-            rate_act = d.get("boat_daily_rate_actual") or 0
+            rate_act = d.get("boat_daily_rate_actual") or d.get("price_override") or d.get("boat_daily_rate_estimate") or 0
             wd = compute_working_days(d)
             d["working_days"]    = wd
             d["amount_estimate"] = round(wd * rate_est, 2)

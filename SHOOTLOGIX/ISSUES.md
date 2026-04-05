@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [FIXED] [P1] Budget actual always $0 — amount_actual ignores price_override
+- **Discovered**: 2026-04-05
+- **Fixed**: 2026-04-05 (branch: fix/2026-04-05-budget-actual-always-zero)
+- **Symptoms**: Dashboard total_actual=$0, burn_rate=$0/day, projected=$0. Budget tab grand_total_actual=$0. All budget views showed no actual spending despite $630K+ in assignments.
+- **Root cause**: `rate_act` in all 6 `get_*_assignments()` functions only read entity's `daily_rate_actual` (never set), without falling back to `price_override`.
+- **Files involved**: `database.py`
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
