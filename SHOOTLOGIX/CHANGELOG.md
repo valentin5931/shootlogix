@@ -23,6 +23,20 @@
 **Side effects**: None
 **Next priority**: P1 — Picture Boats and Security Boats tables are empty (boats exist only in main boats table)
 
+## 2026-04-05 — [P0] Fix Timeline guard_camp_assignments query — wrong column name
+
+**Problem**: The Timeline API's guard section queried `guard_camp_assignments WHERE worker_id=?` but the actual column is `helper_id`, causing a crash when guard data exists.
+
+**Root cause**: The `api_timeline` function used `worker_id` instead of `helper_id` in the guard_camp_assignments query (line 7883).
+
+**Fix**: Changed `WHERE worker_id=?` to `WHERE helper_id=?` in `app.py` line 7883.
+
+**Verification**: Timeline endpoint returns 200 with all resource groups.
+
+**Branch**: fix/2026-04-05-timeline-api-crash
+**Side effects**: None
+**Next priority**: Investigate 404s on Schedule, Labour, and Catering API endpoints
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

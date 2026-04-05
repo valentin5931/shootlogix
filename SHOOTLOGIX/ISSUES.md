@@ -7,6 +7,13 @@
 - **Root cause**: Timeline query referenced `site` column (doesn't exist) instead of `location_type`, and used `prep/filming/wrap` columns instead of `status` in `location_schedules`
 - **Files involved**: `app.py` (line ~7893, `api_timeline` function)
 
+## [P0] Schedule, Labour, and Catering API routes return 404
+- **Discovered**: 2026-04-05
+- **Symptoms**: `GET /api/productions/1/schedule` → 404, `GET /api/productions/1/labour` → 404, `GET /api/productions/1/catering` → 404. These route paths are not registered in `app.py`.
+- **Likely cause**: The frontend JS expects these endpoints but they were never created. Schedule data is at `/api/productions/<id>/location-schedules`. Labour data may be at `/api/productions/<id>/helpers`. Catering has no obvious equivalent route.
+- **Files involved**: `app.py` (route definitions), `static/app-monolith.js` (frontend API calls)
+- **Estimated effort**: Medium — need to either add the routes or fix the frontend to call existing routes
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
