@@ -1,5 +1,23 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P1] Populate Picture Boats tab with migrated boat data
+
+**Problem**: The Picture Boats tab (Fleet > Picture Boats) showed an empty list. The `/api/productions/1/picture-boats` endpoint returned `[]` because the `picture_boats` table was empty, even though 46 boats existed in the main `boats` table with `category='picture'`.
+
+**Root cause**: The data loader (`data_loader.py`) seeded all boats into the `boats` table during the BATEAUX migration, but never populated the separate `picture_boats` table. The Picture Boats tab queries `picture_boats` exclusively, so it always showed empty.
+
+**Fix**: Added `_migrate_boats_to_picture_boats()` migration in `data_loader.py` that copies all boats with `category='picture'` from the `boats` table into `picture_boats`. The migration is idempotent (uses a `picture_boats_migration_v1` setting flag) and runs on every startup via the bootstrap function.
+
+**Verification**:
+- `/api/productions/1/picture-boats` now returns 46 boats (was `[]`)
+- Picture boat CRUD works (create/delete tested)
+- All 45 existing tests pass
+- No regressions on other tabs
+
+**Branch**: fix/2026-04-05-populate-picture-boats
+**Side effects**: None — boats now appear in both the Boats tab (fleet overview) and Picture Boats tab (picture-specific assignment view), which is the intended design
+**Next priority**: Security Boats tab is still empty (needs domain knowledge to determine which boats are security boats, or user needs to create them via the UI). Also: Guards and Helpers tables are empty (no data seeded).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

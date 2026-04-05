@@ -301,6 +301,7 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _migrate_boats_to_picture_boats(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -340,6 +341,7 @@ def bootstrap():
               f"delta={bv.get('delta')}")
 
     _seed_picture_boats(prod_id)
+    _migrate_boats_to_picture_boats(prod_id)
     _seed_helpers(prod_id)
     _seed_security_boats(prod_id)
     _seed_transport(prod_id)
@@ -446,6 +448,58 @@ SECURITY_BOAT_FUNCS = [
     {'name': 'SAFETY MEDICAL', 'group': 'MEDICAL','color': '#22C55E', 'sort': 5, 'start': '2026-02-23', 'end': '2026-05-04'},
     {'name': 'SAFETY STANDBY', 'group': 'STANDBY','color': '#3B82F6', 'sort': 6, 'start': '2026-03-20', 'end': '2026-04-25'},
 ]
+
+
+def _migrate_boats_to_picture_boats(prod_id):
+    """
+    Migrate boats from the 'boats' table (category='picture') into 'picture_boats'.
+    Idempotent: only runs once (checked via setting flag).
+    Preserves original boat IDs by using explicit id inserts.
+    """
+    flag = "picture_boats_migration_v1"
+    if get_setting(flag):
+        return
+
+    with get_db() as conn:
+        existing_pb = conn.execute(
+            "SELECT COUNT(*) FROM picture_boats WHERE production_id=?", (prod_id,)
+        ).fetchone()[0]
+        if existing_pb > 0:
+            set_setting(flag, "1")
+            return
+
+        # Copy boats with category='picture' into picture_boats
+        source_boats = conn.execute(
+            "SELECT * FROM boats WHERE production_id=? AND category='picture' AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchall()
+
+        if not source_boats:
+            print(f"  No picture-category boats to migrate")
+            set_setting(flag, "1")
+            return
+
+        cols = ["production_id", "boat_nr", "name", "capacity", "night_ok",
+                "wave_rating", "captain", "vendor", "group_name", "notes",
+                "daily_rate_estimate", "daily_rate_actual", "image_path",
+                "sort_order", "physical_vessel_id", "version", "currency"]
+        placeholders = ", ".join("?" * len(cols))
+        col_names = ", ".join(cols)
+
+        count = 0
+        for boat in source_boats:
+            boat_dict = dict(boat)
+            values = [boat_dict.get(c) for c in cols]
+            conn.execute(
+                f"INSERT INTO picture_boats ({col_names}) VALUES ({placeholders})",
+                values
+            )
+            count += 1
+
+        conn.commit()
+        print(f"  Migrated {count} boats → picture_boats table")
+
+    set_setting(flag, "1")
 
 
 def _seed_security_boats(prod_id):

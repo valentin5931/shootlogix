@@ -7,12 +7,11 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
-## [P1] Picture Boats and Security Boats lists are empty
+## [P1] ~~Picture Boats~~ and Security Boats lists are empty
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`. All boats are in the main boats table with category "picture".
-- **Likely cause**: The data loader may not be seeding picture_boats and security_boats tables separately, or the boats were all created in the main `boats` table regardless of intended category.
-- **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
-- **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
+- **Fixed (Picture Boats)**: 2026-04-05 — Added `_migrate_boats_to_picture_boats()` in `data_loader.py` to copy boats with category='picture' from `boats` → `picture_boats` table. Picture Boats tab now shows 46 boats.
+- **Still open (Security Boats)**: `/api/productions/1/security-boats` returns `[]`. No boats have been identified as security boats. Requires domain knowledge or user action to populate.
+- **Files involved**: `data_loader.py` (migration added), `database.py`, `app.py`
 
 ## [P1] Transport and Helpers lists are empty
 - **Discovered**: 2026-03-22
