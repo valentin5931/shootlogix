@@ -6264,11 +6264,13 @@ const App = (() => {
     $('bd-delete-btn').classList.remove('hidden');
     $('bd-delete-btn').onclick = () => {
       showConfirm(`Delete vehicle "${v.name}"?`, async () => {
-        await api('DELETE', `/api/transport-vehicles/${vehicleId}`);
-        state.transportVehicles = state.transportVehicles.filter(x => x.id !== vehicleId);
-        closeBoatDetail();
-        renderTbVehicleList();
-        toast('Vehicle deleted');
+        try {
+          await api('DELETE', `/api/transport-vehicles/${vehicleId}`);
+          state.transportVehicles = state.transportVehicles.filter(x => x.id !== vehicleId);
+          closeBoatDetail();
+          renderTbVehicleList();
+          toast('Vehicle deleted');
+        } catch(e) { toast('Error deleting vehicle: ' + e.message, 'error'); }
       });
     };
 
@@ -6941,10 +6943,12 @@ const App = (() => {
 
   async function deleteFuelMachinery(id) {
     showConfirm('Delete this machinery row?', async () => {
-      await api('DELETE', `/api/fuel-machinery/${id}`);
-      state.fuelMachinery = (state.fuelMachinery||[]).filter(m => m.id !== id);
-      renderFuelMachineryGrid();
-      toast('Deleted');
+      try {
+        await api('DELETE', `/api/fuel-machinery/${id}`);
+        state.fuelMachinery = (state.fuelMachinery||[]).filter(m => m.id !== id);
+        renderFuelMachineryGrid();
+        toast('Deleted');
+      } catch(e) { toast('Error deleting machinery: ' + e.message, 'error'); }
     });
   }
 
@@ -7577,11 +7581,13 @@ const App = (() => {
     $('bd-delete-btn').classList.remove('hidden');
     $('bd-delete-btn').onclick = () => {
       showConfirm(`Delete worker "${w.name}"?`, async () => {
-        await api('DELETE', `/api/helpers/${workerId}`);
-        state.labourWorkers = state.labourWorkers.filter(x => x.id !== workerId);
-        closeBoatDetail();
-        renderLabour();
-        toast('Worker deleted');
+        try {
+          await api('DELETE', `/api/helpers/${workerId}`);
+          state.labourWorkers = state.labourWorkers.filter(x => x.id !== workerId);
+          closeBoatDetail();
+          renderLabour();
+          toast('Worker deleted');
+        } catch(e) { toast('Error deleting worker: ' + e.message, 'error'); }
       });
     };
     const asgns = state.labourAssignments.filter(a => a.helper_id === workerId);
@@ -9322,38 +9328,40 @@ const App = (() => {
 
   async function locCellClick(locName, locType, date, isLocked, locId) {
     if (isLocked) { toast('This date is locked', 'info'); return; }
-    const key = `${locName}|${date}`;
-    const schedules = state.locationSchedules || [];
-    const existing = schedules.find(s => s.location_name === locName && s.date === date);
-    const statusCycle = ['P', 'F', 'W'];
+    try {
+      const key = `${locName}|${date}`;
+      const schedules = state.locationSchedules || [];
+      const existing = schedules.find(s => s.location_name === locName && s.date === date);
+      const statusCycle = ['P', 'F', 'W'];
 
-    if (!existing) {
-      // Empty -> P
-      const result = await api('POST', `/api/productions/${state.prodId}/location-schedules`, {
-        location_id: locId, location_name: locName, location_type: locType, date, status: 'P'
-      });
-      if (result) state.locationSchedules.push(result);
-    } else {
-      const idx = statusCycle.indexOf(existing.status);
-      if (idx < statusCycle.length - 1) {
-        // P -> F -> W
-        const newStatus = statusCycle[idx + 1];
+      if (!existing) {
+        // Empty -> P
         const result = await api('POST', `/api/productions/${state.prodId}/location-schedules`, {
-          location_id: locId, location_name: locName, location_type: locType, date, status: newStatus
+          location_id: locId, location_name: locName, location_type: locType, date, status: 'P'
         });
-        if (result) {
-          const i = state.locationSchedules.findIndex(s => s.location_name === locName && s.date === date);
-          if (i >= 0) state.locationSchedules[i] = result;
-        }
+        if (result) state.locationSchedules.push(result);
       } else {
-        // W -> empty (delete)
-        await api('POST', `/api/productions/${state.prodId}/location-schedules/delete`, {
-          location_id: locId, location_name: locName, date
-        });
-        state.locationSchedules = state.locationSchedules.filter(s => !(s.location_name === locName && s.date === date));
+        const idx = statusCycle.indexOf(existing.status);
+        if (idx < statusCycle.length - 1) {
+          // P -> F -> W
+          const newStatus = statusCycle[idx + 1];
+          const result = await api('POST', `/api/productions/${state.prodId}/location-schedules`, {
+            location_id: locId, location_name: locName, location_type: locType, date, status: newStatus
+          });
+          if (result) {
+            const i = state.locationSchedules.findIndex(s => s.location_name === locName && s.date === date);
+            if (i >= 0) state.locationSchedules[i] = result;
+          }
+        } else {
+          // W -> empty (delete)
+          await api('POST', `/api/productions/${state.prodId}/location-schedules/delete`, {
+            location_id: locId, location_name: locName, date
+          });
+          state.locationSchedules = state.locationSchedules.filter(s => !(s.location_name === locName && s.date === date));
+        }
       }
-    }
-    renderLocations();
+      renderLocations();
+    } catch(e) { toast('Error updating location schedule: ' + e.message, 'error'); }
   }
 
   async function locToggleLock(date) {
@@ -9597,14 +9605,16 @@ const App = (() => {
   }
 
   async function _locModalRemoveSchedule(locName, date) {
-    const editId = $('nl-edit-id').value;
-    const site = (state.locationSites || []).find(s => s.id === parseInt(editId));
-    await api('POST', `/api/productions/${state.prodId}/location-schedules/delete`, {
-      location_id: site ? site.id : undefined, location_name: locName, date
-    });
-    state.locationSchedules = state.locationSchedules.filter(s => !(s.location_name === locName && s.date === date));
-    if (site) _renderLocationScheduleInModal(site);
-    renderLocations();
+    try {
+      const editId = $('nl-edit-id').value;
+      const site = (state.locationSites || []).find(s => s.id === parseInt(editId));
+      await api('POST', `/api/productions/${state.prodId}/location-schedules/delete`, {
+        location_id: site ? site.id : undefined, location_name: locName, date
+      });
+      state.locationSchedules = state.locationSchedules.filter(s => !(s.location_name === locName && s.date === date));
+      if (site) _renderLocationScheduleInModal(site);
+      renderLocations();
+    } catch(e) { toast('Error removing schedule: ' + e.message, 'error'); }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -10514,11 +10524,13 @@ const App = (() => {
     $('bd-delete-btn').classList.remove('hidden');
     $('bd-delete-btn').onclick = () => {
       showConfirm(`Delete guard "${w.name}"?`, async () => {
-        await api('DELETE', `/api/guard-camp-workers/${workerId}`);
-        state.gcWorkers = state.gcWorkers.filter(x => x.id !== workerId);
-        closeBoatDetail();
-        renderGuardCamp();
-        toast('Guard deleted');
+        try {
+          await api('DELETE', `/api/guard-camp-workers/${workerId}`);
+          state.gcWorkers = state.gcWorkers.filter(x => x.id !== workerId);
+          closeBoatDetail();
+          renderGuardCamp();
+          toast('Guard deleted');
+        } catch(e) { toast('Error deleting guard: ' + e.message, 'error'); }
       });
     };
     const asgns = state.gcAssignments.filter(a => a.helper_id === workerId);
@@ -11515,81 +11527,82 @@ const App = (() => {
   }
 
   async function fnbCellClick(itemId, entryType, mode, ref) {
-    const weeks = _fnbWeeks();
-    let targetDate;
-    if (mode === 'week') {
-      const wDates = weeks[ref];
-      if (!wDates || wDates.length === 0) return;
-      // For week mode, prompt for the total quantity for the week
-      // We will store it split evenly across the first day of the week as a single entry
-      // Actually simpler: store per-week quantity on the Monday (first day of week)
-      targetDate = wDates[0];
-      const existing = (state.fnbEntries || []).find(e => e.item_id === itemId && e.entry_type === entryType && e.date === targetDate);
-      const curWeekQty = wDates.reduce((s, d) => {
-        const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === d);
-        return s + (e ? (e.quantity || 0) : 0);
-      }, 0);
-      const qtyStr = prompt(`Quantity for week ${ref + 1} (${_fnbWeekLabel(wDates)}):`, curWeekQty);
-      if (qtyStr === null) return;
-      const newQty = parseFloat(qtyStr) || 0;
-      // Clear all existing entries for this item/type in this week
-      for (const d of wDates) {
-        const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === d);
-        if (e) {
-          await api('DELETE', `/api/fnb-entries/${e.id}`);
-          state.fnbEntries = state.fnbEntries.filter(en => en.id !== e.id);
+    try {
+      const weeks = _fnbWeeks();
+      let targetDate;
+      if (mode === 'week') {
+        const wDates = weeks[ref];
+        if (!wDates || wDates.length === 0) return;
+        targetDate = wDates[0];
+        const existing = (state.fnbEntries || []).find(e => e.item_id === itemId && e.entry_type === entryType && e.date === targetDate);
+        const curWeekQty = wDates.reduce((s, d) => {
+          const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === d);
+          return s + (e ? (e.quantity || 0) : 0);
+        }, 0);
+        const qtyStr = prompt(`Quantity for week ${ref + 1} (${_fnbWeekLabel(wDates)}):`, curWeekQty);
+        if (qtyStr === null) return;
+        const newQty = parseFloat(qtyStr) || 0;
+        // Clear all existing entries for this item/type in this week
+        for (const d of wDates) {
+          const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === d);
+          if (e) {
+            await api('DELETE', `/api/fnb-entries/${e.id}`);
+            state.fnbEntries = state.fnbEntries.filter(en => en.id !== e.id);
+          }
+        }
+        // Create single entry on first day of week
+        if (newQty > 0) {
+          const result = await api('POST', `/api/productions/${state.prodId}/fnb-entries`, {
+            item_id: itemId, entry_type: entryType, date: targetDate, quantity: newQty
+          });
+          if (result) state.fnbEntries.push(result);
+        }
+      } else {
+        targetDate = ref;
+        const existing = (state.fnbEntries || []).find(e => e.item_id === itemId && e.entry_type === entryType && e.date === targetDate);
+        const curQty = existing ? (existing.quantity || 0) : 0;
+        const qtyStr = prompt(`Quantity for ${targetDate}:`, curQty);
+        if (qtyStr === null) return;
+        const newQty = parseFloat(qtyStr) || 0;
+        if (newQty > 0) {
+          const result = await api('POST', `/api/productions/${state.prodId}/fnb-entries`, {
+            item_id: itemId, entry_type: entryType, date: targetDate, quantity: newQty
+          });
+          if (result) {
+            const i = (state.fnbEntries || []).findIndex(e => e.item_id === itemId && e.entry_type === entryType && e.date === targetDate);
+            if (i >= 0) state.fnbEntries[i] = result;
+            else state.fnbEntries.push(result);
+          }
+        } else if (existing) {
+          await api('DELETE', `/api/fnb-entries/${existing.id}`);
+          state.fnbEntries = state.fnbEntries.filter(e => e.id !== existing.id);
         }
       }
-      // Create single entry on first day of week
-      if (newQty > 0) {
-        const result = await api('POST', `/api/productions/${state.prodId}/fnb-entries`, {
-          item_id: itemId, entry_type: entryType, date: targetDate, quantity: newQty
-        });
-        if (result) state.fnbEntries.push(result);
-      }
-    } else {
-      targetDate = ref;
-      const existing = (state.fnbEntries || []).find(e => e.item_id === itemId && e.entry_type === entryType && e.date === targetDate);
-      const curQty = existing ? (existing.quantity || 0) : 0;
-      const qtyStr = prompt(`Quantity for ${targetDate}:`, curQty);
-      if (qtyStr === null) return;
-      const newQty = parseFloat(qtyStr) || 0;
-      if (newQty > 0) {
-        const result = await api('POST', `/api/productions/${state.prodId}/fnb-entries`, {
-          item_id: itemId, entry_type: entryType, date: targetDate, quantity: newQty
-        });
-        if (result) {
-          const i = (state.fnbEntries || []).findIndex(e => e.item_id === itemId && e.entry_type === entryType && e.date === targetDate);
-          if (i >= 0) state.fnbEntries[i] = result;
-          else state.fnbEntries.push(result);
-        }
-      } else if (existing) {
-        await api('DELETE', `/api/fnb-entries/${existing.id}`);
-        state.fnbEntries = state.fnbEntries.filter(e => e.id !== existing.id);
-      }
-    }
-    renderFnb();
+      renderFnb();
+    } catch(e) { toast('Error updating F&B entry: ' + e.message, 'error'); }
   }
 
   async function fnbCellClear(itemId, entryType, mode, ref) {
-    const weeks = _fnbWeeks();
-    if (mode === 'week') {
-      const wDates = weeks[ref];
-      for (const d of wDates) {
-        const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === d);
+    try {
+      const weeks = _fnbWeeks();
+      if (mode === 'week') {
+        const wDates = weeks[ref];
+        for (const d of wDates) {
+          const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === d);
+          if (e) {
+            await api('DELETE', `/api/fnb-entries/${e.id}`);
+            state.fnbEntries = state.fnbEntries.filter(en => en.id !== e.id);
+          }
+        }
+      } else {
+        const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === ref);
         if (e) {
           await api('DELETE', `/api/fnb-entries/${e.id}`);
           state.fnbEntries = state.fnbEntries.filter(en => en.id !== e.id);
         }
       }
-    } else {
-      const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === ref);
-      if (e) {
-        await api('DELETE', `/api/fnb-entries/${e.id}`);
-        state.fnbEntries = state.fnbEntries.filter(en => en.id !== e.id);
-      }
-    }
-    renderFnb();
+      renderFnb();
+    } catch(e) { toast('Error clearing F&B entry: ' + e.message, 'error'); }
   }
 
   // ── FNB Category CRUD modals ─────────────────────────────────

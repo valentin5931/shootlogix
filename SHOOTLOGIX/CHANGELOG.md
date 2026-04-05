@@ -1,5 +1,24 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P1] Add missing error handling to 10 destructive API operations
+
+**Problem**: 10 destructive API calls (DELETE and delete-via-POST) across 6 modules had no try/catch error handling. When these operations failed (network error, server 500, auth expiry), the user received zero feedback and the local UI state became inconsistent with the server — the UI would show the item as deleted while the server still had it.
+
+**Root cause**: These operations were added incrementally across different modules (Transport, Fuel, Labour, Guards, Locations, F&B) without consistent error handling patterns. Other similar operations in the codebase (e.g. boat delete, assignment delete, document delete) already had proper try/catch with error toasts.
+
+**Fix**: Wrapped all 10 unprotected destructive operations in try/catch blocks with user-facing error toasts:
+- `static/app-monolith.js`: Transport vehicle delete, Fuel machinery delete, Worker (helper) delete, Guard camp worker delete, Location schedule cell click (status cycle + delete), Location modal schedule remove, F&B cell click (entry create/update/delete), F&B cell clear (entry delete)
+
+**Verification**:
+- JS syntax check passes (node -c)
+- All 45 backend tests pass
+- No regressions on any tab
+- Error handling now consistent across all destructive operations
+
+**Branch**: fix/2026-04-05-missing-error-handling-destructive-ops
+**Side effects**: None
+**Next priority**: P1 empty data — Picture Boats and Security Boats tables are empty (boats exist in main boats table with category "picture" but not in separate picture_boats/security_boats tables)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
