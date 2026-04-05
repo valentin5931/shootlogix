@@ -7,12 +7,17 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
-## [P1] Picture Boats and Security Boats lists are empty
+## [P1] ~~Picture Boats and Security Boats lists are empty~~ FIXED 2026-04-05
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`. All boats are in the main boats table with category "picture".
-- **Likely cause**: The data loader may not be seeding picture_boats and security_boats tables separately, or the boats were all created in the main `boats` table regardless of intended category.
-- **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
-- **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
+- **Fixed**: 2026-04-05 — Seeded 6 picture boats (PCCs) and 5 security boats (SAFETY/EVAC/MEDICAL) in `data_loader.py`
+- **Branch**: fix/2026-04-05-seed-pb-sb-entities
+
+## [P1] Helper entities missing — 73 orphan assignments
+- **Discovered**: 2026-04-05
+- **Symptoms**: `helpers` table has 0 entries, but `helper_assignments` has 73 records with `helper_id=NULL`. The Labour tab shows function cards/assignments but no workers in the sidebar.
+- **Likely cause**: `_seed_helpers()` in `data_loader.py` creates functions and assignments but never creates actual helper entities in the `helpers` table.
+- **Files involved**: `data_loader.py` (`_seed_helpers`), `database.py` (`create_helper`)
+- **Estimated effort**: Medium — need to add helper entity seed data with names/roles matching the function assignments
 
 ## [P1] Transport and Helpers lists are empty
 - **Discovered**: 2026-03-22

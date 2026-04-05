@@ -1,5 +1,25 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P1] Seed picture boats and security boats entities
+
+**Problem**: The Picture Boats and Security Boats tabs were completely empty. The `picture_boats` and `security_boats` database tables had 0 entries, even though their function groups (YELLOW/RED/NEUTRAL/EXILE for picture; SAFETY/EVAC/MEDICAL/STANDBY for security) were already seeded.
+
+**Root cause**: The `data_loader.py` functions `_seed_picture_boats()` and `_seed_security_boats()` only created boat_functions (role/assignment slots) but never created the actual boat entities in the `picture_boats` and `security_boats` tables.
+
+**Fix**:
+- `data_loader.py`: Added `PICTURE_BOAT_DATA` (6 PCCs) and `SECURITY_BOAT_DATA` (5 safety boats) seed arrays. Extended `_seed_picture_boats()` and `_seed_security_boats()` to create boat entities using `create_picture_boat()` and `create_security_boat()` with idempotent flags (`picture_boats_seed_v1`, `security_boats_seed_v1`). Added `create_picture_boat` to imports.
+
+**Verification**:
+- `GET /api/productions/1/picture-boats` → 6 boats (was 0)
+- `GET /api/productions/1/security-boats` → 5 boats (was 0)
+- Main fleet boats (46) unaffected
+- All other endpoints pass regression (locations, PDT, budget, guard-posts, FnB)
+- Idempotent: restart does not re-seed
+
+**Branch**: fix/2026-04-05-seed-pb-sb-entities
+**Side effects**: None
+**Next priority**: Seed helper entities (helpers table is empty but 73 helper_assignments exist — data inconsistency)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
