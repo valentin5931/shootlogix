@@ -12250,7 +12250,7 @@ const App = (() => {
     });
 
     // Search helpers/labour
-    (state.lbWorkers || []).forEach(h => {
+    (state.labourWorkers || []).forEach(h => {
       if ((h.name || '').toLowerCase().includes(q) || (h.role || '').toLowerCase().includes(q)) {
         results.push({ type: 'Worker', name: h.name, detail: h.role || '', tab: 'labour', id: h.id });
       }

@@ -35,6 +35,13 @@
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
 
+## [P1] Global search does not find labour workers — FIXED 2026-04-05
+- **Discovered**: 2026-04-05
+- **Symptoms**: Searching for labour workers/helpers via Ctrl+K returns no results
+- **Root cause**: `_doSearch()` referenced `state.lbWorkers` instead of `state.labourWorkers`
+- **Fix**: Changed to `state.labourWorkers` in `app-monolith.js` line 12253
+- **Status**: FIXED in branch fix/2026-04-05-search-labour-workers-broken
+
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22
 - **Symptoms**: Files like `fleet.js`, `crew.js`, `today.js`, `documents.js`, etc. in `static/modules/` reference `window._SL` which doesn't exist. They are never loaded by `index.html`.

@@ -1,5 +1,19 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P1] Fix global search not finding labour workers/helpers
+
+**Problem**: Using the global search (Ctrl+K / ⌘K) to find labour workers or helpers returned no results, even when matching workers existed.
+
+**Root cause**: The `_doSearch()` function in `app-monolith.js` iterated over `state.lbWorkers`, but labour workers are stored in `state.labourWorkers`. `state.lbWorkers` was never set anywhere, so the search always iterated over an empty fallback array.
+
+**Fix**: `static/app-monolith.js` line 12253: changed `state.lbWorkers` to `state.labourWorkers`.
+
+**Verification**: JS syntax check passes. All 45 tests pass. No regressions — the fix is a single variable name correction.
+
+**Branch**: fix/2026-04-05-search-labour-workers-broken
+**Side effects**: None
+**Next priority**: Remaining P1 UX issues (empty state handling for picture boats/security boats/transport, form validation gaps)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
