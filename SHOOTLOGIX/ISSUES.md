@@ -1,5 +1,17 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [FIXED] [P1] Delete day event missing confirmation dialog
+- **Discovered**: 2026-04-05
+- **Fixed**: 2026-04-05 (branch: fix/2026-04-05-missing-confirm-and-validation)
+- **Symptoms**: Clicking ✕ on a PDT day event deleted it immediately without confirmation
+- **Fix**: Wrapped deleteEventFromDay() in showConfirm()
+
+## [FIXED] [P1] Document upload allows submission without file
+- **Discovered**: 2026-04-05
+- **Fixed**: 2026-04-05 (branch: fix/2026-04-05-missing-confirm-and-validation)
+- **Symptoms**: User could submit document upload form without selecting a file
+- **Fix**: Added file validation with error toast before submission
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

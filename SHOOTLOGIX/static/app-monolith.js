@@ -1284,10 +1284,11 @@ const App = (() => {
     const docType = document.getElementById('doc-up-type')?.value || '';
     const fileInput = document.getElementById('doc-up-file');
     const file = fileInput?.files?.[0];
+    if (!file) { toast('Please select a file to upload', 'error'); return; }
     const fd = new FormData();
     fd.append('name', name);
     fd.append('doc_type', docType);
-    if (file) fd.append('file', file);
+    fd.append('file', file);
     try {
       const res = await authFetch(`/api/productions/${state.prodId}/documents`, { method: 'POST', body: fd });
       if (res.ok) { toast('Document uploaded'); document.getElementById('doc-upload-modal')?.remove(); renderDocuments(); }
@@ -2165,21 +2166,24 @@ const App = (() => {
   async function deleteEventFromDay(idx) {
     const ev = state.editingDayEvents[idx];
     if (!ev) return;
-    if (ev.id && state.editingDayId) {
-      try {
-        await api('DELETE', `/api/events/${ev.id}`);
-      } catch (e) {
-        toast('Error deleting event: ' + e.message, 'error');
-        return;
+    const evLabel = ev.event_type ? `${ev.event_type} event` : 'this event';
+    showConfirm(`Delete ${evLabel}?`, async () => {
+      if (ev.id && state.editingDayId) {
+        try {
+          await api('DELETE', `/api/events/${ev.id}`);
+        } catch (e) {
+          toast('Error deleting event: ' + e.message, 'error');
+          return;
+        }
       }
-    }
-    state.editingDayEvents.splice(idx, 1);
-    // Re-number sort_order
-    state.editingDayEvents.forEach((e, i) => { e.sort_order = i; });
-    // Update conseil flag if no council remains
-    const hasCouncil = state.editingDayEvents.some(e => e.event_type === 'council');
-    if (!hasCouncil) $('dm-conseil').value = '0';
-    _renderDayEvents();
+      state.editingDayEvents.splice(idx, 1);
+      // Re-number sort_order
+      state.editingDayEvents.forEach((e, i) => { e.sort_order = i; });
+      // Update conseil flag if no council remains
+      const hasCouncil = state.editingDayEvents.some(e => e.event_type === 'council');
+      if (!hasCouncil) $('dm-conseil').value = '0';
+      _renderDayEvents();
+    });
   }
 
   // ─── PDT → Locations sync helper ─────────────────────────────────────────

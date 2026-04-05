@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-05 — [P1] Add missing confirmation dialog + file upload validation
+
+**Problem**:
+1. `deleteEventFromDay()` had no confirmation dialog — clicking the ✕ button on a PDT day event immediately deleted it without asking the user, risking accidental data loss on production schedules.
+2. `_docSubmitUpload()` allowed form submission without selecting a file — the file field was optional, so users could click "Upload" with only a name, resulting in a document entry with no file attached.
+
+**Root cause**:
+1. The delete event function was implemented without the `showConfirm()` pattern used by all other delete operations in the app.
+2. The file input validation only checked `if (file)` to conditionally append it, but never prevented submission when no file was selected.
+
+**Fix**:
+- `static/app-monolith.js` line 2165: Wrapped `deleteEventFromDay()` body in `showConfirm()` callback with a descriptive message showing the event type.
+- `static/app-monolith.js` line 1286: Added early return with error toast `"Please select a file to upload"` when no file is selected, and changed `if (file)` conditional append to unconditional append (since we now guarantee a file exists).
+
+**Verification**:
+- JS syntax check passes
+- All other delete operations still have their confirmations
+- App starts and serves correctly
+- All API endpoints respond properly
+
+**Branch**: fix/2026-04-05-missing-confirm-and-validation
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data model issue)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
