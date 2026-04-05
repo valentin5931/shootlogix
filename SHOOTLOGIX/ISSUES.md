@@ -1,5 +1,11 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] Timeline endpoint crash — FIXED 2026-04-05
+- **Discovered**: 2026-04-05
+- **Symptoms**: `/api/productions/1/timeline` returned 500 with `sqlite3.OperationalError: no such column: site` then `no such column: prep`
+- **Root cause**: Timeline query referenced `locations.site` (should be `location_type`) and `location_schedules.prep/filming/wrap` (should use single `status` column)
+- **Status**: **FIXED** in branch `fix/2026-04-05-timeline-no-such-column-site`
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
