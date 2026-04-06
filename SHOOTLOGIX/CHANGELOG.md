@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-06 — [P1] Add missing confirmation dialogs for destructive delete actions
+
+**Problem**: Two destructive operations had no confirmation dialog:
+1. `deleteEventFromDay()` — Clicking the "✕" button on a PDT schedule event deleted it immediately without asking the user.
+2. `fnbCellClear()` — Right-clicking an FNB (Catering) cell cleared entries (single day or entire week) without any confirmation. Especially dangerous because right-click is easy to trigger accidentally.
+
+**Root cause**: These functions were implemented as direct async DELETE calls without wrapping in the `showConfirm()` dialog that other delete operations (boats, vehicles, workers, categories) already use.
+
+**Fix**:
+- `static/app-monolith.js` line 2165: `deleteEventFromDay()` now shows a confirmation dialog with the event title before deleting.
+- `static/app-monolith.js` line 11577: `fnbCellClear()` now shows a confirmation dialog indicating whether a single day or entire week of entries will be cleared.
+
+**Verification**:
+- JS bracket balance check passes (opens=closes=15045)
+- App starts and serves all pages correctly
+- All existing delete operations still work (they already had confirmations)
+- Both functions now use the same `showConfirm()` pattern as `confirmDeleteBoat()`, `confirmDeleteVehicle()`, etc.
+
+**Branch**: fix/2026-04-06-missing-delete-confirmations
+**Side effects**: None — only added confirmation wrapper around existing logic
+**Next priority**: P1 — Picture Boats / Security Boats empty data issue (may need data migration or better onboarding UX)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

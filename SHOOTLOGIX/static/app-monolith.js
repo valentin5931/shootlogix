@@ -2162,24 +2162,27 @@ const App = (() => {
   }
 
   // Delete an event from the modal list
-  async function deleteEventFromDay(idx) {
+  function deleteEventFromDay(idx) {
     const ev = state.editingDayEvents[idx];
     if (!ev) return;
-    if (ev.id && state.editingDayId) {
-      try {
-        await api('DELETE', `/api/events/${ev.id}`);
-      } catch (e) {
-        toast('Error deleting event: ' + e.message, 'error');
-        return;
+    const label = ev.title || ev.event_type || `Event #${idx + 1}`;
+    showConfirm(`Delete event "${label}"?`, async () => {
+      if (ev.id && state.editingDayId) {
+        try {
+          await api('DELETE', `/api/events/${ev.id}`);
+        } catch (e) {
+          toast('Error deleting event: ' + e.message, 'error');
+          return;
+        }
       }
-    }
-    state.editingDayEvents.splice(idx, 1);
-    // Re-number sort_order
-    state.editingDayEvents.forEach((e, i) => { e.sort_order = i; });
-    // Update conseil flag if no council remains
-    const hasCouncil = state.editingDayEvents.some(e => e.event_type === 'council');
-    if (!hasCouncil) $('dm-conseil').value = '0';
-    _renderDayEvents();
+      state.editingDayEvents.splice(idx, 1);
+      // Re-number sort_order
+      state.editingDayEvents.forEach((e, i) => { e.sort_order = i; });
+      // Update conseil flag if no council remains
+      const hasCouncil = state.editingDayEvents.some(e => e.event_type === 'council');
+      if (!hasCouncil) $('dm-conseil').value = '0';
+      _renderDayEvents();
+    });
   }
 
   // ─── PDT → Locations sync helper ─────────────────────────────────────────
@@ -11571,25 +11574,28 @@ const App = (() => {
     renderFnb();
   }
 
-  async function fnbCellClear(itemId, entryType, mode, ref) {
-    const weeks = _fnbWeeks();
-    if (mode === 'week') {
-      const wDates = weeks[ref];
-      for (const d of wDates) {
-        const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === d);
+  function fnbCellClear(itemId, entryType, mode, ref) {
+    const label = mode === 'week' ? `Clear all ${entryType} entries for this week?` : `Clear ${entryType} entry for ${ref}?`;
+    showConfirm(label, async () => {
+      const weeks = _fnbWeeks();
+      if (mode === 'week') {
+        const wDates = weeks[ref];
+        for (const d of wDates) {
+          const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === d);
+          if (e) {
+            await api('DELETE', `/api/fnb-entries/${e.id}`);
+            state.fnbEntries = state.fnbEntries.filter(en => en.id !== e.id);
+          }
+        }
+      } else {
+        const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === ref);
         if (e) {
           await api('DELETE', `/api/fnb-entries/${e.id}`);
           state.fnbEntries = state.fnbEntries.filter(en => en.id !== e.id);
         }
       }
-    } else {
-      const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === ref);
-      if (e) {
-        await api('DELETE', `/api/fnb-entries/${e.id}`);
-        state.fnbEntries = state.fnbEntries.filter(en => en.id !== e.id);
-      }
-    }
-    renderFnb();
+      renderFnb();
+    });
   }
 
   // ── FNB Category CRUD modals ─────────────────────────────────
