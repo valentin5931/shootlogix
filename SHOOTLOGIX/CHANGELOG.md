@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-06 — [P1] Fix FAB (floating action button) missing on Fleet and Crew tabs
+
+**Problem**: The mobile floating action button (+ Add) was hidden when navigating via the Fleet or Crew unified tabs. Users on mobile couldn't add boats, picture boats, security boats, workers, or guards from these primary navigation paths.
+
+**Root cause**: `_updateFab()` and `fabAction()` used `state.tab` directly to look up `FAB_CONFIG`. When on the Fleet unified tab, `state.tab === 'fleet'` but `FAB_CONFIG` only has entries for `'boats'`, `'picture-boats'`, `'security-boats'` (the sub-tabs). Same issue for Crew (`'crew'` vs `'labour'`/`'guards'`).
+
+**Fix**:
+- `static/app-monolith.js`: Added `_fabEffectiveTab()` helper that resolves `'fleet'` to the active fleet sub-tab (`_fleetSubTab`) and `'crew'` to the active crew sub-tab (`_crewSubTab`). Both `_updateFab()` and `fabAction()` now use this resolved tab.
+- Added `_updateFab()` calls to `fleetSetSubTab()` and `crewSetSubTab()` so the FAB label updates when switching between sub-tabs (e.g., from Boats to Picture Boats).
+
+**Verification**:
+- FAB now shows "+ Add Boat" on Fleet > Boats, "+ Add Boat" on Fleet > Picture Boats, "+ Add Boat" on Fleet > Security Boats
+- FAB shows "+ Add Worker" on Crew > Labor, "+ Add Guard" on Crew > Guards
+- FAB correctly hidden for READER role
+- JS syntax check passes
+- All 45 tests pass
+
+**Branch**: fix/2026-04-06-fab-fleet-crew-tabs
+**Side effects**: None
+**Next priority**: P1 — Search only works for already-loaded data (transport, guards, locations not searchable until tab visited)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

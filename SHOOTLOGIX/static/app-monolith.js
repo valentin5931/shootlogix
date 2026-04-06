@@ -965,6 +965,7 @@ const App = (() => {
     renderFleetUnified();
     const _fleetLabels = { 'boats': 'Boats', 'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats' };
     _updateBreadcrumb(_fleetLabels[sub] || sub);
+    _updateFab();
   }
 
   // ── Crew unified tab ──────────────────────────────────────
@@ -1021,6 +1022,7 @@ const App = (() => {
     renderCrewUnified();
     const _crewLabels = { 'labour': 'Labor', 'guards': 'Guards' };
     _updateBreadcrumb(_crewLabels[sub] || sub);
+    _updateFab();
   }
 
   // ── Today tab ─────────────────────────────────────────────
@@ -12895,10 +12897,17 @@ const App = (() => {
     fnb:              { get label() { return t('fab.category'); },  action: () => showFnbCatModal() },
   };
 
+  function _fabEffectiveTab() {
+    // Resolve fleet/crew unified tabs to their active sub-tab
+    if (state.tab === 'fleet') return _fleetSubTab || 'boats';
+    if (state.tab === 'crew')  return _crewSubTab  || 'labour';
+    return state.tab;
+  }
+
   function _updateFab() {
     const fab = $('fab-btn');
     if (!fab) return;
-    const cfg = FAB_CONFIG[state.tab];
+    const cfg = FAB_CONFIG[_fabEffectiveTab()];
     if (!cfg || !_canEdit()) {
       fab.style.display = 'none';
       return;
@@ -12909,7 +12918,7 @@ const App = (() => {
   }
 
   function fabAction() {
-    const cfg = FAB_CONFIG[state.tab];
+    const cfg = FAB_CONFIG[_fabEffectiveTab()];
     if (cfg) cfg.action();
   }
 

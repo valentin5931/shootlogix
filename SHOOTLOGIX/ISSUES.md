@@ -1,5 +1,17 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] ~~FAB hidden on Fleet/Crew tabs~~ — FIXED 2026-04-06
+- **Discovered**: 2026-04-06
+- **Symptoms**: Mobile floating action button (+ Add) not visible when on Fleet or Crew unified tabs.
+- **Fix**: Branch `fix/2026-04-06-fab-fleet-crew-tabs` — resolve sub-tab in `_fabEffectiveTab()`.
+
+## [P1] Search only works for already-loaded tab data
+- **Discovered**: 2026-04-06
+- **Symptoms**: Cmd+K search doesn't find transport vehicles, guards, or locations unless the user has already visited those tabs (data loaded lazily into state).
+- **Likely cause**: `_doSearch()` searches only in-memory state arrays (e.g., `state.transportVehicles`), which are empty until the corresponding tab is loaded.
+- **Files involved**: `static/app-monolith.js` (`_doSearch` function)
+- **Estimated effort**: Medium — could preload essential data on init, or make search hit the API directly
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
