@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-06 — [P0] Fix Timeline tab — API crash + frontend registration race condition
+
+**Problem**: Timeline tab did nothing when clicked. No Gantt view was rendered.
+
+**Root cause**:
+1. `timeline.js` loads before `app-monolith.js` in `index.html`. When `timeline.js` tries to register `App.renderTimeline`, `App` is still `undefined` (the IIFE hasn't executed yet). So the registration silently fails.
+2. The `/api/productions/<id>/timeline` endpoint crashed with `sqlite3.OperationalError: no such column: worker_id` — the query on `guard_camp_assignments` used `worker_id` but the actual column is `helper_id`.
+3. Same endpoint also crashed on the locations query: `locations.site` doesn't exist (correct: `location_type`), and `location_schedules.prep/filming/wrap` don't exist (correct: `status`).
+
+**Fix**:
+- `static/app-monolith.js`: Changed `setTab()` and `_reloadCurrentTab()` to call `Timeline.init()` directly (the `Timeline` global is available since `timeline.js` loads first), instead of relying on `App.renderTimeline`.
+- `app.py` (line 7883): Changed `WHERE worker_id=?` to `WHERE helper_id=?` in the guard_camp_assignments query.
+- `app.py` (lines 7893-7912): Fixed locations query to use `location_type` instead of `site`, and location_schedules query to use `status` instead of `prep/filming/wrap`.
+
+**Verification**:
+- Timeline API returns 200 with 86 resources, 32 shooting days, 121 functions
+- All other endpoints still return 200 (no regressions)
+- JS syntax check passes
+
+**Branch**: fix/2026-04-06-timeline-api-guard-column
+**Side effects**: None
+**Next priority**: The existing branch `fix/2026-04-06-timeline-tab-broken` has a more comprehensive frontend Gantt implementation that should also be reviewed/merged.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
