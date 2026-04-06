@@ -35,6 +35,18 @@
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
 
+## ~~[P0/P1] Timeline tab — API crash + missing frontend render~~ FIXED 2026-04-06
+- **Fixed in**: fix/2026-04-06-timeline-tab-broken
+- **Resolution**: Fixed column name mismatches in timeline API (`site` → `location_type`, `prep/filming/wrap` → `status`). Implemented full `renderTimeline()` Gantt view in JS.
+
+## [P1] Picture Boats and Security Boats data model clarification needed
+- **Discovered**: 2026-03-22, **Updated**: 2026-04-06
+- **Symptoms**: Both `picture_boats` and `security_boats` tables contain 0 rows. All 46 boats are in the `boats` table with `category='picture'`. The Picture Boats and Security Boats tabs render correctly but show empty lists.
+- **Analysis**: The backend has separate tables and API endpoints for each boat type. The frontend correctly calls these separate endpoints. There are 4 picture-context functions (YELLOW, RED, NEUTRAL, EXILE) and 6 security-context functions — but no boats or assignments in those modules.
+- **Decision needed**: Are these tabs meant for separate physical boats, or should some boats from the main `boats` table be migrated? This requires user/production team input.
+- **Files involved**: `database.py`, `data_loader.py`, `app.py`
+- **Estimated effort**: Medium — depends on whether data migration or manual entry is the right approach
+
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22
 - **Symptoms**: Files like `fleet.js`, `crew.js`, `today.js`, `documents.js`, etc. in `static/modules/` reference `window._SL` which doesn't exist. They are never loaded by `index.html`.

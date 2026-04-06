@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-06 — [P0/P1] Fix Timeline tab — API crash + missing frontend render
+
+**Problem**: The Timeline tab was completely non-functional:
+1. Clicking the Timeline tab did nothing (no error, no content)
+2. The `/api/productions/:id/timeline` backend endpoint crashed with a 500 error
+
+**Root cause**:
+1. The `renderTimeline()` function was never implemented in `app-monolith.js`. The `setTab()` handler used a `typeof App.renderTimeline === 'function'` guard that silently skipped rendering.
+2. The timeline API endpoint in `app.py` referenced non-existent columns: `locations.site` (should be `location_type`) and `location_schedules.prep/filming/wrap` (should use `status` column).
+
+**Fix**:
+- `app.py` (lines 7893-7909): Fixed `SELECT` queries to use actual column names (`location_type` instead of `site`, `status` instead of `prep/filming/wrap`). Added `deleted_at IS NULL` filter to all entity queries (boats, picture_boats, security_boats, transport_vehicles, helpers, locations).
+- `static/app-monolith.js`: Implemented full `renderTimeline()` function with Gantt-style view showing all resources (boats, vehicles, crew, locations) with assignment bars on a date grid. Includes group filter buttons, shooting day highlighting, Sunday column markers, and month headers. Removed the `typeof` guard from `setTab()`.
+
+**Verification**:
+- Timeline API returns 200 with 81 resources, 32 shooting days
+- Timeline tab renders a Gantt chart with filterable groups (Boats/Vehicles/Locations)
+- All other endpoints still return 200 (no regressions)
+- JS syntax check passes
+
+**Branch**: fix/2026-04-06-timeline-tab-broken
+**Side effects**: None
+**Next priority**: Implement missing data for Picture Boats and Security Boats tabs (P1 — tables are empty, need to confirm if data migration from boats table is needed or if these are separate entities to be created by users)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

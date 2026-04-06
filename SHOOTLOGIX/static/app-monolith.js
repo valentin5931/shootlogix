@@ -1359,7 +1359,7 @@ const App = (() => {
     if (tab === 'crew')            renderCrewUnified();
     if (tab === 'today')           renderToday();
     if (tab === 'documents')       renderDocuments();
-    if (tab === 'timeline')        { if (typeof App.renderTimeline === 'function') App.renderTimeline(); }
+    if (tab === 'timeline')        renderTimeline();
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
     // For fleet/crew, show the active sub-tab in the breadcrumb
@@ -13102,6 +13102,186 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  TIMELINE (Gantt) VIEW
+  // ═══════════════════════════════════════════════════════════
+
+  let _timelineData = null;
+  let _timelineFilter = 'all'; // all | Boats | Vehicles | Crew | Locations
+
+  async function renderTimeline() {
+    const container = $('timeline-content');
+    if (!container) return;
+    container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">Loading timeline...</div>';
+
+    try {
+      _timelineData = await api('GET', `/api/productions/${state.prodId}/timeline`);
+    } catch (err) {
+      container.innerHTML = `<div style="padding:2rem;text-align:center;color:#EF4444">Failed to load timeline: ${esc(err.message)}</div>`;
+      return;
+    }
+
+    _renderTimelineView();
+  }
+
+  function _renderTimelineView() {
+    const container = $('timeline-content');
+    if (!container || !_timelineData) return;
+
+    const d = _timelineData;
+    const resources = d.resources || [];
+    const days = d.shooting_days || [];
+    const functions = d.functions || [];
+    const funcMap = {};
+    for (const f of functions) funcMap[f.id] = f;
+
+    // Determine date range
+    const allDates = [];
+    if (d.start_date) allDates.push(d.start_date);
+    if (d.end_date) allDates.push(d.end_date);
+    for (const r of resources) {
+      for (const a of r.assignments || []) {
+        if (a.start_date) allDates.push(a.start_date);
+        if (a.end_date) allDates.push(a.end_date);
+      }
+    }
+    for (const day of days) {
+      if (day.date) allDates.push(day.date);
+    }
+    if (!allDates.length) {
+      container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">No data for timeline</div>';
+      return;
+    }
+    allDates.sort();
+    const startStr = allDates[0];
+    const endStr = allDates[allDates.length - 1];
+    const startDate = new Date(startStr + 'T00:00:00');
+    const endDate = new Date(endStr + 'T00:00:00');
+    const totalDays = Math.round((endDate - startDate) / 86400000) + 1;
+    if (totalDays < 1 || totalDays > 365) {
+      container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">Invalid date range</div>';
+      return;
+    }
+
+    // Build date column headers
+    const dateHeaders = [];
+    for (let i = 0; i < totalDays; i++) {
+      const dt = new Date(startDate.getTime() + i * 86400000);
+      dateHeaders.push({
+        date: dt.toISOString().slice(0, 10),
+        day: dt.getDate(),
+        month: dt.toLocaleString('en', { month: 'short' }),
+        dow: dt.toLocaleString('en', { weekday: 'short' }),
+        isSun: dt.getDay() === 0,
+      });
+    }
+
+    // Build a Set of shooting day dates for highlighting
+    const shootDaySet = new Set(days.map(d => d.date));
+
+    // Groups to display
+    const groups = ['Boats', 'Vehicles', 'Crew', 'Locations'];
+    const groupColors = { Boats: '#3B82F6', Vehicles: '#22C55E', Crew: '#F59E0B', Locations: '#8B5CF6' };
+
+    // Filter resources
+    const filtered = _timelineFilter === 'all' ? resources : resources.filter(r => r.group === _timelineFilter);
+
+    // Group resources
+    const grouped = {};
+    for (const g of groups) grouped[g] = [];
+    for (const r of filtered) {
+      if (grouped[r.group]) grouped[r.group].push(r);
+    }
+
+    const COL_W = 28;
+    const ROW_H = 28;
+    const LABEL_W = 180;
+
+    let html = '';
+
+    // Filter bar
+    html += `<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem 1rem;border-bottom:1px solid var(--border);flex-wrap:wrap">
+      <span style="font-size:.8rem;color:var(--text-3)">Filter:</span>
+      <button class="btn btn-sm ${_timelineFilter === 'all' ? 'btn-primary' : 'btn-secondary'}" onclick="App._tlFilter('all')">All (${resources.length})</button>`;
+    for (const g of groups) {
+      const cnt = resources.filter(r => r.group === g).length;
+      if (cnt > 0) {
+        html += `<button class="btn btn-sm ${_timelineFilter === g ? 'btn-primary' : 'btn-secondary'}" onclick="App._tlFilter('${g}')">${g} (${cnt})</button>`;
+      }
+    }
+    html += `<span style="margin-left:auto;font-size:.75rem;color:var(--text-3)">${filtered.length} resources &middot; ${totalDays} days</span></div>`;
+
+    // Gantt container
+    const totalW = LABEL_W + totalDays * COL_W;
+    html += `<div class="tl-gantt-wrap" style="overflow:auto;max-height:calc(100vh - 120px);position:relative">`;
+
+    // Sticky header
+    html += `<div class="tl-header" style="display:flex;position:sticky;top:0;z-index:10;background:var(--bg-1);border-bottom:1px solid var(--border)">`;
+    html += `<div style="min-width:${LABEL_W}px;max-width:${LABEL_W}px;padding:2px 6px;font-size:.7rem;color:var(--text-3);position:sticky;left:0;z-index:11;background:var(--bg-1)">Resource</div>`;
+    // Month groups
+    let prevMonth = '';
+    html += '<div style="display:flex">';
+    for (let i = 0; i < dateHeaders.length; i++) {
+      const dh = dateHeaders[i];
+      const bg = dh.isSun ? 'rgba(239,68,68,.08)' : (shootDaySet.has(dh.date) ? 'rgba(59,130,246,.06)' : '');
+      html += `<div style="min-width:${COL_W}px;max-width:${COL_W}px;text-align:center;font-size:.6rem;line-height:1.1;padding:2px 0;border-left:${dh.day === 1 ? '2px solid var(--border)' : '1px solid var(--border)'};${bg ? 'background:' + bg : ''}" title="${dh.date}">`;
+      if (dh.day === 1 || i === 0) html += `<div style="font-weight:700;color:var(--text-2)">${dh.month}</div>`;
+      else html += `<div>&nbsp;</div>`;
+      html += `<div style="color:${dh.isSun ? '#EF4444' : 'var(--text-3)'}">${dh.day}</div>`;
+      html += `</div>`;
+    }
+    html += '</div></div>';
+
+    // Rows
+    for (const g of groups) {
+      const items = grouped[g];
+      if (!items || !items.length) continue;
+      const color = groupColors[g] || '#64748B';
+
+      // Group header row
+      html += `<div style="display:flex;border-bottom:1px solid var(--border);background:${color}10">`;
+      html += `<div style="min-width:${LABEL_W}px;max-width:${LABEL_W}px;padding:3px 6px;font-size:.75rem;font-weight:700;color:${color};position:sticky;left:0;z-index:5;background:${color}10">${g} (${items.length})</div>`;
+      html += `<div style="flex:1"></div></div>`;
+
+      for (const r of items) {
+        html += `<div class="tl-row" style="display:flex;border-bottom:1px solid var(--border);min-height:${ROW_H}px">`;
+        // Label
+        html += `<div style="min-width:${LABEL_W}px;max-width:${LABEL_W}px;padding:3px 6px;font-size:.72rem;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;z-index:5;background:var(--bg-1);border-right:1px solid var(--border)" title="${esc(r.name)}">${esc(r.name)}</div>`;
+        // Cells
+        html += `<div style="display:flex;position:relative;min-height:${ROW_H}px">`;
+        for (let i = 0; i < dateHeaders.length; i++) {
+          const dh = dateHeaders[i];
+          const bg = dh.isSun ? 'rgba(239,68,68,.04)' : '';
+          html += `<div style="min-width:${COL_W}px;max-width:${COL_W}px;min-height:${ROW_H}px;border-left:${dh.day === 1 ? '2px solid var(--border)' : '1px solid var(--border)'};${bg ? 'background:' + bg : ''}"></div>`;
+        }
+
+        // Overlay bars for assignments
+        for (const a of (r.assignments || [])) {
+          if (!a.start_date || !a.end_date) continue;
+          const aStart = new Date(a.start_date + 'T00:00:00');
+          const aEnd = new Date(a.end_date + 'T00:00:00');
+          const left = Math.max(0, Math.round((aStart - startDate) / 86400000)) * COL_W;
+          const span = Math.round((aEnd - aStart) / 86400000) + 1;
+          const w = span * COL_W - 2;
+          const funcName = a.function_id ? (funcMap[a.function_id] || {}).name || '' : '';
+          const label = funcName || (a.phases ? a.phases : '');
+          const barColor = r.type === 'location' ? '#8B5CF6' : color;
+          html += `<div style="position:absolute;top:4px;left:${left}px;width:${w}px;height:${ROW_H - 8}px;background:${barColor};border-radius:3px;opacity:.75;overflow:hidden;white-space:nowrap;font-size:.6rem;color:#fff;line-height:${ROW_H - 8}px;padding:0 3px" title="${esc(r.name)}: ${esc(label)} (${a.start_date} → ${a.end_date})">${esc(label)}</div>`;
+        }
+
+        html += '</div></div>';
+      }
+    }
+
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  function _tlFilter(group) {
+    _timelineFilter = group;
+    _renderTimelineView();
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13239,6 +13419,8 @@ const App = (() => {
     _openSearch, _closeSearch,
     // History undo
     _undoFromToast,
+    // Timeline
+    renderTimeline, _tlFilter,
     // FAB
     fabAction,
     // Bottom nav & breadcrumb & shortcuts
