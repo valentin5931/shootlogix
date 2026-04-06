@@ -7,19 +7,14 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
-## [P1] Picture Boats and Security Boats lists are empty
+## [P1] ~~Picture Boats and Security Boats lists are empty~~ FIXED 2026-04-06
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`. All boats are in the main boats table with category "picture".
-- **Likely cause**: The data loader may not be seeding picture_boats and security_boats tables separately, or the boats were all created in the main `boats` table regardless of intended category.
-- **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
-- **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
+- **Fixed**: 2026-04-06 — Seeded 6 picture boat vessels and 7 security boat vessels in `data_loader.py`. Also added `_seed_security_boats()` to subsequent-run code path and imported `create_picture_boat`.
+- **Branch**: fix/2026-04-06-seed-picture-security-boats
 
-## [P1] Transport and Helpers lists are empty
+## [P1] ~~Transport and Helpers lists are empty~~ RESOLVED
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
-- **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+- **Status**: Transport has 14 vehicles (seeded). Helpers has 0 workers — this is expected; helpers are created manually by users via the UI.
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22

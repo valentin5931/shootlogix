@@ -21,6 +21,7 @@ from database import (
     create_production, seed_departments,
     create_boat, create_boat_function, create_boat_assignment,
     create_helper, create_helper_assignment,
+    create_picture_boat,
     create_security_boat, create_security_boat_assignment,
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
@@ -219,8 +220,28 @@ def _compute_shootlogix_total(prod_id):
 
 # ─── Bootstrap ────────────────────────────────────────────────────────────────
 
+PICTURE_BOAT_VESSELS = [
+    {'name': 'PB-1 YELLOW',  'captain': None, 'vendor': 'BONGO YACHT CLUB', 'group_name': 'YELLOW',  'daily_rate_estimate': 350, 'capacity': '6', 'wave_rating': 'B'},
+    {'name': 'PB-2 YELLOW',  'captain': None, 'vendor': 'BONGO YACHT CLUB', 'group_name': 'YELLOW',  'daily_rate_estimate': 350, 'capacity': '6', 'wave_rating': 'B'},
+    {'name': 'PB-3 RED',     'captain': None, 'vendor': 'BONGO YACHT CLUB', 'group_name': 'RED',     'daily_rate_estimate': 350, 'capacity': '6', 'wave_rating': 'B'},
+    {'name': 'PB-4 RED',     'captain': None, 'vendor': 'BONGO YACHT CLUB', 'group_name': 'RED',     'daily_rate_estimate': 350, 'capacity': '6', 'wave_rating': 'B'},
+    {'name': 'PB-5 NEUTRAL', 'captain': None, 'vendor': 'BONGO YACHT CLUB', 'group_name': 'NEUTRAL', 'daily_rate_estimate': 350, 'capacity': '6', 'wave_rating': 'B'},
+    {'name': 'PB-6 EXILE',   'captain': None, 'vendor': 'BONGO YACHT CLUB', 'group_name': 'EXILE',   'daily_rate_estimate': 350, 'capacity': '4', 'wave_rating': 'A'},
+]
+
+SECURITY_BOAT_VESSELS = [
+    {'name': 'SB-1 SAFETY GAMES',   'captain': None, 'vendor': 'LOCAL SAFETY', 'group_name': 'SAFETY',  'daily_rate_estimate': 280, 'capacity': '4', 'wave_rating': 'A'},
+    {'name': 'SB-2 SAFETY GAMES',   'captain': None, 'vendor': 'LOCAL SAFETY', 'group_name': 'SAFETY',  'daily_rate_estimate': 280, 'capacity': '4', 'wave_rating': 'A'},
+    {'name': 'SB-3 SAFETY COUNCIL', 'captain': None, 'vendor': 'LOCAL SAFETY', 'group_name': 'SAFETY',  'daily_rate_estimate': 280, 'capacity': '4', 'wave_rating': 'B'},
+    {'name': 'SB-4 SAFETY ARENA',   'captain': None, 'vendor': 'LOCAL SAFETY', 'group_name': 'SAFETY',  'daily_rate_estimate': 280, 'capacity': '4', 'wave_rating': 'A'},
+    {'name': 'SB-5 EVAC',           'captain': None, 'vendor': 'LOCAL SAFETY', 'group_name': 'EVAC',    'daily_rate_estimate': 320, 'capacity': '6', 'wave_rating': 'A'},
+    {'name': 'SB-6 MEDICAL',        'captain': None, 'vendor': 'LOCAL SAFETY', 'group_name': 'MEDICAL', 'daily_rate_estimate': 300, 'capacity': '4', 'wave_rating': 'A'},
+    {'name': 'SB-7 STANDBY',        'captain': None, 'vendor': 'LOCAL SAFETY', 'group_name': 'STANDBY', 'daily_rate_estimate': 250, 'capacity': '4', 'wave_rating': 'B'},
+]
+
+
 def _seed_picture_boats(prod_id):
-    """Ensure the 4 Picture Boats function groups exist. Safe to call multiple times."""
+    """Ensure the 4 Picture Boats function groups and vessel entities exist. Idempotent."""
     with get_db() as conn:
         existing_pb = conn.execute(
             "SELECT id FROM boat_functions WHERE production_id=? AND context='picture'",
@@ -236,6 +257,21 @@ def _seed_picture_boats(prod_id):
         for f in pb_funcs:
             create_boat_function({**f, 'production_id': prod_id, 'context': 'picture'})
         print(f"  Seeded 4 Picture Boats functions (YELLOW/RED/NEUTRAL/EXILE)")
+
+    # Seed actual picture boat vessels if table is empty
+    with get_db() as conn:
+        existing_vessels = conn.execute(
+            "SELECT COUNT(*) FROM picture_boats WHERE production_id=?", (prod_id,)
+        ).fetchone()[0]
+    if existing_vessels == 0:
+        for i, v in enumerate(PICTURE_BOAT_VESSELS):
+            create_picture_boat({
+                'production_id': prod_id,
+                'boat_nr': i + 1,
+                **v,
+                'currency': 'USD',
+            })
+        print(f"  Seeded {len(PICTURE_BOAT_VESSELS)} picture boat vessels")
 
 
 def _backup_db():
@@ -301,6 +337,7 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _seed_security_boats(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -449,27 +486,40 @@ SECURITY_BOAT_FUNCS = [
 
 
 def _seed_security_boats(prod_id):
-    """Seed security boat functions."""
+    """Seed security boat functions and vessel entities. Idempotent."""
     with get_db() as conn:
         existing = conn.execute(
             "SELECT id FROM boat_functions WHERE production_id=? AND context='security'",
             (prod_id,)
         ).fetchall()
-    if existing:
-        return
+    if not existing:
+        print(f"  Seeding {len(SECURITY_BOAT_FUNCS)} security boat functions...")
+        for f in SECURITY_BOAT_FUNCS:
+            create_boat_function({
+                'production_id': prod_id,
+                'name': f['name'],
+                'function_group': f['group'],
+                'color': f['color'],
+                'sort_order': f['sort'],
+                'default_start': f['start'],
+                'default_end': f['end'],
+                'context': 'security',
+            })
 
-    print(f"  Seeding {len(SECURITY_BOAT_FUNCS)} security boat functions...")
-    for f in SECURITY_BOAT_FUNCS:
-        create_boat_function({
-            'production_id': prod_id,
-            'name': f['name'],
-            'function_group': f['group'],
-            'color': f['color'],
-            'sort_order': f['sort'],
-            'default_start': f['start'],
-            'default_end': f['end'],
-            'context': 'security',
-        })
+    # Seed actual security boat vessels if table is empty
+    with get_db() as conn:
+        existing_vessels = conn.execute(
+            "SELECT COUNT(*) FROM security_boats WHERE production_id=?", (prod_id,)
+        ).fetchone()[0]
+    if existing_vessels == 0:
+        for i, v in enumerate(SECURITY_BOAT_VESSELS):
+            create_security_boat({
+                'production_id': prod_id,
+                'boat_nr': i + 1,
+                **v,
+                'currency': 'USD',
+            })
+        print(f"  Seeded {len(SECURITY_BOAT_VESSELS)} security boat vessels")
 
 
 # ─── Seed Transport ─────────────────────────────────────────────────────────

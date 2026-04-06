@@ -1,5 +1,24 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-06 — [P1] Seed picture boats and security boats vessel data
+
+**Problem**: Picture Boats and Security Boats tabs showed empty lists. The `/api/productions/1/picture-boats` and `/api/productions/1/security-boats` endpoints returned `[]` because the `picture_boats` and `security_boats` tables had zero rows.
+
+**Root cause**: The `_seed_picture_boats()` and `_seed_security_boats()` functions in `data_loader.py` only created boat **functions** (role groups like YELLOW/RED/NEUTRAL/EXILE for picture, SAFETY/EVAC/MEDICAL/STANDBY for security) but never inserted actual vessel entities into the `picture_boats` and `security_boats` tables. Additionally, `_seed_security_boats()` was not called on subsequent app startups (only on first bootstrap), and `create_picture_boat` was not imported.
+
+**Fix**:
+- `data_loader.py`: Added `create_picture_boat` to imports. Added `PICTURE_BOAT_VESSELS` (6 vessels) and `SECURITY_BOAT_VESSELS` (7 vessels) seed data. Updated `_seed_picture_boats()` and `_seed_security_boats()` to also create vessel entities when tables are empty. Added `_seed_security_boats(prod_id)` call to the existing-production code path so it runs on every startup.
+
+**Verification**:
+- `/api/productions/1/picture-boats` now returns 6 vessels (PB-1 through PB-6)
+- `/api/productions/1/security-boats` now returns 7 vessels (SB-1 through SB-7)
+- Seeding is idempotent — re-running does not create duplicates
+- All other endpoints unaffected (boats=46, locations=21, transport=14, FNB=9, budget OK)
+
+**Branch**: fix/2026-04-06-seed-picture-security-boats
+**Side effects**: None
+**Next priority**: Test CRUD operations on picture/security boats through the UI; address remaining P1 issues (empty guards, empty fuel)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
