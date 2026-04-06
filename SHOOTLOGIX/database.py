@@ -1419,6 +1419,36 @@ def _migrate_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_access_logs_user_id ON access_logs(user_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_access_logs_timestamp ON access_logs(timestamp)")
 
+        # P7.1: Populate picture_boats and security_boats from main boats table
+        _already = conn.execute(
+            "SELECT value FROM settings WHERE key='p7_1_boats_to_picture_security'"
+        ).fetchone()
+        if not _already:
+            _SHARED_COLS = [
+                "production_id", "boat_nr", "name", "capacity", "night_ok",
+                "wave_rating", "captain", "vendor", "group_name", "notes",
+                "daily_rate_estimate", "daily_rate_actual", "image_path",
+                "sort_order", "physical_vessel_id", "version", "deleted_at", "currency",
+            ]
+            col_list = ", ".join(_SHARED_COLS)
+
+            # Copy picture-category boats → picture_boats
+            pb_count = conn.execute(
+                f"INSERT INTO picture_boats ({col_list}) "
+                f"SELECT {col_list} FROM boats WHERE category = 'picture'"
+            ).rowcount
+
+            # Copy security/safety-category boats → security_boats
+            sb_count = conn.execute(
+                f"INSERT INTO security_boats ({col_list}) "
+                f"SELECT {col_list} FROM boats WHERE category IN ('security', 'safety')"
+            ).rowcount
+
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('p7_1_boats_to_picture_security', '1')"
+            )
+            print(f"Migration P7.1: populated picture_boats ({pb_count}) and security_boats ({sb_count}) from boats table")
+
 
 def _migrate_day_overrides_to_table(conn):
     """Parse existing day_overrides JSON from all assignment tables and insert into assignment_day_overrides."""

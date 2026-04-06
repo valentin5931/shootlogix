@@ -7,12 +7,17 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
-## [P1] Picture Boats and Security Boats lists are empty
+## [P1] ~~Picture Boats list is empty~~ FIXED 2026-04-06
+- **Fixed**: Migration P7.1 in `database.py` copies boats from main `boats` table (category='picture') to `picture_boats` table.
+- **Branch**: fix/2026-04-06-populate-picture-security-boats
+
+## [P1] Security Boats list is empty
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`. All boats are in the main boats table with category "picture".
-- **Likely cause**: The data loader may not be seeding picture_boats and security_boats tables separately, or the boats were all created in the main `boats` table regardless of intended category.
-- **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
-- **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
+- **Updated**: 2026-04-06
+- **Symptoms**: `/api/productions/1/security-boats` returns `[]`. No boats in the source data have category='security' or 'safety'.
+- **Likely cause**: The `boat_category()` heuristic in `data_loader.py` only returns 'security' for boats with 'dr boat' wave_rating (maps to 'safety'). None of the 46 boats match this. Users need to manually reassign boats to the security category, or the heuristic needs improvement.
+- **Files involved**: `data_loader.py` (boat_category function), `database.py` (security_boats table)
+- **Estimated effort**: Medium — requires either manual categorization by user or improved heuristic + re-migration
 
 ## [P1] Transport and Helpers lists are empty
 - **Discovered**: 2026-03-22

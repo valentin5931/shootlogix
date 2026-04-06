@@ -1,5 +1,24 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-06 — [P1] Populate picture_boats table from main boats table
+
+**Problem**: Picture Boats tab showed an empty list. The `/api/productions/1/picture-boats` endpoint returned `[]` because the `picture_boats` table was never populated. All 46 boats existed only in the main `boats` table with `category='picture'`.
+
+**Root cause**: The data loader (`data_loader.py`) migrated all boats from the legacy BATEAUX database into the main `boats` table with a `category` field, but never populated the separate `picture_boats` and `security_boats` tables that the Picture Boats and Security Boats tabs query.
+
+**Fix**: Added migration P7.1 in `database.py` `_migrate_db()` that copies boats from the main `boats` table into `picture_boats` (where `category='picture'`) and `security_boats` (where `category IN ('security', 'safety')`). Uses a settings flag (`p7_1_boats_to_picture_security`) for idempotency.
+
+**Verification**:
+- `picture_boats` table now has 46 entries (was 0)
+- `/api/productions/1/picture-boats` returns 46 boats (was `[]`)
+- All other API endpoints still return 200 — no regressions
+- Migration is idempotent (restart doesn't duplicate data)
+- JS syntax check passes, Python syntax check passes
+
+**Branch**: fix/2026-04-06-populate-picture-security-boats
+**Side effects**: None. `security_boats` remains empty (0 boats have security/safety category in source data)
+**Next priority**: Security Boats data (may require manual categorization or UI to reassign boats); remaining P1 items from ISSUES.md
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
