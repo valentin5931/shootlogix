@@ -1,6 +1,13 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [FIXED] [P1] _seed_helpers context mismatch — duplicate risk
+- **Discovered**: 2026-04-06
+- **Fixed**: 2026-04-06 — fix/2026-04-06-seed-helpers-context-mismatch
+- **Root cause**: `_seed_helpers` used `context='helpers'` but migration renamed to `context='labour'`, making the guard fail to detect existing data
+- **Fix**: Updated context to `'labour'` in both guard check and creation; added missing seed calls to existing production bootstrap path
+
+## [FIXED] [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+- **Fixed**: 2026-03-23 — claude/fix-display-issues-q03dh
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
 - **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.

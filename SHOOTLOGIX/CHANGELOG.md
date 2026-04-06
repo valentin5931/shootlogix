@@ -1,5 +1,25 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-06 — [P1] Fix _seed_helpers context mismatch + missing bootstrap seed calls
+
+**Problem**: The `_seed_helpers` function in `data_loader.py` used `context='helpers'` both in its guard check and when creating boat functions, but a migration in `database.py` renames `helpers` → `labour`. This meant the guard would not detect existing seeded functions and would create 73 duplicate functions if ever re-invoked. Additionally, the existing production bootstrap path was missing calls to `_seed_helpers`, `_seed_security_boats`, and `_seed_transport`, meaning these would not run on DB rebuild.
+
+**Root cause**: A migration (`database.py:1056-1061`) renames `context='helpers'` to `context='labour'`, but the seed function was never updated to match.
+
+**Fix**:
+- `data_loader.py`: Changed `_seed_helpers` guard and creation context from `'helpers'` to `'labour'`
+- `data_loader.py`: Added `_seed_helpers(prod_id)`, `_seed_security_boats(prod_id)`, `_seed_transport(prod_id)` to the existing production bootstrap path (lines 303-306)
+
+**Verification**:
+- App starts without errors, no duplicate functions created (labour: 73, transport: 13, security: 6, picture: 4, boats: 25)
+- All API endpoints return correct data (boats: 46, transport vehicles: 14, helper assignments: 73, locations: 21)
+- CRUD operations work (add/edit/delete boat tested)
+- Login and JWT auth work correctly
+
+**Branch**: fix/2026-04-06-seed-helpers-context-mismatch
+**Side effects**: None
+**Next priority**: P1 — Empty picture_boats/security_boats tables (these are empty by design and need user data entry, but the UI could show a better empty-state message guiding users to add boats)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
