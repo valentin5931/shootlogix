@@ -1,5 +1,23 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-06 — [P0] Fix _findAssignment and picture-boats refresh using wrong state property names
+
+**Problem**: Two critical variable naming bugs in `app-monolith.js`:
+1. `_findAssignment()` referenced `state.pbAssignments`, `state.sbAssignments`, and `state.helperAssignments` — properties that are never set. The correct names are `state.pictureAssignments`, `state.securityAssignments`, and `state.labourAssignments`.
+2. The picture-boats tab refresh function (used when auto-refreshing data) stored fetched data into `state.pbFunctions` and `state.pbAssignments` instead of `state.pictureFunctions` and `state.pictureAssignments`, meaning all render functions would read stale/empty data after a refresh.
+
+**Root cause**: Inconsistent naming — some code used abbreviations (`pb`, `sb`, `helper`) while all render/display code used full names (`picture`, `security`, `labour`).
+
+**Fix**: `static/app-monolith.js`:
+- Line 3524-3525: Changed `state.pbAssignments` → `state.pictureAssignments`, `state.sbAssignments` → `state.securityAssignments`, `state.helperAssignments` → `state.labourAssignments`
+- Line 13004: Changed `state.pbFunctions` → `state.pictureFunctions`, `state.pbAssignments` → `state.pictureAssignments`
+
+**Verification**: JS syntax check passes. All state property names now consistent with their definitions and usage throughout the codebase.
+
+**Branch**: fix/2026-04-06-findAssignment-wrong-state-keys
+**Side effects**: None
+**Next priority**: Timeline tab rendering (renderTimeline not defined in monolith, P1)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

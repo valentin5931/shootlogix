@@ -1,5 +1,16 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~_findAssignment and picture-boats refresh use wrong state property names~~ FIXED 2026-04-06
+- **Fixed in**: fix/2026-04-06-findAssignment-wrong-state-keys
+- **Details**: `_findAssignment()` used `state.pbAssignments`, `state.sbAssignments`, `state.helperAssignments` instead of `state.pictureAssignments`, `state.securityAssignments`, `state.labourAssignments`. Picture-boats refresh also stored data in wrong properties.
+
+## [P1] Timeline tab renderTimeline not defined in monolith
+- **Discovered**: 2026-04-06
+- **Symptoms**: Clicking Timeline tab does nothing — `App.renderTimeline` is checked via typeof but never defined in `app-monolith.js`. A separate `static/js/timeline.js` exists and is loaded, but it may not integrate properly.
+- **Likely cause**: Timeline rendering was meant to be in the separate `timeline.js` file but may not be registering on the `App` object correctly.
+- **Files involved**: `static/app-monolith.js` (line 1362), `static/js/timeline.js`
+- **Estimated effort**: Medium — need to verify timeline.js integration or port the render function into the monolith
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
