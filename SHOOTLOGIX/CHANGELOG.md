@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-06 — [P0] Fix Timeline API crash — 3 SQL column errors
+
+**Problem**: The Timeline tab (`/api/productions/{id}/timeline`) returned a 500 Internal Server Error every time it was loaded, making the entire Timeline feature unusable.
+
+**Root cause**: Three incorrect column references in the `api_timeline()` function in `app.py`:
+1. `guard_camp_assignments.worker_id` — column doesn't exist, correct name is `helper_id` (line 7883)
+2. `locations.site` — column doesn't exist, correct name is `location_type` (line 7893)
+3. `location_schedules.prep/filming/wrap` — these boolean columns don't exist; the table uses a single `status` column with values like 'F' (line 7896)
+
+**Fix**:
+- `app.py` line 7883: Changed `WHERE worker_id=?` to `WHERE helper_id=?` in guard_camp_assignments query
+- `app.py` line 7893: Changed `SELECT id, name, site` to `SELECT id, name, location_type` in locations query
+- `app.py` line 7912: Changed `loc['site']` to `loc['location_type']`
+- `app.py` lines 7896-7909: Rewrote location schedule query to use `SELECT id, date, status` instead of `SELECT id, date, prep, filming, wrap`, and simplified phase extraction logic
+- Also added `deleted_at IS NULL` filters to all 7 entity queries (boats, picture_boats, security_boats, transport_vehicles, helpers, guard_camp_workers, locations) to exclude soft-deleted entities from the timeline
+
+**Verification**:
+- Timeline endpoint now returns 200 with 32 shooting days, 81 resources (46 boats, 14 vehicles, 21 locations), 121 functions
+- All other API endpoints verified working (shooting-days, boats, locations, transport-vehicles, fnb-categories, budget, guard-posts, boat-functions, dashboard, history)
+- No regressions
+
+**Branch**: fix/2026-04-06-timeline-api-crash-worker-id
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats empty lists (data model investigation)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
