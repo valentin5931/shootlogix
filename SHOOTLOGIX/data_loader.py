@@ -21,6 +21,7 @@ from database import (
     create_production, seed_departments,
     create_boat, create_boat_function, create_boat_assignment,
     create_helper, create_helper_assignment,
+    create_picture_boat,
     create_security_boat, create_security_boat_assignment,
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
@@ -301,6 +302,8 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _seed_picture_boat_entities(prod_id)
+        _seed_security_boat_entities(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -342,6 +345,8 @@ def bootstrap():
     _seed_picture_boats(prod_id)
     _seed_helpers(prod_id)
     _seed_security_boats(prod_id)
+    _seed_picture_boat_entities(prod_id)
+    _seed_security_boat_entities(prod_id)
     _seed_transport(prod_id)
     _seed_location_sites(prod_id)
     _seed_guard_posts(prod_id)
@@ -470,6 +475,151 @@ def _seed_security_boats(prod_id):
             'default_end': f['end'],
             'context': 'security',
         })
+
+
+def _seed_picture_boat_entities(prod_id):
+    """Seed picture_boats table from main fleet boats used in filming.
+
+    Copies boats from the boats table into the picture_boats table.
+    Boats assigned to safety/evac/medical/construction-ONLY functions are excluded.
+    All other boats (filming crew, contestants, unassigned) are included.
+    Idempotent: only runs if picture_boats table is empty for this production.
+    """
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT COUNT(*) as cnt FROM picture_boats WHERE production_id=?",
+            (prod_id,)
+        ).fetchone()
+        if existing["cnt"] > 0:
+            return  # already seeded
+
+        PICTURE_KEYWORDS = {'contestant', 'crew', 'reality', 'vip', 'body double',
+                            'unit games', 'prep unit'}
+        SAFETY_KEYWORDS = {'safety', 'evac', 'medical', 'construction'}
+
+        all_boats = conn.execute("""
+            SELECT id, name, boat_nr, capacity, night_ok, wave_rating,
+                   captain, vendor, group_name, notes, daily_rate_estimate,
+                   daily_rate_actual, image_path, sort_order, currency
+            FROM boats WHERE production_id = ? AND deleted_at IS NULL
+            ORDER BY sort_order, id
+        """, (prod_id,)).fetchall()
+        all_boats = [dict(r) for r in all_boats]
+
+        # Determine which boats belong in picture_boats
+        picture_boat_ids = set()
+        for boat in all_boats:
+            bid = boat["id"]
+            funcs = conn.execute("""
+                SELECT bf.name FROM boat_assignments ba
+                JOIN boat_functions bf ON ba.boat_function_id = bf.id
+                WHERE ba.boat_id = ?
+            """, (bid,)).fetchall()
+
+            if not funcs:
+                # Unassigned boat — include as available
+                picture_boat_ids.add(bid)
+            else:
+                func_names = [(f["name"] or "").lower() for f in funcs]
+                # Include if any function matches picture keywords
+                if any(any(kw in fn for kw in PICTURE_KEYWORDS) for fn in func_names):
+                    picture_boat_ids.add(bid)
+                # Exclude only if ALL functions are safety-related
+                elif not all(any(kw in fn for kw in SAFETY_KEYWORDS) for fn in func_names):
+                    picture_boat_ids.add(bid)
+
+        # Insert all picture boats in a single transaction
+        cols = ("production_id", "boat_nr", "name", "capacity", "night_ok",
+                "wave_rating", "captain", "vendor", "group_name", "notes",
+                "daily_rate_estimate", "daily_rate_actual", "image_path",
+                "sort_order", "currency")
+        placeholders = ", ".join("?" * len(cols))
+        col_str = ", ".join(cols)
+        created = 0
+        for boat in all_boats:
+            if boat["id"] not in picture_boat_ids:
+                continue
+            vals = (prod_id, boat["boat_nr"], boat["name"], boat["capacity"],
+                    boat["night_ok"], boat["wave_rating"], boat["captain"],
+                    boat["vendor"], boat["group_name"], boat["notes"],
+                    boat["daily_rate_estimate"], boat["daily_rate_actual"],
+                    boat["image_path"], boat["sort_order"], boat["currency"])
+            conn.execute(f"INSERT INTO picture_boats ({col_str}) VALUES ({placeholders})", vals)
+            created += 1
+
+    if created:
+        print(f"  Seeded {created} picture boats from fleet")
+
+
+def _seed_security_boat_entities(prod_id):
+    """Seed security_boats table from fleet boats used for safety operations.
+
+    Copies boats assigned to safety/evac/medical functions, plus boats
+    with safety-related names (EVAC, MISHKA), into the security_boats table.
+    Idempotent: only runs if security_boats table is empty for this production.
+    """
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT COUNT(*) as cnt FROM security_boats WHERE production_id=?",
+            (prod_id,)
+        ).fetchone()
+        if existing["cnt"] > 0:
+            return  # already seeded
+
+        # Find boats assigned to safety-related functions
+        func_rows = conn.execute("""
+            SELECT DISTINCT b.id
+            FROM boats b
+            JOIN boat_assignments ba ON ba.boat_id = b.id
+            JOIN boat_functions bf ON ba.boat_function_id = bf.id
+            WHERE b.production_id = ?
+              AND b.deleted_at IS NULL
+              AND (LOWER(bf.name) LIKE '%safety%'
+                   OR LOWER(bf.name) LIKE '%evac%'
+                   OR LOWER(bf.name) LIKE '%medical%')
+        """, (prod_id,)).fetchall()
+        security_ids = {r["id"] for r in func_rows}
+
+        # Also match boat names
+        name_rows = conn.execute("""
+            SELECT id FROM boats
+            WHERE production_id = ? AND deleted_at IS NULL
+              AND (LOWER(name) LIKE '%evac%' OR LOWER(name) LIKE '%mishka%')
+        """, (prod_id,)).fetchall()
+        security_ids.update(r["id"] for r in name_rows)
+
+        if not security_ids:
+            return
+
+        # Fetch full boat data for matched IDs
+        placeholders_ids = ", ".join("?" * len(security_ids))
+        boats = conn.execute(f"""
+            SELECT id, name, boat_nr, capacity, night_ok, wave_rating,
+                   captain, vendor, group_name, notes, daily_rate_estimate,
+                   daily_rate_actual, image_path, sort_order, currency
+            FROM boats WHERE id IN ({placeholders_ids})
+            ORDER BY sort_order, id
+        """, list(security_ids)).fetchall()
+        boats = [dict(r) for r in boats]
+
+        cols = ("production_id", "boat_nr", "name", "capacity", "night_ok",
+                "wave_rating", "captain", "vendor", "group_name", "notes",
+                "daily_rate_estimate", "daily_rate_actual", "image_path",
+                "sort_order", "currency")
+        placeholders = ", ".join("?" * len(cols))
+        col_str = ", ".join(cols)
+        created = 0
+        for boat in boats:
+            vals = (prod_id, boat["boat_nr"], boat["name"], boat["capacity"],
+                    boat["night_ok"], boat["wave_rating"], boat["captain"],
+                    boat["vendor"], boat["group_name"], boat["notes"],
+                    boat["daily_rate_estimate"], boat["daily_rate_actual"],
+                    boat["image_path"], boat["sort_order"], boat["currency"])
+            conn.execute(f"INSERT INTO security_boats ({col_str}) VALUES ({placeholders})", vals)
+            created += 1
+
+    if created:
+        print(f"  Seeded {created} security boats from fleet")
 
 
 # ─── Seed Transport ─────────────────────────────────────────────────────────

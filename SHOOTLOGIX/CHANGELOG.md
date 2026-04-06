@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-06 — [P1] Seed Picture Boats and Security Boats tables from fleet data
+
+**Problem**: Picture Boats tab and Security Boats tab showed empty lists (0 items). All 46 boats existed only in the main `boats` table with `category='picture'`. The separate `picture_boats` and `security_boats` tables (queried by their respective API endpoints) were never populated.
+
+**Root cause**: The data loader (`data_loader.py`) migrated all boats from BATEAUX into the main `boats` table. The `_seed_picture_boats()` and `_seed_security_boats()` functions only created boat **functions** (role definitions like YELLOW/RED/NEUTRAL/EXILE for picture, SAFETY GAMES/COUNCIL/ARENA for security) but never created actual boat entities in the `picture_boats` or `security_boats` tables.
+
+**Fix**:
+- `data_loader.py`: Added two new seeder functions:
+  - `_seed_picture_boat_entities(prod_id)`: Copies 38 boats from the fleet into `picture_boats`. Includes all boats except those assigned exclusively to safety/evac/medical/construction functions.
+  - `_seed_security_boat_entities(prod_id)`: Copies 5 safety-related boats (ESMELDA, EVAC, EVAC BOAT, MISHKA, MISHKA 24/7) into `security_boats`, identified by their function assignments (SAFETY/EVAC/MEDICAL) and boat names.
+- Both seeders are idempotent (skip if tables already have data) and called from both bootstrap paths (existing production and first-time setup).
+- Added `create_picture_boat` to imports.
+
+**Verification**:
+- `/api/productions/1/picture-boats` returns 38 boats (was 0)
+- `/api/productions/1/security-boats` returns 5 boats (was 0)
+- `/api/productions/1/boats` still returns 46 boats (no regression)
+- All other endpoints unaffected (locations: 21, FNB: 9, budget: 7)
+- Idempotent: restarting app does not create duplicates
+
+**Branch**: fix/2026-04-06-seed-picture-security-boats
+**Side effects**: None — only adds data, no schema changes, no deletions
+**Next priority**: P1 items — Transport vehicles list empty (0 items), Helpers/Guards lists empty
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
