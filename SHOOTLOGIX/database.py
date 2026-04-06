@@ -60,7 +60,7 @@ _NAME_FIELDS = {
     "helpers": ["name"],
     "helper_assignments": ["helper_name_override", "helper_id"],
     "guard_camp_workers": ["name"],
-    "guard_camp_assignments": ["worker_name_override", "worker_id"],
+    "guard_camp_assignments": ["helper_name_override", "helper_id"],
     "fuel_entries": ["source_type", "date"],
     "fuel_machinery": ["name"],
     "locations": ["name"],

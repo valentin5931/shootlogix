@@ -1,5 +1,31 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-06 — [P0] Fix Timeline API crash — 3 schema mismatches in api_timeline
+
+**Problem**: The Timeline tab crashes with a 500 error (`sqlite3.OperationalError`) every time it's loaded. Three SQL queries in the `api_timeline` endpoint reference columns that don't exist in the database.
+
+**Root cause**:
+1. `locations.site` column doesn't exist — the correct column is `location_type`
+2. `location_schedules.prep/filming/wrap` columns don't exist — the table uses a single `status` column
+3. `guard_camp_assignments.worker_id` column doesn't exist — the correct column is `helper_id`
+4. `database.py` dedup key mapping for `guard_camp_assignments` also referenced `worker_id`/`worker_name_override` instead of `helper_id`/`helper_name_override`
+
+**Fix**:
+- `app.py:7893`: Changed `SELECT id, name, site` → `SELECT id, name, location_type`
+- `app.py:7895-7908`: Rewrote location_schedules query to use `status` column instead of `prep/filming/wrap`
+- `app.py:7883`: Changed `WHERE worker_id=?` → `WHERE helper_id=?`
+- `app.py:7912`: Changed `loc['site']` → `loc['location_type']`
+- `database.py:63`: Fixed dedup key mapping to use `helper_name_override`/`helper_id`
+
+**Verification**:
+- Timeline API now returns 200 with 81 resources, 32 shooting days, 21 locations
+- All 19 production API endpoints return 200 (no regressions)
+- Location subgroups correctly show `tribal_camp`, `game`, `reward`
+
+**Branch**: fix/2026-04-06-timeline-api-crash-missing-site-column
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats empty lists (data not in separate tables)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
