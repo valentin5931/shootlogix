@@ -13102,6 +13102,306 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ── Mobile menu toggle ───────────────────────────────────────
+  function toggleMobileMenu() {
+    const menu = $('mobile-menu');
+    if (menu) menu.classList.toggle('hidden');
+  }
+
+  // ── Activity panel (AXE 4.3) ───────────────────────────────
+  let _activityOpen = false;
+  let _activityData = [];
+  let _activityGrouped = {};
+
+  function _actRelTime(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00Z'));
+    const diffMin = Math.floor((Date.now() - d) / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 7) return `${diffDay}d ago`;
+    return dateStr.slice(0, 10);
+  }
+
+  function _actFmtDateHeader(dateStr) {
+    if (!dateStr || dateStr === 'unknown') return 'Unknown date';
+    try {
+      const d = new Date(dateStr + 'T00:00:00');
+      const today = new Date().toISOString().slice(0, 10);
+      const y = new Date(); y.setDate(y.getDate() - 1);
+      if (dateStr === today) return 'Today';
+      if (dateStr === y.toISOString().slice(0, 10)) return 'Yesterday';
+      return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    } catch { return dateStr; }
+  }
+
+  const _ACT_CFG = {
+    create: { label: 'Added', color: '#22C55E', bg: '#22C55E18' },
+    update: { label: 'Updated', color: '#3B82F6', bg: '#3B82F618' },
+    delete: { label: 'Removed', color: '#EF4444', bg: '#EF444418' },
+    lock:   { label: 'Locked', color: '#F59E0B', bg: '#F59E0B18' },
+    unlock: { label: 'Unlocked', color: '#8B5CF6', bg: '#8B5CF618' },
+  };
+  const _MOD_ICONS = {
+    pdt:'📅', fleet:'⚓', 'picture-boats':'📷', 'security-boats':'🛡',
+    transport:'🚛', fuel:'⛽', labour:'👥', guards:'💂', locations:'📍', fnb:'🍽',
+  };
+
+  function _renderActivityFeed() {
+    const feed = document.getElementById('activity-feed');
+    if (!feed) return;
+    if (!_activityData.length) { feed.innerHTML = '<div class="activity-empty">No activity found</div>'; return; }
+    const dates = Object.keys(_activityGrouped).sort().reverse();
+    let html = '';
+    for (const date of dates) {
+      const entries = _activityGrouped[date];
+      html += `<div class="activity-date-group"><div class="activity-date-header"><span class="activity-date-label">${esc(_actFmtDateHeader(date))}</span><span class="activity-date-count">${entries.length} action${entries.length > 1 ? 's' : ''}</span></div><div class="activity-date-entries">`;
+      for (const e of entries) {
+        const act = _ACT_CFG[e.action] || _ACT_CFG.update;
+        const icon = _MOD_ICONS[e.module] || '⚙';
+        const time = e.timestamp ? e.timestamp.slice(11, 16) : '';
+        const changesHTML = (e.changes && e.changes.length)
+          ? `<div class="activity-changes">${e.changes.slice(0, 5).map(c => `<div class="activity-change-row"><span class="activity-change-field">${esc(c.field)}</span><span class="activity-change-old">${esc(String(c.old ?? 'empty'))}</span><span class="activity-change-arrow">&rarr;</span><span class="activity-change-new">${esc(String(c.new ?? 'empty'))}</span></div>`).join('')}</div>`
+          : '';
+        html += `<div class="activity-entry" data-module="${e.module}">
+          <div class="activity-timeline-dot"><div class="activity-timeline-line"></div><div class="activity-dot" style="background:${act.color}"></div></div>
+          <div class="activity-entry-content">
+            <div class="activity-entry-header"><span class="activity-module-icon">${icon}</span><span class="activity-action-tag" style="background:${act.bg};color:${act.color}">${esc(act.label)}</span><span class="activity-entry-time" title="${esc(e.timestamp || '')}">${esc(time)} - ${esc(_actRelTime(e.timestamp))}</span></div>
+            <div class="activity-entry-desc">${esc(e.description || '')}</div>${changesHTML}
+            <div class="activity-entry-user">${esc(e.user || '')}</div>
+          </div></div>`;
+      }
+      html += '</div></div>';
+    }
+    feed.innerHTML = html;
+  }
+
+  async function toggleActivityPanel() {
+    if (_activityOpen) { closeActivityPanel(); return; }
+    _activityOpen = true;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+    await loadActivity();
+  }
+
+  function closeActivityPanel() {
+    _activityOpen = false;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  async function loadActivity() {
+    _activityData = [];
+    _activityGrouped = {};
+    const feed = document.getElementById('activity-feed');
+    if (feed) feed.innerHTML = '<div class="activity-loading">Loading...</div>';
+    if (!state.prodId) return;
+    const module = $('activity-filter-module')?.value || '';
+    const userId = $('activity-filter-user')?.value || '';
+    const action = $('activity-filter-action')?.value || '';
+    const dateFrom = $('activity-filter-from')?.value || '';
+    const dateTo = $('activity-filter-to')?.value || '';
+    const params = new URLSearchParams({ limit: '100' });
+    if (module) params.set('module', module);
+    if (userId) params.set('user_id', userId);
+    if (action) params.set('action_type', action);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    try {
+      const res = await authFetch(`/api/productions/${state.prodId}/activity?${params.toString()}`);
+      if (!res.ok) throw new Error('Failed to load activity');
+      const data = await res.json();
+      let entries = data.entries || [];
+      if (action) entries = entries.filter(e => e.action === action);
+      _activityData = entries;
+      for (const e of entries) {
+        const dk = e.date || 'unknown';
+        if (!_activityGrouped[dk]) _activityGrouped[dk] = [];
+        _activityGrouped[dk].push(e);
+      }
+      _renderActivityFeed();
+    } catch {
+      if (feed) feed.innerHTML = '<div class="activity-empty">Failed to load activity</div>';
+    }
+  }
+
+  // ── Notifications panel (AXE 9.2) ──────────────────────────
+  let _notifPanelOpen = false;
+  let _notifData = [];
+  let _unreadCount = 0;
+
+  function _notifFmtTime(iso) {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso + 'Z');
+      const diff = (Date.now() - d) / 1000;
+      if (diff < 60) return 'just now';
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch { return iso; }
+  }
+
+  function _updateNotifBadge() {
+    const badge = $('notif-badge');
+    if (!badge) return;
+    if (_unreadCount > 0) { badge.textContent = _unreadCount > 99 ? '99+' : _unreadCount; badge.style.display = ''; }
+    else { badge.style.display = 'none'; }
+  }
+
+  function _renderNotifications() {
+    const list = $('notif-list');
+    if (!list) return;
+    if (!_notifData.length) { list.innerHTML = '<div class="notif-empty">No notifications</div>'; return; }
+    list.innerHTML = _notifData.map(n => {
+      const time = _notifFmtTime(n.created_at);
+      const unread = !n.is_read;
+      return `<div class="notif-item ${unread ? 'notif-unread' : ''}" data-id="${n.id}" onclick="App.clickNotification(${n.id})">
+        <div class="notif-content"><div class="notif-title">${esc(n.title || '')}</div>${n.body ? `<div class="notif-body">${esc(n.body)}</div>` : ''}<div class="notif-time">${esc(time)}</div></div>
+        ${unread ? '<div class="notif-dot"></div>' : ''}</div>`;
+    }).join('');
+  }
+
+  async function toggleNotifPanel() {
+    _notifPanelOpen = !_notifPanelOpen;
+    const panel = $('notif-panel');
+    if (!panel) return;
+    panel.classList.toggle('hidden', !_notifPanelOpen);
+    if (_notifPanelOpen) {
+      const list = $('notif-list');
+      if (list) list.innerHTML = '<div class="notif-loading">Loading...</div>';
+      try {
+        const res = await authFetch(`/api/notifications?production_id=${state.prodId}&limit=50`);
+        if (!res.ok) throw new Error('Failed');
+        _notifData = await res.json();
+        _renderNotifications();
+      } catch { if ($('notif-list')) $('notif-list').innerHTML = '<div class="notif-empty">Failed to load</div>'; }
+    }
+  }
+
+  function closeNotifPanel() {
+    _notifPanelOpen = false;
+    const panel = $('notif-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function clickNotification(notifId) {
+    try {
+      await authFetch(`/api/notifications/${notifId}/read`, { method: 'POST' });
+      const n = _notifData.find(x => x.id === notifId);
+      if (n) n.is_read = 1;
+      _unreadCount = Math.max(0, _unreadCount - 1);
+      _updateNotifBadge();
+      _renderNotifications();
+    } catch { /* silent */ }
+  }
+
+  async function markAllNotificationsRead() {
+    try {
+      await authFetch(`/api/notifications/read-all?production_id=${state.prodId}`, { method: 'POST' });
+      _notifData.forEach(n => n.is_read = 1);
+      _unreadCount = 0;
+      _updateNotifBadge();
+      _renderNotifications();
+      toast('All notifications marked as read');
+    } catch { toast('Failed to mark all as read', 'error'); }
+  }
+
+  // ── Comments panel (AXE 9.1) ───────────────────────────────
+  let _commentsPanelOpen = false;
+  let _commentsEntity = { type: null, id: null };
+  let _commentsData = [];
+
+  function _commentFmtTime(iso) {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso + 'Z');
+      const diff = (Date.now() - d) / 1000;
+      if (diff < 60) return 'just now';
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch { return iso; }
+  }
+
+  function _renderCommentsList() {
+    const list = $('comments-list');
+    if (!list) return;
+    if (!_commentsData.length) { list.innerHTML = '<div class="comments-empty">No comments yet</div>'; return; }
+    list.innerHTML = _commentsData.map(c => {
+      const time = _commentFmtTime(c.created_at);
+      const canDel = authState.user && (authState.user.is_admin || c.user_id === authState.user.id);
+      return `<div class="comment-item" data-id="${c.id}"><div class="comment-header"><span class="comment-author">${esc(c.user_nickname || 'Unknown')}</span><span class="comment-time">${esc(time)}</span>${canDel ? `<button class="comment-delete" onclick="App.deleteComment(${c.id})" title="Delete">&times;</button>` : ''}</div><div class="comment-body">${esc(c.body)}</div></div>`;
+    }).join('');
+  }
+
+  async function _loadComments() {
+    const list = $('comments-list');
+    if (!list) return;
+    list.innerHTML = '<div class="comments-loading">Loading...</div>';
+    try {
+      const res = await authFetch(`/api/productions/${state.prodId}/comments?entity_type=${_commentsEntity.type}&entity_id=${_commentsEntity.id}`);
+      if (!res.ok) throw new Error('Failed');
+      _commentsData = await res.json();
+      _renderCommentsList();
+    } catch { if (list) list.innerHTML = '<div class="comments-empty">Failed to load comments</div>'; }
+  }
+
+  async function openCommentsPanel(entityType, entityId) {
+    _commentsEntity = { type: entityType, id: entityId };
+    _commentsPanelOpen = true;
+    const panel = $('comments-panel');
+    if (!panel) return;
+    panel.classList.remove('hidden');
+    const title = $('comments-panel-title');
+    if (title) title.textContent = `Comments: ${entityType} #${entityId}`;
+    const input = $('comments-input');
+    if (input) input.value = '';
+    await _loadComments();
+  }
+
+  function closeCommentsPanel() {
+    _commentsPanelOpen = false;
+    const panel = $('comments-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function submitComment() {
+    const input = $('comments-input');
+    const body = (input?.value || '').trim();
+    if (!body) return;
+    input.disabled = true;
+    try {
+      const res = await authFetch(`/api/productions/${state.prodId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entity_type: _commentsEntity.type, entity_id: _commentsEntity.id, body })
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || 'Failed'); }
+      input.value = '';
+      await _loadComments();
+      toast('Comment added');
+    } catch (e) { toast(e.message || 'Failed to add comment', 'error'); }
+    finally { input.disabled = false; input.focus(); }
+  }
+
+  async function deleteComment(commentId) {
+    if (!confirm('Delete this comment?')) return;
+    try {
+      const res = await authFetch(`/api/comments/${commentId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed');
+      await _loadComments();
+      toast('Comment deleted');
+    } catch { toast('Failed to delete comment', 'error'); }
+  }
+
+  function handleCommentKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); }
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13246,6 +13546,14 @@ const App = (() => {
     openShortcutsPanel, closeShortcutsPanel,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
+    // Mobile menu
+    toggleMobileMenu,
+    // Activity panel (AXE 4.3)
+    toggleActivityPanel, closeActivityPanel, loadActivity,
+    // Notifications panel (AXE 9.2)
+    toggleNotifPanel, closeNotifPanel, clickNotification, markAllNotificationsRead,
+    // Comments panel (AXE 9.1)
+    openCommentsPanel, closeCommentsPanel, submitComment, deleteComment, handleCommentKeydown,
     init,
   };
 })();

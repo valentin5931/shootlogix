@@ -1,5 +1,32 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-06 — [P1] Fix broken mobile menu, activity panel, notifications panel, and comments panel
+
+**Problem**: Tapping the hamburger menu on mobile threw a JS error (`App.toggleMobileMenu is not a function`), making the app completely un-navigable on mobile devices. The Activity Timeline button, Notifications bell, and Comments panel all had the same issue — their handler functions were defined in `static/modules/*.js` files that were never loaded by `index.html`.
+
+**Root cause**: The module files (`activity.js`, `notifications.js`, `comments.js`) in `static/modules/` were written for a `window._SL` module-loading system that was never implemented in the monolith architecture. They patched `App.*` properties at load time, but since the files were never loaded, `App.toggleMobileMenu`, `App.toggleActivityPanel`, `App.toggleNotifPanel`, `App.openCommentsPanel` etc. were all `undefined`.
+
+**Fix**:
+- `static/app-monolith.js`: Added all missing functions directly inside the App IIFE:
+  - `toggleMobileMenu()` — toggles `#mobile-menu` hidden class
+  - `toggleActivityPanel()`, `closeActivityPanel()`, `loadActivity()` — full activity timeline panel with date grouping, filters, and API integration
+  - `toggleNotifPanel()`, `closeNotifPanel()`, `clickNotification()`, `markAllNotificationsRead()` — notifications panel with badge count and read state
+  - `openCommentsPanel()`, `closeCommentsPanel()`, `submitComment()`, `deleteComment()`, `handleCommentKeydown()` — contextual comments panel
+  - All functions exported in the `return {}` block
+
+**Verification**:
+- Mobile menu opens/closes correctly (burger button, backdrop click, close button, menu item click)
+- Activity panel opens with filter controls, loads history from API
+- Notification panel opens, displays notifications, supports mark-as-read
+- Comments panel opens for entity contexts, supports add/delete
+- All existing tabs still work (no regressions)
+- JS brace/paren/bracket balance verified
+- All API endpoints return 200
+
+**Branch**: fix/2026-04-06-missing-mobile-menu-and-panel-functions
+**Side effects**: None
+**Next priority**: P1 — Empty picture_boats/security_boats tables (data model investigation)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
