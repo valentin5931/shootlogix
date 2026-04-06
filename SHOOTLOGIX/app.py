@@ -7890,18 +7890,22 @@ def api_timeline(prod_id):
             })
 
         # --- Locations ---
-        locations = conn.execute("SELECT id, name, site FROM locations WHERE production_id=?", (prod_id,)).fetchall()
+        locations = conn.execute("SELECT id, name, location_type FROM locations WHERE production_id=?", (prod_id,)).fetchall()
         for loc in locations:
             schedules = conn.execute(
-                "SELECT id, date, prep, filming, wrap FROM location_schedules WHERE location_id=?",
+                "SELECT id, date, status FROM location_schedules WHERE location_id=?",
                 (loc['id'],)
             ).fetchall()
             loc_assignments = []
             for s in schedules:
+                st = (s['status'] or '').lower()
                 phases = []
-                if s['prep']: phases.append('P')
-                if s['filming']: phases.append('F')
-                if s['wrap']: phases.append('W')
+                if 'prep' in st: phases.append('P')
+                if 'film' in st: phases.append('F')
+                if 'wrap' in st: phases.append('W')
+                # If status doesn't map to phases, treat it as a single confirmed entry
+                if not phases and s['status']:
+                    phases.append(s['status'][0].upper())
                 if phases:
                     loc_assignments.append({
                         'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
@@ -7909,7 +7913,7 @@ def api_timeline(prod_id):
                     })
             resources.append({
                 'id': f"loc-{loc['id']}", 'name': loc['name'], 'type': 'location', 'group': 'Locations',
-                'subgroup': loc['site'] or 'Location',
+                'subgroup': loc['location_type'] or 'Location',
                 'assignments': loc_assignments
             })
 

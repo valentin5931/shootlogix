@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-06 — [P0] Fix Timeline API crash — sqlite3.OperationalError: no such column: site
+
+**Problem**: The `/api/productions/{id}/timeline` endpoint crashed with a 500 error (`sqlite3.OperationalError: no such column: site`), making the Timeline tab completely unusable.
+
+**Root cause**: The timeline query on line 7893 of `app.py` referenced two non-existent columns:
+1. `locations.site` — the table uses `location_type` instead
+2. `location_schedules.prep/filming/wrap` — the table uses a single `status` column instead
+
+These column names were hardcoded when the timeline endpoint was written but never matched the actual database schema.
+
+**Fix**: Updated `app.py` lines 7892-7914:
+- Changed `SELECT id, name, site FROM locations` → `SELECT id, name, location_type FROM locations`
+- Changed `SELECT id, date, prep, filming, wrap FROM location_schedules` → `SELECT id, date, status FROM location_schedules`
+- Updated phase detection logic to parse status strings (e.g. "prep", "filming", "wrap") instead of relying on separate boolean columns
+- Changed `loc['site']` → `loc['location_type']` in the subgroup assignment
+
+**Verification**:
+- Timeline endpoint now returns 200 with 81 resources, 32 shooting days, 121 functions
+- All other endpoints still return 200 (no regressions)
+- Python syntax check passes
+
+**Branch**: fix/2026-04-06-timeline-500-crash
+**Side effects**: None
+**Next priority**: Fix the 404 routes (dashboard-summary, labour, pdt, catering-categories, budget-lines) or tackle P1 empty lists
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
