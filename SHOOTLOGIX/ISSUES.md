@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [FIXED] Timeline tab completely non-functional
+- **Discovered**: 2026-04-06
+- **Fixed**: 2026-04-06
+- **Symptoms**: Clicking Timeline tab showed blank panel. Timeline API crashed with 500.
+- **Root cause**: Three bugs: (1) SQL query referenced non-existent `site` and `prep/filming/wrap` columns, (2) JS registration used `App` before it was defined, (3) JS used `window._SL` instead of `localStorage` for prod ID and auth token.
+- **Files fixed**: `app.py`, `static/app-monolith.js`, `static/js/timeline.js`
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
