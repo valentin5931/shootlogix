@@ -1359,7 +1359,7 @@ const App = (() => {
     if (tab === 'crew')            renderCrewUnified();
     if (tab === 'today')           renderToday();
     if (tab === 'documents')       renderDocuments();
-    if (tab === 'timeline')        { if (typeof App.renderTimeline === 'function') App.renderTimeline(); }
+    if (tab === 'timeline')        { if (typeof Timeline !== 'undefined' && Timeline.init) Timeline.init(); }
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
     // For fleet/crew, show the active sub-tab in the breadcrumb
@@ -13011,6 +13011,7 @@ const App = (() => {
       else if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
       else if (tab === 'budget')          { renderBudget(); }
       else if (tab === 'dashboard')       { renderDashboard(); }
+      else if (tab === 'timeline')        { if (typeof Timeline !== 'undefined' && Timeline.init) Timeline.init(); }
     } catch(e) { toast('Refresh failed: ' + e.message, 'error'); }
   }
 
