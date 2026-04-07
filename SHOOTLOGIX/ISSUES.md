@@ -1,5 +1,10 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [RESOLVED 2026-04-07] [P0] /api/productions/<id>/timeline returned 500
+- **Symptoms**: Gantt timeline endpoint crashed with `sqlite3.OperationalError: no such column: site`.
+- **Root cause**: Schema drift in `app.py::api_timeline` — references to `locations.site`, `location_schedules.prep/filming/wrap`, and `guard_camp_assignments.worker_id` (actual columns: `location_type`, `status`, `helper_id`).
+- **Fix**: PR `fix/2026-04-07-timeline-500-locations-columns` — rewrote the locations and guard-camp queries.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-07 — [P0] Fix /api/productions/<id>/timeline 500 (Gantt timeline crash)
+
+**Problem**: `GET /api/productions/1/timeline` returned 500 with `sqlite3.OperationalError: no such column: site`. The Gantt timeline view was unusable for any production that had locations or guard-camp workers.
+
+**Root cause**: `app.py` `api_timeline()` had three drift bugs against the actual SQLite schema:
+1. `SELECT id, name, site FROM locations` — no `site` column exists; the table uses `location_type`.
+2. `SELECT id, date, prep, filming, wrap FROM location_schedules` — those columns don't exist; phases (`P`/`F`/`W`) are stored as `status` rows, one per phase per date.
+3. `SELECT ... FROM guard_camp_assignments WHERE worker_id=?` — column is `helper_id`, not `worker_id`. (Currently masked because `guard_camp_workers` is empty in seed data, but a latent crash.)
+
+**Fix**: `app.py` lines 7853–7895 (`api_timeline`):
+- Locations query now selects `location_type` and filters out `deleted_at IS NULL`; resource `subgroup` uses `location_type`.
+- Location schedules query selects `status` and groups phase rows by `date` to build `phases='P/F/W'` strings.
+- `guard_camp_assignments` query now uses `helper_id`.
+
+**Verification**:
+- Restarted Flask, logged in as ADMIN, called `GET /api/productions/1/timeline` → `200 OK`, payload contains 81 resources, 32 shooting days, 121 boat functions, 14 location resources with phase assignments (e.g. `ARENA (SABOGA)` → `[{phases:'F', date:'2026-04-02'}, ...]`).
+
+**Branch**: `fix/2026-04-07-timeline-500-locations-columns`
+**PR**: (see below)
+**Side effects**: None — query-only changes, no schema migration, no behavior change for endpoints other than `/api/productions/<id>/timeline`.
+**Next priority**: Picture Boats / Security Boats / Transport / Helpers / Fuel / Guards lists are empty in the seed data (see ISSUES.md). Investigate whether the data loader should populate them.
+
+---
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
