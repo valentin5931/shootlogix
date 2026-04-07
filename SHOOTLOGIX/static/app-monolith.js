@@ -1102,12 +1102,22 @@ const App = (() => {
     }
 
     // Crew
+    // Show function (role) as the primary label and the assigned person as secondary,
+    // because positions exist as functions that may not yet have a helper assigned.
+    // Falling back to the helper_name as the header would render an empty <strong>.
+    const _unassigned = '<em style="color:var(--text-3);font-weight:400">Unassigned</em>';
     const crewTotal = (d.counts && d.counts.crew_total) || 0;
     if (crewTotal > 0) {
       html += `<h3 style="margin:.8rem 0 .3rem;color:#F59E0B">&#128100; Crew (${crewTotal})</h3>`;
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.5rem">';
-      for (const h of (d.labour || [])) html += `<div style="padding:.5rem;border-left:3px solid #F59E0B;background:var(--bg-2);border-radius:4px"><strong>${esc(h.helper_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">${esc(h.function_name || '')}</span></div>`;
-      for (const g of (d.guards || [])) html += `<div style="padding:.5rem;border-left:3px solid #06B6D4;background:var(--bg-2);border-radius:4px"><strong>${esc(g.helper_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">Guard — ${esc(g.function_name || '')}</span></div>`;
+      for (const h of (d.labour || [])) {
+        const who = (h.helper_name || '').trim();
+        html += `<div style="padding:.5rem;border-left:3px solid #F59E0B;background:var(--bg-2);border-radius:4px"><strong>${esc(h.function_name || 'Helper')}</strong><br><span style="color:var(--text-3);font-size:.8rem">${who ? esc(who) : _unassigned}</span></div>`;
+      }
+      for (const g of (d.guards || [])) {
+        const who = (g.helper_name || '').trim();
+        html += `<div style="padding:.5rem;border-left:3px solid #06B6D4;background:var(--bg-2);border-radius:4px"><strong>Guard — ${esc(g.function_name || '')}</strong><br><span style="color:var(--text-3);font-size:.8rem">${who ? esc(who) : _unassigned}</span></div>`;
+      }
       html += '</div>';
     }
 
