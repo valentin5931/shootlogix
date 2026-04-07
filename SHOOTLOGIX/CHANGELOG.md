@@ -1,5 +1,33 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-07 — [P0] Fix Timeline tab 500 error (locations query referenced non-existent columns)
+
+**Problem**: `GET /api/productions/<id>/timeline` returned HTTP 500 with `sqlite3.OperationalError: no such column: site`. The Timeline tab was completely unusable — the API call failed before any data could be rendered, leaving the tab broken in the UI.
+
+**Root cause**: The locations section of `api_timeline()` was written against an outdated schema:
+1. `SELECT id, name, site FROM locations` — the `locations` table has no `site` column. The actual columns are `name, type, location_type, ...`.
+2. `SELECT id, date, prep, filming, wrap FROM location_schedules` — the `location_schedules` table has no `prep`/`filming`/`wrap` boolean columns. The actual schema (database.py:645-656) stores a single `status` column with values `'P'`, `'F'`, or `'W'`.
+3. `loc['site']` was also referenced when building the resource subgroup.
+
+These columns were either renamed or never existed in the current schema, but the timeline code was never updated to match.
+
+**Fix**: `app.py:7892-7914`
+- Changed locations query to `SELECT id, name, location_type FROM locations`.
+- Changed schedules query to `SELECT id, date, status FROM location_schedules`.
+- Replaced the `prep`/`filming`/`wrap` boolean accumulation with `phases: s['status']` (single phase per schedule row, matching the actual data model).
+- Changed `loc['site']` to `loc['location_type']` for the subgroup label.
+
+**Verification**:
+- `curl /api/productions/1/timeline` returns 200 with 81 resources (was 500).
+- Timeline includes 21 locations, 14 of which have schedule entries (e.g. `ARENA (SABOGA)` has 4 'F' phase entries on game days).
+- Sample assignment shape: `{id, start_date, end_date, status: 'confirmed', phases: 'F'}` — matches the previous output shape, no frontend changes needed.
+- Full pytest suite (45 tests) passes.
+
+**Branch**: fix/2026-04-07-timeline-500-locations-schema
+**PR**: TBD
+**Side effects**: None — output shape preserved.
+**Next priority**: Investigate why `picture_boats`, `security_boats`, `helpers`, `fuel_*`, `guard_camp_workers` tables are empty despite the data_loader logging "Seeding..." messages — this is the next P1 cluster from ISSUES.md.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
