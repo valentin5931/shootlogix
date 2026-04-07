@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [RESOLVED 2026-04-07] [P1] Today tab crew cards rendered with empty headers
+- **Discovered**: 2026-04-07
+- **Symptoms**: Today tab showed dozens of crew cards with empty bold headers; the role/function name was buried below as small grey text. Looked like a rendering bug or broken data.
+- **Root cause**: `renderToday()` used `helper_name` (often empty) as the primary label; the function template name was the secondary line.
+- **Fix**: Swapped primary/secondary in `static/app-monolith.js` for both labour and guards; "Unassigned" placeholder when no helper.
+- **Branch**: fix/2026-04-07-today-tab-empty-helper-names
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

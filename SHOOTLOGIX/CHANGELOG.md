@@ -1,5 +1,23 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-07 — [P1] Fix Today tab rendering empty headers for unassigned crew positions
+
+**Problem**: The Today tab showed crew cards (Labour + Guards) with completely empty bold headers. On a typical day with 71 helper functions defined but no `helpers` rows seeded, the user saw a wall of `<strong></strong>` tags with the function name buried as small grey text below — making the dashboard look broken and hiding the only meaningful information (the role/position name).
+
+**Root cause**: `renderToday()` in `static/app-monolith.js` (lines 1109-1110) used `h.helper_name` as the primary label of each crew card. The today endpoint resolves helper assignments via `helper_name OR helper_name_override`, both of which are `''` for any assignment whose underlying helper row hasn't been created yet. The function template name is the field that's always populated and is what an operations dashboard actually needs to surface.
+
+**Fix**: `static/app-monolith.js` `renderToday()` crew section — now renders `function_name` as the primary `<strong>` label for both labour and guards, with `helper_name` as the secondary line (italic "Unassigned" placeholder when empty). Boats/transport/picture-boats/security-boats rendering is unchanged because their primary identifier (the resource name) is reliably populated in current data.
+
+**Verification**:
+- Manually inspected `/api/productions/1/today?date=2026-04-07`: 71 labour entries with empty `helper_name`, single entry "BODY DOUBLE 01 - HEAD" → "SASKIA EISELE"; the patched UI now shows the function name as the headline of every card and either the assigned person or "Unassigned" underneath.
+- `node -e "new vm.Script(...)"` parses the modified `app-monolith.js` cleanly.
+- Full pytest suite: 45/45 passing.
+
+**Branch**: fix/2026-04-07-today-tab-empty-helper-names
+**PR**: (pending)
+**Side effects**: None — only affects the visual layout of crew cards on the Today tab.
+**Next priority**: Investigate the P1 ISSUES.md item "Picture Boats and Security Boats lists are empty" — decide whether to seed those tables or to merge categorised boats into the unified Boats view.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
