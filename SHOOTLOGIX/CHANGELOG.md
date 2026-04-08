@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-08 — [P0] Stabilize Fleet/Crew sub-nav (stop moving element between view panels)
+
+**Problem**: Fleet (Boats/Picture Boats/Security Boats) and Crew (Labor/Guards) each kept a single sub-nav DOM element that was prepended into whichever sub-panel was active. On every sub-tab switch, that element was physically moved from one `view-panel` to another. This caused layout shifts, forced re-layout of every target panel, and was fragile (e.g. event bindings attached in JS rather than inline `onclick` would be at risk). ISSUES.md tracked this as P0 "Fleet/Crew sub-tab event handlers may not fire on cloned DOM".
+
+**Root cause**: `renderFleetUnified()` and `renderCrewUnified()` used `targetPanel.prepend(nav)` to inject the sub-nav into the currently active sub-panel. Since each sub-tab owns its own `view-panel`, this meant the sub-nav element was shuttled across panels on every click.
+
+**Fix**:
+- `templates/index.html`: Added two persistent sub-nav containers — `#fleet-subnav-bar` and `#crew-subnav-bar` — as siblings of the view panels inside `#main-content`. Removed the now-unused `<div id="fleet-sub-nav"></div>` from inside `#view-fleet`.
+- `static/style.css`: Added `.subnav-bar` rule (absolute-positioned at the top of `#main-content`, hidden by default, `.active` shows it). Changed `.view-panel` from `inset: 0` to `top: var(--subnav-bar-h); right: 0; bottom: 0; left: 0;` so panels shift down by the sub-nav height when fleet/crew is active. Existing layout-div height formulas (`calc(100vh - 48px - 2.5rem - var(--subnav-bar-h))`) continue to work unchanged.
+- `static/app-monolith.js`:
+  - `renderFleetUnified()` now writes the sub-nav HTML into `#fleet-subnav-bar` and toggles `.active` on it (hiding `#crew-subnav-bar`). No DOM node is moved between panels.
+  - `renderCrewUnified()` does the same for `#crew-subnav-bar`.
+  - `setTab()` now hides both sub-nav bars (and resets `--subnav-bar-h` to `0px`) when switching to a tab other than fleet/crew.
+
+**Verification**:
+- `node -e 'new Function(fs.readFileSync("static/app-monolith.js","utf8"))'` → JS parses cleanly.
+- `python3 -m pytest -q` → 45 passed.
+- Manual trace of setTab → renderFleetUnified → fleetSetSubTab → renderFleetUnified → setTab('transport') confirms the sub-nav bar is shown/updated in place and hidden on leave, with `--subnav-bar-h` correctly cycling between measured height and `0px`.
+- `view-fuel`'s `height: 100%` override is safe because fuel is not a fleet/crew tab, so `--subnav-bar-h` is always `0px` when it is active.
+
+**Branch**: fix/2026-04-08-fleet-crew-subnav-outside-panels
+**Side effects**: None. `.fleet-sub-nav` CSS class (line 4674) remains but is only referenced from the dead `static/modules/fleet.js` (tracked as P2 in ISSUES.md); left in place per the "no unrelated refactors" rule.
+**Next priority**: P1 — Picture Boats / Security Boats lists returning `[]` from the API (data model investigation).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

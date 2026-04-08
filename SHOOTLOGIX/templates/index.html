@@ -158,6 +158,12 @@
   <!-- ── Main panels ─────────────────────────────────────────────────────── -->
   <div id="main-content">
 
+    <!-- Persistent sub-navs for Fleet/Crew (live outside view panels so they
+         don't get moved between panels on each sub-tab switch). Shown only
+         while the Fleet or Crew tab is active. -->
+    <div id="fleet-subnav-bar" class="subnav-bar"></div>
+    <div id="crew-subnav-bar" class="subnav-bar"></div>
+
     <!-- TODAY ── -->
     <div id="view-today" class="view-panel">
       <div id="today-content"></div>
@@ -220,7 +226,6 @@
 
     <!-- FLEET (unified) ── -->
     <div id="view-fleet" class="view-panel">
-      <div id="fleet-sub-nav"></div>
       <div id="fleet-cards"></div>
       <div id="fleet-schedule-container" style="display:none"></div>
       <div id="fleet-budget-container" style="display:none"></div>

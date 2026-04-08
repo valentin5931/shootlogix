@@ -1,11 +1,9 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [RESOLVED 2026-04-08] [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Resolved**: 2026-04-08 on branch `fix/2026-04-08-fleet-crew-subnav-outside-panels`
+- **Resolution**: Moved the Fleet and Crew sub-nav into two persistent containers (`#fleet-subnav-bar`, `#crew-subnav-bar`) that live outside the view panels. `renderFleetUnified()` / `renderCrewUnified()` now only update `innerHTML` on the fixed container instead of prepending a DOM element into whichever sub-panel is active. `.view-panel` is offset by `var(--subnav-bar-h)` so panels sit below the sub-nav without overlap. See CHANGELOG entry 2026-04-08 for details.
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
