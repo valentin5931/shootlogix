@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-01 — [P1] Fix keyboard shortcuts and search bypassing unified fleet/crew navigation
+
+**Problem**: Keyboard shortcuts 1-0 and command palette search results navigated directly to sub-tabs (`boats`, `picture-boats`, `security-boats`, `labour`, `guards`) via `setTab()`, bypassing the unified fleet/crew navigation. This caused: (1) no sub-nav bar shown, so users couldn't switch between fleet or crew sub-tabs, (2) no topbar tab highlighted since those tab buttons are hidden, (3) key `1` mapped to hidden `dashboard` tab instead of visible `Today` tab.
+
+**Root cause**: The keyboard shortcut handler used a flat array mapping numbers to tab names, calling `setTab()` directly. Sub-tabs like `boats` are designed to be accessed through `renderFleetUnified()` / `renderCrewUnified()` which inject the sub-nav bar and manage panel switching. Similarly, search result clicks called `App.setTab()` directly.
+
+**Fix**:
+- `static/app-monolith.js`: Keyboard shortcuts now route fleet sub-tabs (4/5/6) through `_fleetSubTab + setTab('fleet')` and crew sub-tabs (9/0) through `_crewSubTab + setTab('crew')`. Key `1` now maps to `today` instead of `dashboard`. Added `_navigateToTab()` helper that routes sub-tabs through their parent. Command palette search results now use `_navigateToTab()` instead of `setTab()`.
+- `templates/index.html`: Updated shortcuts help panel to show correct labels (e.g., "Fleet > Boats" instead of "Boats", "Today" instead of "Dashboard").
+
+**Verification**:
+- JS syntax check passes
+- All API endpoints respond correctly (no regressions)
+- Keyboard shortcuts 4/5/6 now show fleet sub-nav bar
+- Keyboard shortcuts 9/0 now show crew sub-nav bar
+- Key 1 navigates to Today tab (visible)
+- Command palette search navigates through unified tabs
+
+**Branch**: fix/2026-04-01-keyboard-nav-bypasses-unified-tabs
+**Side effects**: None
+**Next priority**: P1 — Picture Boats / Security Boats empty data (investigate data model and seeding)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

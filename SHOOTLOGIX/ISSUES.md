@@ -1,5 +1,9 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] Keyboard shortcuts and search bypassed unified fleet/crew navigation — FIXED 2026-04-01
+- **Fixed in**: fix/2026-04-01-keyboard-nav-bypasses-unified-tabs
+- **Summary**: Keys 4-6, 9-0 and command palette search results called setTab() directly for sub-tabs, skipping the fleet/crew sub-nav bar. Now routes through unified navigation.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
