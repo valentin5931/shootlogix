@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P2] Audit all SQL queries for stale column/table references
+- **Discovered**: 2026-04-08
+- **Symptoms**: The Timeline endpoint had 4 separate references to columns/tables that no longer exist (`locations.site`, `location_schedules.prep/filming/wrap`, `guard_camp_assignments.worker_id`). All four sat next to each other in one function, suggesting this code was never exercised after a schema migration.
+- **Likely cause**: Schema migrations happened incrementally without updating every SQL call site. A route added before the schema stabilized silently rotted.
+- **Files involved**: `app.py` — worth grepping all `conn.execute("SELECT`/`FROM`/`WHERE ... ?` and cross-checking against `PRAGMA table_info`. Also `database.py` line 63 still lists `"guard_camp_assignments": ["worker_name_override", "worker_id"]` in `_DELETE_FIELDS_BY_TABLE` which may also be stale.
+- **Estimated effort**: Medium — mechanical but tedious. A one-off script that parses every SQL literal and runs it with LIMIT 0 against the live schema would catch all of them.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
