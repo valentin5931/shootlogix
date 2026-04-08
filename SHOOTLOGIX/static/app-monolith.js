@@ -2452,8 +2452,8 @@ const App = (() => {
     state.boatView = view;
     closeSchedulePopover();
     ['cards', 'schedule', 'budget'].forEach(v => {
-      $(`boats-view-${v}`).classList.toggle('hidden', v !== view);
-      $(`btab-${v}`).classList.toggle('active', v === view);
+      $(`boats-view-${v}`)?.classList.toggle('hidden', v !== view);
+      $(`btab-${v}`)?.classList.toggle('active', v === view);
     });
     if (view === 'schedule') renderSchedule();
     else if (view === 'budget') renderBoatBudget();
@@ -2489,6 +2489,7 @@ const App = (() => {
     const boats = _filteredBoats();
     const assignedIds = new Set(state.assignments.filter(a => a.boat_id).map(a => a.boat_id));
     const container = $('boat-list');
+    if (!container) return;
 
     if (!boats.length) {
       container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No boats</div>';
@@ -3521,8 +3522,8 @@ const App = (() => {
 
   function _findAssignment(assignmentId) {
     // Search all state assignment arrays
-    for (const arr of [state.assignments, state.pbAssignments, state.sbAssignments,
-                        state.transportAssignments, state.helperAssignments, state.gcAssignments]) {
+    for (const arr of [state.assignments, state.pictureAssignments, state.securityAssignments,
+                        state.transportAssignments, state.labourAssignments, state.gcAssignments]) {
       if (!arr) continue;
       const found = arr.find(a => a.id === assignmentId);
       if (found) return found;
@@ -4336,8 +4337,8 @@ const App = (() => {
   function pbSetBoatView(view) {
     state.pbBoatView = view;
     ['cards','schedule','budget'].forEach(v => {
-      $(`pb-boats-view-${v}`).classList.toggle('hidden', v !== view);
-      $(`pb-btab-${v}`).classList.toggle('active', v === view);
+      $(`pb-boats-view-${v}`)?.classList.toggle('hidden', v !== view);
+      $(`pb-btab-${v}`)?.classList.toggle('active', v === view);
     });
     renderPictureBoats();
     _updateBreadcrumb(view.charAt(0).toUpperCase() + view.slice(1));
@@ -4366,6 +4367,7 @@ const App = (() => {
     const boats = _pbFilteredBoats();
     const assignedIds = new Set(state.pictureAssignments.filter(a => a.picture_boat_id).map(a => a.picture_boat_id));
     const container = $('pb-boat-list');
+    if (!container) return;
     if (!boats.length) {
       container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No picture boats</div>';
       return;
@@ -13000,8 +13002,8 @@ const App = (() => {
     const tab = state.tab;
     try {
       if (tab === 'pdt')             { state.shootingDays = await api('GET', `/api/productions/${state.prodId}/shooting-days`); renderPDT(); }
-      else if (tab === 'boats')      { const [b,f,a] = await Promise.all([api('GET',`/api/productions/${state.prodId}/boats`), api('GET',`/api/productions/${state.prodId}/boat-functions?context=boats`), api('GET',`/api/productions/${state.prodId}/assignments`)]); state.boats=b; state.functions=f; state.assignments=a; renderBoats(); }
-      else if (tab === 'picture-boats')   { const [b,f,a] = await Promise.all([api('GET',`/api/productions/${state.prodId}/picture-boats`), api('GET',`/api/productions/${state.prodId}/boat-functions?context=picture`), api('GET',`/api/productions/${state.prodId}/picture-boat-assignments`)]); state.pictureBoats=b; state.pbFunctions=f; state.pbAssignments=a; renderPictureBoats(); }
+      else if (tab === 'boats')      { const [b,f,a] = await Promise.all([api('GET',`/api/productions/${state.prodId}/boats`), api('GET',`/api/productions/${state.prodId}/boat-functions?context=boats`), api('GET',`/api/productions/${state.prodId}/assignments?context=boats`)]); state.boats=b; state.functions=f; state.assignments=a; renderBoats(); }
+      else if (tab === 'picture-boats')   { const [b,f,a] = await Promise.all([api('GET',`/api/productions/${state.prodId}/picture-boats`), api('GET',`/api/productions/${state.prodId}/boat-functions?context=picture`), api('GET',`/api/productions/${state.prodId}/picture-boat-assignments`)]); state.pictureBoats=b; state.pictureFunctions=f; state.pictureAssignments=a; renderPictureBoats(); }
       else if (tab === 'security-boats')  { await _loadAndRenderSecurityBoats(); }
       else if (tab === 'transport')       { await _loadAndRenderTransport(); }
       else if (tab === 'fuel')            { await _loadAndRenderFuel(); }
