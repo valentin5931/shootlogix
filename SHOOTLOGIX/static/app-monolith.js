@@ -930,22 +930,26 @@ const App = (() => {
     const targetPanel = $(`view-${target}`);
     if (targetPanel) targetPanel.classList.add('active');
 
-    // Render sub-nav inside fleet panel (shown at top)
-    const nav = $('fleet-sub-nav');
-    if (nav) {
-      nav.innerHTML = `
-        <div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
+    // Render the stable sub-nav bar (lives outside view panels so it is
+    // never moved on sub-tab switch). Ensure crew sub-nav is hidden.
+    const fleetNav = $('fleet-sub-nav');
+    const crewNav  = $('crew-sub-nav');
+    if (crewNav) crewNav.classList.remove('active');
+    if (fleetNav) {
+      fleetNav.innerHTML = `
+        <div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem">
           <button class="filter-pill${_fleetSubTab === 'boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('boats')">Boats</button>
           <button class="filter-pill${_fleetSubTab === 'picture-boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('picture-boats')">Picture Boats</button>
           <button class="filter-pill${_fleetSubTab === 'security-boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('security-boats')">Security Boats</button>
         </div>`;
-      // Inject sub-nav before the target panel content
-      if (targetPanel) {
-        targetPanel.prepend(nav);
-        nav.style.display = 'block';
-        // Update CSS var so layout divs account for the sub-nav height
-        document.documentElement.style.setProperty('--subnav-bar-h', nav.offsetHeight + 'px');
-      }
+      fleetNav.classList.add('active');
+      const main = $('main-content');
+      if (main) main.classList.add('has-sub-nav');
+      // Measure after the browser has applied the new layout
+      requestAnimationFrame(() => {
+        const h = fleetNav.offsetHeight || 0;
+        document.documentElement.style.setProperty('--subnav-bar-h', h + 'px');
+      });
     }
 
     // Trigger the sub-tab's render function
@@ -982,27 +986,25 @@ const App = (() => {
     const targetPanel = $(`view-${target}`);
     if (targetPanel) targetPanel.classList.add('active');
 
-    // Update crew sub-tab buttons (they exist in view-crew HTML)
-    const lBtn = $('crew-subtab-labour');
-    const gBtn = $('crew-subtab-guards');
-    if (lBtn) lBtn.classList.toggle('active', _crewSubTab === 'labour');
-    if (gBtn) gBtn.classList.toggle('active', _crewSubTab === 'guards');
-
-    // Inject crew sub-nav at top of target panel
-    let subNav = document.getElementById('crew-sub-nav-injected');
-    if (!subNav) {
-      subNav = document.createElement('div');
-      subNav.id = 'crew-sub-nav-injected';
-    }
-    subNav.innerHTML = `
-      <div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
-        <button class="filter-pill${_crewSubTab === 'labour' ? ' active' : ''}" onclick="App.crewSetSubTab('labour')">Labor</button>
-        <button class="filter-pill${_crewSubTab === 'guards' ? ' active' : ''}" onclick="App.crewSetSubTab('guards')">Guards</button>
-      </div>`;
-    if (targetPanel) {
-      targetPanel.prepend(subNav);
-      // Update CSS var so layout divs account for the sub-nav height
-      document.documentElement.style.setProperty('--subnav-bar-h', subNav.offsetHeight + 'px');
+    // Render the stable crew sub-nav bar (lives outside view panels so it
+    // is never moved on sub-tab switch). Ensure fleet sub-nav is hidden.
+    const fleetNav = $('fleet-sub-nav');
+    const crewNav  = $('crew-sub-nav');
+    if (fleetNav) fleetNav.classList.remove('active');
+    if (crewNav) {
+      crewNav.innerHTML = `
+        <div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem">
+          <button class="filter-pill${_crewSubTab === 'labour' ? ' active' : ''}" id="crew-subtab-labour" onclick="App.crewSetSubTab('labour')">Labor</button>
+          <button class="filter-pill${_crewSubTab === 'guards' ? ' active' : ''}" id="crew-subtab-guards" onclick="App.crewSetSubTab('guards')">Guards</button>
+        </div>`;
+      crewNav.classList.add('active');
+      const main = $('main-content');
+      if (main) main.classList.add('has-sub-nav');
+      // Measure after the browser has applied the new layout
+      requestAnimationFrame(() => {
+        const h = crewNav.offsetHeight || 0;
+        document.documentElement.style.setProperty('--subnav-bar-h', h + 'px');
+      });
     }
 
     // Trigger the sub-tab's render function
@@ -1337,9 +1339,15 @@ const App = (() => {
     const panel = $(`view-${tab}`);
     if (panel) panel.classList.add('active');
 
-    // Reset sub-nav height offset when leaving fleet/crew tabs
+    // Reset sub-nav state when leaving fleet/crew tabs
     if (tab !== 'fleet' && tab !== 'crew') {
       document.documentElement.style.setProperty('--subnav-bar-h', '0px');
+      const fleetNav = $('fleet-sub-nav');
+      const crewNav  = $('crew-sub-nav');
+      if (fleetNav) fleetNav.classList.remove('active');
+      if (crewNav)  crewNav.classList.remove('active');
+      const main = $('main-content');
+      if (main) main.classList.remove('has-sub-nav');
     }
 
     if (tab === 'dashboard')       renderDashboard();

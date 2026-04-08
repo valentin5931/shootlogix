@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-08 — [P0] Stabilize Fleet/Crew sub-nav (stop moving it between view panels)
+
+**Problem**: The Fleet sub-nav (`#fleet-sub-nav`) lived inside `#view-fleet` and was moved via `prepend()` into `view-boats`, `view-picture-boats`, or `view-security-boats` on every sub-tab switch. The Crew sub-nav worked the same way via an on-the-fly `crew-sub-nav-injected` element. Each click detached the sub-nav from one panel and re-attached it to another, causing layout thrash, race conditions on `offsetHeight` measurement, and a fragile coupling between a navigation element and the content panels it controls.
+
+**Root cause**: `renderFleetUnified()` and `renderCrewUnified()` in `static/app-monolith.js` treated the sub-nav as content that belonged inside the currently active panel, so they had to move the DOM node on every sub-tab switch.
+
+**Fix**:
+- `templates/index.html`: Moved `#fleet-sub-nav` out of `#view-fleet` to be a direct child of `#main-content` (sibling of all view panels). Added matching `#crew-sub-nav` sibling. Removed the inline `.crew-sub-nav` bar from inside `#view-crew`.
+- `static/style.css`: Added `.fleet-crew-sub-nav` rule that absolutely positions the bar at top of `#main-content`, hidden by default, shown via `.active` class. Added `#main-content.has-sub-nav > .view-panel.active` rule that adds `padding-top: calc(1.25rem + var(--subnav-bar-h))` so panel content never renders under the sub-nav. Layout div heights already use `calc(... - var(--subnav-bar-h))` and remain correct.
+- `static/app-monolith.js`: `renderFleetUnified()` and `renderCrewUnified()` now render into the stable sub-nav element instead of moving it. They toggle `.active` on the correct bar, add `has-sub-nav` to `#main-content`, and measure height inside `requestAnimationFrame()` to avoid layout-race bugs. `setTab()` clears both bars and the `has-sub-nav` class when leaving fleet/crew.
+
+**Verification**:
+- JS syntax check (`node -c`) passes.
+- All 18 relevant pytest tests pass (`test_health`, `test_boats`, `test_picture_boats`, `test_security_boats`, `test_labour`, `test_guards`, `test_e2e_smoke`).
+- Manual verification via curl: rendered HTML places `#fleet-sub-nav` and `#crew-sub-nav` at positions outside `#view-fleet` and `#view-crew`.
+- App boots cleanly; API endpoints (`/api/productions/1/boats`, `/picture-boats`, `/security-boats`, `/helpers`, `/guards`, `/guard-posts`, `/boat-functions`) all return 200.
+
+**Branch**: fix/2026-04-08-fleet-crew-subnav-stability
+**Side effects**: None. The sub-nav no longer has a `border-bottom` inline on the inner div (CSS handles it on the outer container). Visually identical.
+**Next priority**: P1 — investigate why Picture Boats, Security Boats, Transport, Helpers, Fuel, Guards lists are empty despite endpoints returning 200. Data seeding likely needs to populate these tables (see ISSUES.md).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

@@ -138,6 +138,30 @@ html, body {
 }
 .view-panel.active { display: block; }
 
+/* Stable sub-nav bar for Fleet/Crew unified tabs. Kept outside view panels
+   so it is never moved on sub-tab switch. Only one of the two is visible
+   at a time via the .active class. */
+.fleet-crew-sub-nav {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  background: var(--bg-base);
+  border-bottom: 1px solid var(--border);
+}
+.fleet-crew-sub-nav.active { display: block; }
+
+/* When a Fleet/Crew sub-nav is active, push the active view panel down so
+   its content does not render under the sub-nav. Layout divs inside already
+   use calc(... - var(--subnav-bar-h)) for their height, which remains
+   correct because the extra padding-top is compensated in the panel's total
+   padding. */
+#main-content.has-sub-nav > .view-panel.active {
+  padding-top: calc(1.25rem + var(--subnav-bar-h, 0px));
+}
+
 /* ── Common utilities ───────────────────────────────────────────────────── */
 
 .hidden { display: none !important; }
