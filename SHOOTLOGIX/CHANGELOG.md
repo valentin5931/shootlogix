@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-03-29 — [P0] Fix Timeline tab — API crash + missing frontend render
+
+**Problem**: Clicking the Timeline tab did nothing. The backend API `/api/productions/:id/timeline` crashed with 500 errors due to SQL queries referencing non-existent columns (`site` on locations, `prep`/`filming`/`wrap` on location_schedules). The frontend `renderTimeline` function was never implemented.
+
+**Root cause**:
+1. `app.py` timeline route queried `locations.site` (doesn't exist, should be `location_type`) and `location_schedules.prep/filming/wrap` (doesn't exist, the table uses a `status` column with values like "F").
+2. `app-monolith.js` had a conditional call `if (typeof App.renderTimeline === 'function') App.renderTimeline()` but the function was never defined.
+
+**Fix**:
+- `app.py` (line 7893): Changed `SELECT id, name, site` → `SELECT id, name, location_type`, and `loc['site']` → `loc['location_type']`
+- `app.py` (line 7895): Changed `SELECT id, date, prep, filming, wrap` → `SELECT id, date, status` with updated logic to use the `status` column
+- `static/app-monolith.js`: Implemented full `renderTimeline()` function with Gantt-style view showing all resources (boats, vehicles, locations) on Y axis and production date range on X axis. Includes filter buttons (All/Boats/Vehicles/Locations/Labour/Guards), auto-scroll to today, grouped rows, color-coded assignments, and shooting day indicators.
+
+**Verification**:
+- Timeline API returns 200 with 81 resources, 32 shooting days
+- All other endpoints (Dashboard, Boats, Locations, Budget, etc.) still return 200
+- JS brace/paren balance verified
+- No regressions on existing tabs
+
+**Branch**: fix/2026-03-29-timeline-tab-broken
+**Side effects**: None
+**Next priority**: Picture Boats and Security Boats empty list issue (P1); Transport/Helpers/Guards empty lists (P1)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
