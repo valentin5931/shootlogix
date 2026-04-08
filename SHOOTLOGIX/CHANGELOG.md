@@ -1,5 +1,31 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-08 — [P0] Fix Timeline endpoint 500 error (3 schema mismatches)
+
+**Problem**: `GET /api/productions/<id>/timeline` returned 500 Internal Server Error, breaking the entire Timeline tab. The Werkzeug debugger showed `sqlite3.OperationalError: no such column: site`. Two more latent bugs were discovered in the same handler that would have surfaced once the first was fixed.
+
+**Root cause**: `api_timeline()` in `app.py` referenced columns that don't exist in the current SQLite schema:
+1. `SELECT id, name, site FROM locations` — `locations` has no `site` column (closest: `type`).
+2. `SELECT id, date, prep, filming, wrap FROM location_schedules` — those columns don't exist; `location_schedules` stores one row per phase per day with a single `status` column whose values are `'P'`, `'F'`, or `'W'`.
+3. `SELECT ... FROM guard_camp_assignments WHERE worker_id=?` — the join column is `helper_id`, not `worker_id`. Latent (no guards seeded), but would have crashed once any guard was added.
+
+**Fix**:
+- `app.py:7893` — `SELECT id, name, site` → `SELECT id, name, type`.
+- `app.py:7912` — `loc['site']` → `loc['type']` (used as the timeline subgroup label).
+- `app.py:7894-7914` — Rewrote the location-schedule loop to query `id, date, status` and aggregate phases per date into a `'P/F/W'`-style string, preserving the `phases` field shape that `static/js/timeline.js:359` already consumes.
+- `app.py:7883` — `WHERE worker_id=?` → `WHERE helper_id=?` for `guard_camp_assignments`.
+
+**Verification**:
+- `GET /api/productions/1/timeline` now returns HTTP 200 (40690 bytes).
+- Response contains 32 shooting days, 81 resources (46 boats, 14 vehicles, 21 locations), 121 boat functions.
+- 14 locations carry phase assignments; sample: `ARENA (SABOGA)` (subgroup `île`) with phases like `{phases: 'F', start_date: '2026-04-02'}`.
+- `static/js/timeline.js` reads `assignment.phases` as a label string — backwards compatible.
+- All 45 pytest tests still pass.
+
+**Branch**: fix/2026-04-08-timeline-locations-site-column
+**Side effects**: None. Only the timeline endpoint was touched; the JS consumer is unchanged.
+**Next priority**: Investigate the 4 P1 issues in ISSUES.md about empty Picture Boats / Security Boats / Transport / Helper / Fuel lists — most likely seeding gaps rather than rendering bugs.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
