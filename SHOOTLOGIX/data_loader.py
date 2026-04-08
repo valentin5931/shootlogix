@@ -21,6 +21,7 @@ from database import (
     create_production, seed_departments,
     create_boat, create_boat_function, create_boat_assignment,
     create_helper, create_helper_assignment,
+    create_picture_boat,
     create_security_boat, create_security_boat_assignment,
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
@@ -238,6 +239,57 @@ def _seed_picture_boats(prod_id):
         print(f"  Seeded 4 Picture Boats functions (YELLOW/RED/NEUTRAL/EXILE)")
 
 
+# ─── Seed Picture Boats (actual boats) ──────────────────────────────────────
+
+PICTURE_BOAT_SEED = [
+    {'boat_nr': 1, 'name': 'PCC 1',             'capacity': '8',  'wave_rating': 'Waves',  'vendor': 'PCC',       'group_name': 'Camera', 'daily_rate_estimate': 321.0},
+    {'boat_nr': 2, 'name': 'PCC 2',             'capacity': '8',  'wave_rating': 'Waves',  'vendor': 'PCC',       'group_name': 'Camera', 'daily_rate_estimate': 674.1},
+    {'boat_nr': 3, 'name': 'PCC 3',             'capacity': '8',  'wave_rating': 'Waves',  'vendor': 'PCC',       'group_name': 'Camera', 'daily_rate_estimate': 481.5},
+    {'boat_nr': 4, 'name': 'PCC 4',             'capacity': '8',  'wave_rating': 'Waves',  'vendor': 'PCC',       'group_name': 'Camera', 'daily_rate_estimate': 337.05},
+    {'boat_nr': 5, 'name': 'BONGO 1',           'capacity': '6',  'wave_rating': 'Waves',  'vendor': None,        'group_name': 'Camera', 'daily_rate_estimate': 481.5},
+    {'boat_nr': 6, 'name': 'BONGO 2',           'capacity': '6',  'wave_rating': 'Waves',  'vendor': None,        'group_name': 'Camera', 'daily_rate_estimate': 481.5},
+    {'boat_nr': 7, 'name': 'GOD IS LOVE',       'capacity': '5',  'wave_rating': 'Waves',  'vendor': None,        'group_name': 'Reality','daily_rate_estimate': 337.05},
+    {'boat_nr': 8, 'name': 'DIOS PERFECTO',     'capacity': '5',  'wave_rating': 'Waves',  'vendor': None,        'group_name': 'Reality','daily_rate_estimate': 300.0},
+]
+
+SECURITY_BOAT_SEED = [
+    {'boat_nr': 1, 'name': 'EVAC',              'capacity': '10', 'wave_rating': 'Waves',  'vendor': None,        'group_name': 'SAFETY', 'daily_rate_estimate': 880.0},
+    {'boat_nr': 2, 'name': 'EVAC BOAT',         'capacity': '8',  'wave_rating': 'Waves',  'vendor': None,        'group_name': 'SAFETY', 'daily_rate_estimate': 800.0},
+    {'boat_nr': 3, 'name': 'MISHKA',            'capacity': '6',  'wave_rating': 'Waves',  'vendor': None,        'group_name': 'MEDICAL','daily_rate_estimate': 321.0},
+    {'boat_nr': 4, 'name': 'MISHKA 24/7',       'capacity': '6',  'wave_rating': 'Waves',  'vendor': None,        'group_name': 'MEDICAL','daily_rate_estimate': 642.0},
+    {'boat_nr': 5, 'name': 'ESMELDA',           'capacity': '6',  'wave_rating': 'Waves',  'vendor': None,        'group_name': 'SAFETY', 'daily_rate_estimate': 321.0},
+    {'boat_nr': 6, 'name': 'DONA LUCILA',       'capacity': '6',  'wave_rating': 'Waves',  'vendor': None,        'group_name': 'SAFETY', 'daily_rate_estimate': 300.0},
+]
+
+
+def _seed_picture_boat_entries(prod_id):
+    """Seed picture boats into the picture_boats table if empty."""
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM picture_boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchall()
+    if existing:
+        return
+    print(f"  Seeding {len(PICTURE_BOAT_SEED)} picture boats...")
+    for b in PICTURE_BOAT_SEED:
+        create_picture_boat({**b, 'production_id': prod_id})
+
+
+def _seed_security_boat_entries(prod_id):
+    """Seed security boats into the security_boats table if empty."""
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM security_boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchall()
+    if existing:
+        return
+    print(f"  Seeding {len(SECURITY_BOAT_SEED)} security boats...")
+    for b in SECURITY_BOAT_SEED:
+        create_security_boat({**b, 'production_id': prod_id})
+
+
 def _backup_db():
     """Create a timestamped backup of the database before destructive migrations.
     Keeps the 5 most recent backups."""
@@ -301,6 +353,11 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _seed_picture_boat_entries(prod_id)
+        _seed_helpers(prod_id)
+        _seed_security_boats(prod_id)
+        _seed_security_boat_entries(prod_id)
+        _seed_transport(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -340,8 +397,10 @@ def bootstrap():
               f"delta={bv.get('delta')}")
 
     _seed_picture_boats(prod_id)
+    _seed_picture_boat_entries(prod_id)
     _seed_helpers(prod_id)
     _seed_security_boats(prod_id)
+    _seed_security_boat_entries(prod_id)
     _seed_transport(prod_id)
     _seed_location_sites(prod_id)
     _seed_guard_posts(prod_id)
