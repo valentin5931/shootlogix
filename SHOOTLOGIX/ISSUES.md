@@ -1,5 +1,10 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [RESOLVED 2026-04-08] [P0] Timeline API 500 — schema mismatches in api_timeline()
+- **Resolved by**: fix/2026-04-08-timeline-api-schema-mismatches
+- **Was**: `GET /api/productions/<id>/timeline` crashed with `no such column: site`. Also had two latent bugs (`worker_id` vs `helper_id` on guard_camp_assignments, `prep/filming/wrap` vs `status` on location_schedules).
+- See CHANGELOG.md 2026-04-08 for details.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

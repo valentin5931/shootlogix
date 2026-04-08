@@ -1,5 +1,67 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-08 — [P0] Fix Timeline API 500: three schema mismatches
+
+**Problem**: `GET /api/productions/<id>/timeline` crashed with
+`sqlite3.OperationalError: no such column: site`, breaking the entire
+Timeline (Gantt) tab. Investigating revealed **three independent** schema
+mismatches in `api_timeline()` that had drifted from the actual SQLite
+schema:
+
+1. `SELECT id, name, site FROM locations` — column `site` does not exist;
+   the locations table has `type` (île/plage/quai/hôtel) and `location_type`.
+   It was also missing a `deleted_at IS NULL` filter, so soft-deleted
+   locations would surface on the timeline.
+2. `SELECT ... FROM guard_camp_assignments WHERE worker_id=?` — the FK
+   column is `helper_id`, not `worker_id` (confirmed by the table schema and
+   by every other usage in app.py, e.g. line 3691, 3718).
+3. `SELECT id, date, prep, filming, wrap FROM location_schedules` — these
+   columns never existed. `location_schedules` stores one row per
+   (location, date, phase) with a single `status` column whose value is
+   `'P' | 'F' | 'W'`.
+
+Only bug #1 was firing at request time because it's the first query to hit
+a populated path. Bugs #2 and #3 were latent — they would have crashed as
+soon as `guard_camp_workers` or `location_schedules.location_id` matched
+real data (and `location_schedules` already has 31 rows on KLAS7).
+
+**Root cause**: `api_timeline()` was written against an older schema that
+was never reconciled after the locations / guard_camp / location_schedules
+refactors.
+
+**Fix** (`app.py` lines ~7866-7915 — single route, `api_timeline`):
+- Locations query: `site` → `type`, added `AND deleted_at IS NULL`.
+- `loc['site']` → `loc['type']` in the subgroup mapping.
+- Guard camp assignments: `worker_id` → `helper_id`.
+- Location schedules: query `status` instead of `prep/filming/wrap`, and
+  collapse multiple rows per date into a combined `phases` string
+  (`'P/F'`, `'F/W'`, etc.) using a dict keyed by date — preserves the
+  existing JSON contract consumed by `static/js/timeline.js` (which reads
+  `assignment.phases` at line 359 and `resource.subgroup` at line 109).
+
+**Verification**:
+- `GET /api/productions/1/timeline` → HTTP 200, 40 690 bytes
+- Returns 81 resources (46 boats, 14 vehicles, 21 locations) + 121 functions
+- 14 of 21 locations now surface schedule assignments (e.g. CONTADORA with
+  11 filming days) — they were invisible before because the query crashed
+  before returning anything.
+- All 17 other production API endpoints in the diagnostic checklist still
+  return HTTP 200 (no regressions on boats, picture-boats, security-boats,
+  transport, helpers, guards, fuel-entries, dashboard, today, documents,
+  locations, shooting-days, guard-posts, transport-vehicles, fnb).
+- `python -c "import ast; ast.parse(open('app.py').read())"` passes.
+
+**Branch**: fix/2026-04-08-timeline-api-schema-mismatches
+**PR**: (pending)
+**Side effects**: None. JSON contract is preserved — frontend reads
+`resource.subgroup` and `assignment.phases`, both still populated.
+**Next priority**: The diagnostic also exposed that several lists are empty
+(picture-boats, security-boats, helpers, fuel-entries, guard_camp_workers)
+— these are data-seeding gaps already tracked in ISSUES.md as P1. Also
+worth a focused pass on the Fleet/Crew sub-tab P0 still listed in
+ISSUES.md to confirm whether commit 2a93828 fully resolved it or if the
+ISSUES.md entry is stale.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
