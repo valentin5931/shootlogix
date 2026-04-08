@@ -1327,6 +1327,164 @@ const App = (() => {
     } catch (e) { toast('Network error', 'error'); }
   }
 
+  // ── Timeline (Gantt) ──────────────────────────────────────
+  let _timelineGroupFilter = 'all';
+
+  function _timelineFilter(g) {
+    _timelineGroupFilter = g;
+    renderTimeline();
+  }
+
+  async function renderTimeline() {
+    const container = $('timeline-content');
+    if (!container) return;
+    container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">Loading timeline...</div>';
+
+    let data;
+    try {
+      data = await api('GET', `/api/productions/${state.prodId}/timeline`);
+    } catch (e) {
+      container.innerHTML = `<div style="padding:2rem;text-align:center;color:#EF4444">Error loading timeline: ${esc(e.message || String(e))}</div>`;
+      return;
+    }
+    if (!data || !data.start_date || !data.end_date) {
+      container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">No timeline data — production start/end dates missing.</div>';
+      return;
+    }
+
+    // Build list of days from start_date → end_date (inclusive)
+    const toIso = d => d.toISOString().slice(0, 10);
+    const days = [];
+    const startD = new Date(data.start_date + 'T00:00:00Z');
+    const endD = new Date(data.end_date + 'T00:00:00Z');
+    for (let d = new Date(startD); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
+      days.push(new Date(d));
+    }
+
+    // Lookup: function_id → function name
+    const funcById = {};
+    (data.functions || []).forEach(f => { funcById[f.id] = f.name; });
+
+    // Is an assignment active on a given ISO day? Respects day_overrides.
+    function assignActive(assign, iso) {
+      if (!assign.start_date || !assign.end_date) return false;
+      if (iso < assign.start_date || iso > assign.end_date) return false;
+      const ov = assign.day_overrides;
+      if (ov && typeof ov === 'object') {
+        const v = ov[iso];
+        if (v === 'removed' || v === 'off' || v === false || v === 0) return false;
+      }
+      return true;
+    }
+
+    // Group resources
+    const groupOrder = ['Boats', 'Vehicles', 'Crew', 'Locations'];
+    const byGroup = {};
+    groupOrder.forEach(g => { byGroup[g] = []; });
+    (data.resources || []).forEach(r => {
+      const g = r.group || 'Other';
+      if (!byGroup[g]) byGroup[g] = [];
+      byGroup[g].push(r);
+    });
+
+    const W = 26; // day-cell width in px
+
+    // Header
+    let html = `
+      <div style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;padding:.7rem 1rem;border-bottom:1px solid var(--border)">
+        <h2 style="margin:0;font-size:1.1rem">Timeline</h2>
+        <span style="color:var(--text-3);font-size:.85rem">${esc(data.start_date)} → ${esc(data.end_date)} &middot; ${days.length} days &middot; ${data.resources.length} resources</span>
+        <div style="margin-left:auto;display:flex;gap:.3rem;flex-wrap:wrap">
+          <button class="btn btn-sm ${_timelineGroupFilter === 'all' ? 'btn-primary' : 'btn-secondary'}" onclick="App._timelineFilter('all')">All (${data.resources.length})</button>`;
+    groupOrder.forEach(g => {
+      const n = (byGroup[g] || []).length;
+      if (!n) return;
+      html += `<button class="btn btn-sm ${_timelineGroupFilter === g ? 'btn-primary' : 'btn-secondary'}" onclick="App._timelineFilter('${g}')">${esc(g)} (${n})</button>`;
+    });
+    html += `</div></div>`;
+
+    // Scroll container
+    html += `<div style="overflow:auto;max-height:calc(100vh - 180px);background:var(--bg-1)"><div style="display:inline-block;min-width:100%">`;
+
+    // Date header row (sticky)
+    html += `<div style="display:flex;position:sticky;top:0;z-index:3;background:var(--bg-2);border-bottom:1px solid var(--border)">
+      <div style="width:220px;min-width:220px;padding:.4rem .6rem;font-weight:600;position:sticky;left:0;background:var(--bg-2);border-right:1px solid var(--border);z-index:4">Resource</div>`;
+    days.forEach((d, i) => {
+      const dow = d.getUTCDay();
+      const isWeekend = dow === 0 || dow === 6;
+      const dayNum = d.getUTCDate();
+      const monthLabel = (dayNum === 1 || i === 0) ? d.toLocaleDateString('en', { month: 'short', timeZone: 'UTC' }) : '';
+      html += `<div style="width:${W}px;min-width:${W}px;padding:.15rem 0;text-align:center;font-size:.68rem;border-right:1px solid var(--border);${isWeekend ? 'background:rgba(128,128,128,0.08);' : ''}">
+        <div style="color:var(--text-3);font-size:.6rem;height:.8rem">${esc(monthLabel)}</div>${dayNum}</div>`;
+    });
+    html += `</div>`;
+
+    // Body rows grouped
+    let totalRendered = 0;
+    groupOrder.forEach(group => {
+      const resources = byGroup[group] || [];
+      if (!resources.length) return;
+      if (_timelineGroupFilter !== 'all' && _timelineGroupFilter !== group) return;
+
+      html += `<div style="display:flex;background:var(--bg-3);border-bottom:1px solid var(--border)">
+        <div style="padding:.35rem .6rem;font-weight:700;color:var(--text-2);font-size:.75rem;text-transform:uppercase;letter-spacing:.03em;position:sticky;left:0;background:var(--bg-3);z-index:2;width:220px;min-width:220px">${esc(group)} &middot; ${resources.length}</div>
+        <div style="flex:1"></div>
+      </div>`;
+
+      resources.forEach(res => {
+        totalRendered++;
+        html += `<div style="display:flex;border-bottom:1px solid var(--border);min-height:26px">
+          <div style="width:220px;min-width:220px;padding:.25rem .6rem;font-size:.82rem;position:sticky;left:0;background:var(--bg-1);border-right:1px solid var(--border);z-index:1;display:flex;align-items:center;gap:.4rem">
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1" title="${esc(res.name)}">${esc(res.name)}</span>
+            <span style="color:var(--text-3);font-size:.65rem;white-space:nowrap">${esc(res.subgroup || '')}</span>
+          </div>`;
+
+        days.forEach(d => {
+          const iso = toIso(d);
+          const dow = d.getUTCDay();
+          const isWeekend = dow === 0 || dow === 6;
+          let cellBg = isWeekend ? 'background:rgba(128,128,128,0.08);' : '';
+
+          // Find active assignment (prefer first match)
+          let activeAssign = null;
+          for (const a of (res.assignments || [])) {
+            if (assignActive(a, iso)) { activeAssign = a; break; }
+          }
+
+          if (activeAssign) {
+            const fname = funcById[activeAssign.function_id] || '';
+            const st = activeAssign.status || 'confirmed';
+            let color;
+            if (st === 'confirmed') color = '#3B82F6';
+            else if (st === 'tentative') color = '#F59E0B';
+            else color = '#10B981';
+            // For locations (phases P/F/W) show a letter; else show a bar
+            if (activeAssign.phases) {
+              const phaseColors = { 'P': '#94A3B8', 'F': '#10B981', 'W': '#F59E0B' };
+              const pc = phaseColors[activeAssign.phases] || color;
+              const title = `${res.name} — ${activeAssign.phases} — ${iso}`;
+              html += `<div style="width:${W}px;min-width:${W}px;border-right:1px solid var(--border);${cellBg}padding:3px;display:flex;align-items:center;justify-content:center" title="${esc(title)}"><span style="color:${pc};font-size:.7rem;font-weight:700">${esc(activeAssign.phases)}</span></div>`;
+            } else {
+              const title = `${res.name}${fname ? ' — ' + fname : ''} — ${activeAssign.start_date} → ${activeAssign.end_date} (${st})`;
+              html += `<div style="width:${W}px;min-width:${W}px;border-right:1px solid var(--border);${cellBg}padding:3px" title="${esc(title)}"><div style="background:${color};height:100%;border-radius:2px"></div></div>`;
+            }
+          } else {
+            html += `<div style="width:${W}px;min-width:${W}px;border-right:1px solid var(--border);${cellBg}"></div>`;
+          }
+        });
+
+        html += `</div>`;
+      });
+    });
+
+    if (!totalRendered) {
+      html += `<div style="padding:2rem;text-align:center;color:var(--text-3)">No resources in the current filter.</div>`;
+    }
+
+    html += `</div></div>`;
+    container.innerHTML = html;
+  }
+
   // ── Tab navigation ─────────────────────────────────────────
   function setTab(tab) {
     state.tab = tab;
@@ -1359,7 +1517,7 @@ const App = (() => {
     if (tab === 'crew')            renderCrewUnified();
     if (tab === 'today')           renderToday();
     if (tab === 'documents')       renderDocuments();
-    if (tab === 'timeline')        { if (typeof App.renderTimeline === 'function') App.renderTimeline(); }
+    if (tab === 'timeline')        renderTimeline();
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
     // For fleet/crew, show the active sub-tab in the breadcrumb
@@ -13233,6 +13391,8 @@ const App = (() => {
     // Documents
     renderDocuments, _docShowUpload, _docSubmitUpload, _docToggleVersions,
     _docSetStatus, _docDelete, _docUploadVersion, _docSubmitVersion,
+    // Timeline (Gantt)
+    renderTimeline, _timelineFilter,
     // Alerts (AXE 7.3)
     toggleAlertsPanel, filterAlerts, loadAlerts,
     // Search

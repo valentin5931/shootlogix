@@ -35,6 +35,17 @@
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
 
+## [P1] Timeline Gantt: deeper polish
+- **Discovered**: 2026-04-08
+- **Symptoms**: The fix in branch `fix/2026-04-08-timeline-tab-broken` makes the Timeline tab render a working Gantt, but it's intentionally minimal:
+  - No virtualization — with very large productions (hundreds of resources × months of days) the inline HTML could get heavy.
+  - Only one assignment is visible per cell (first match wins); overlapping assignments are hidden.
+  - No click-through from an assignment bar to the underlying resource detail / assignment editor.
+  - Function-name labels are not rendered inside bars, only in the tooltip.
+- **Likely cause**: The initial fix was intentionally scoped to make the tab functional and match the rest of the app's visual style.
+- **Files involved**: `static/app-monolith.js` (`renderTimeline`)
+- **Estimated effort**: Medium — polish pass
+
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22
 - **Symptoms**: Files like `fleet.js`, `crew.js`, `today.js`, `documents.js`, etc. in `static/modules/` reference `window._SL` which doesn't exist. They are never loaded by `index.html`.
