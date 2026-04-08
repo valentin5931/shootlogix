@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] Several API routes return 404 in diagnostic checklist
+- **Discovered**: 2026-04-08
+- **Symptoms**: During the CLAUDE.md smoke test, the following endpoints returned 404: `/api/productions/1/budget-lines`, `/api/productions/1/schedules`, `/api/productions/1/holidays`. Unclear if these routes exist under different paths or were renamed.
+- **Likely cause**: The checklist uses guessed paths; the real routes may be prefixed or split (e.g. `/api/productions/1/budget` instead of `/budget-lines`).
+- **Files involved**: `app.py` (search for `@app.route` definitions matching budget/schedule/holiday).
+- **Estimated effort**: Quick — either update the checklist or add the missing route aliases.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

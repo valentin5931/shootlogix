@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-08 — [P0] Fix timeline API 500 crash (locations schema mismatch)
+
+**Problem**: `GET /api/productions/1/timeline` returned 500 Internal Server Error with `sqlite3.OperationalError: no such column: site`. The Timeline tab was completely broken — no resources, no assignments, blank view.
+
+**Root cause**: The `api_timeline` handler in `app.py` queried `SELECT id, name, site FROM locations` but the `locations` table has no `site` column (it has `type` and `location_type`). A second query read `prep, filming, wrap` from `location_schedules`, but that table stores a single `status` column with character codes `'P' / 'F' / 'W'`, one row per (location, date, phase). Both queries were written against a schema that never existed in this database.
+
+**Fix**:
+- `app.py` (lines ~7892-7930): Rewrote the locations block of `api_timeline`.
+  - Query `location_type` instead of non-existent `site`.
+  - Query `status` from `location_schedules` and group rows by date in Python, joining the single-char phase codes into the `phases` string the frontend already expects (e.g. `"P/F"`, `"F"`, `"F/W"`).
+  - Stable assignment ordering via `ORDER BY date, id` and `sorted()` on the date keys.
+
+**Verification**:
+- `GET /api/productions/1/timeline` → 200, 40KB payload.
+- Response contains 21 location resources, 14 with assignments. Example: `ARENA (SABOGA)` → 4 filming days; `subgroup: "game"` (from `location_type`).
+- Smoke-tested all other endpoints from the CLAUDE.md diagnostic checklist — all return 200, no regressions.
+- `python -c "import ast; ast.parse(open('app.py').read())"` passes.
+
+**Branch**: fix/2026-04-08-timeline-site-column
+**Side effects**: None
+**Next priority**: P1 — Fleet/Crew sub-tab event handler issue tracked in ISSUES.md, and the 404s on `/api/productions/1/budget-lines`, `/api/productions/1/schedules`, `/api/productions/1/holidays` endpoints seen during the checklist (investigate whether the routes are under different paths).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
