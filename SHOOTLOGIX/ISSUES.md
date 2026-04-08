@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] Uploaded picture-boat / security-boat images keep user-controlled extension
+- **Discovered**: 2026-04-08
+- **Symptoms**: `api_upload_picture_boat_image` / `api_upload_security_boat_image` derive the filename as `pb_{id}{ext}` / `sb_{id}{ext}` where `ext` is `os.path.splitext(f.filename)[1].lower() or '.jpg'`. An authenticated user can upload `foo.html` or `foo.svg` and the file is served from `/static/uploads/picture-boats/pb_X.html`, which renders as HTML in the browser (stored XSS on the same origin).
+- **Likely cause**: No allow-list of image extensions, and no MIME-type check on the uploaded stream.
+- **Files involved**: `app.py` (`api_upload_picture_boat_image` around L1096, `api_upload_security_boat_image` around L1543)
+- **Estimated effort**: Quick fix — restrict `ext` to `{.jpg, .jpeg, .png, .webp, .gif}` and reject anything else with 400.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

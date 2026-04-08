@@ -7557,12 +7557,45 @@ def api_upload_document_version(prod_id, doc_id):
 
 @app.route("/api/documents/download/<path:filepath>", methods=["GET"])
 def api_download_document(filepath):
-    """Serve a document file from the data/documents directory."""
-    full = os.path.join(os.path.dirname(__file__), filepath)
-    if not os.path.isfile(full):
-        abort(404, description="File not found")
+    """Serve a document file from the data/documents directory.
+
+    Security:
+    - Resolves the requested path and verifies it stays inside
+      data/documents/, preventing path traversal (e.g. ../../etc/passwd).
+    - Verifies the authenticated user is a member of the production that
+      owns the document (ADMIN users bypass this check).
+    """
     from flask import send_file
-    return send_file(full, as_attachment=True)
+
+    base_dir = os.path.realpath(
+        os.path.join(os.path.dirname(__file__), 'data', 'documents')
+    )
+    requested = os.path.realpath(
+        os.path.join(os.path.dirname(__file__), filepath)
+    )
+
+    # Ensure the resolved path is inside data/documents/
+    if requested != base_dir and not requested.startswith(base_dir + os.sep):
+        abort(403, description="Access denied")
+
+    if not os.path.isfile(requested):
+        abort(404, description="File not found")
+
+    # Verify per-production access control.
+    # Stored file paths follow the pattern data/documents/{prod_id}/{filename}.
+    rel_parts = os.path.relpath(requested, base_dir).split(os.sep)
+    if len(rel_parts) < 2:
+        abort(404, description="File not found")
+    try:
+        doc_prod_id = int(rel_parts[0])
+    except ValueError:
+        abort(404, description="File not found")
+
+    if not getattr(g, 'is_admin', False):
+        if get_membership(g.user_id, doc_prod_id) is None:
+            abort(403, description="You do not have access to this production")
+
+    return send_file(requested, as_attachment=True)
 
 
 # ─── Daily Production Report (P5.9) ──────────────────────────────────────────
