@@ -403,10 +403,18 @@ HELPER_DATA = [
 
 
 def _seed_helpers(prod_id):
-    """Seed helpers + functions + assignments from budget data."""
+    """Seed helpers + functions + assignments from budget data.
+
+    NOTE: The boat_functions.context for the Labour module is 'labour'
+    (renamed from legacy 'helpers' by the migration in database.py).
+    The idempotency check and the insert MUST both use 'labour' so the
+    Labour tab finds the seeded functions on a fresh DB. Using 'helpers'
+    here produced orphan rows that the migration renamed on the NEXT
+    boot only, breaking Labour on first launch.
+    """
     with get_db() as conn:
         existing = conn.execute(
-            "SELECT id FROM boat_functions WHERE production_id=? AND context='helpers'",
+            "SELECT id FROM boat_functions WHERE production_id=? AND context='labour'",
             (prod_id,)
         ).fetchall()
     if existing:
@@ -424,7 +432,7 @@ def _seed_helpers(prod_id):
             'sort_order': gi['sort'],
             'default_start': h['start'],
             'default_end': h['end'],
-            'context': 'helpers',
+            'context': 'labour',
         })
         # Create the assignment with dates and rate
         create_helper_assignment({

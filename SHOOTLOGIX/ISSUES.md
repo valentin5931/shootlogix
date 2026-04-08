@@ -1,11 +1,15 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [RESOLVED 2026-04-08] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Resolved by**: PR #32 ("[P0] Fix panel stacking when switching Fleet/Crew sub-tabs", commit 2a93828) — `renderFleetUnified`/`renderCrewUnified` now clear `active` from all related panels before activating the target, and `setTab` resets `--subnav-bar-h` when leaving fleet/crew. Symptoms no longer observed during 2026-04-08 diagnostic run.
+
+## [RESOLVED 2026-04-08] Labour tab empty — data_loader seeded wrong boat_functions.context
+- **Discovered**: 2026-04-08 (diagnostic run)
+- **Symptoms**: `GET /api/productions/1/boat-functions?context=labour` returned `[]` on a freshly bootstrapped DB, leaving the Crew › Labour tab with no role cards, no schedule, and no budget breakdown. `boat_functions` actually had 73 matching rows but they were stored with `context='helpers'`.
+- **Root cause**: `data_loader._seed_helpers()` seeded with the legacy string `'helpers'`. `init_db()` has a `UPDATE boat_functions SET context='labour' WHERE context='helpers'` migration, but it runs BEFORE `bootstrap()`, so on a fresh DB it renames nothing and the seeder then inserts with the wrong context.
+- **Fix**: `data_loader.py` `_seed_helpers` now uses `context='labour'` for both the existence check and the `create_boat_function` call. Fresh DB and legacy DB upgrade paths both verified. See CHANGELOG 2026-04-08.
+- **Files involved**: `data_loader.py`
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
