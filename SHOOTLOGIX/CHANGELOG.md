@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-08 — [P1] Fix stale state-variable names in `_findAssignment` and picture-boats refresh handler
+
+**Problem**:
+1. `_findAssignment(assignmentId)` in `static/app-monolith.js` iterated over `state.pbAssignments`, `state.sbAssignments`, and `state.helperAssignments` — none of which exist. The canonical state arrays are `state.pictureAssignments`, `state.securityAssignments`, and `state.labourAssignments`. Result: when a user multi-selected schedule cells covering picture-boat, security-boat or labour assignments and tried to set/clear a day override status, `_findAssignment()` returned `null` and the override silently failed.
+2. The Picture Boats tab refresh handler (single-line `else if (tab === 'picture-boats')` block at the bottom of `static/app-monolith.js`) wrote the freshly-fetched functions and assignments into `state.pbFunctions` and `state.pbAssignments` — orphan state slots that nothing reads — instead of into `state.pictureFunctions` and `state.pictureAssignments`. Result: clicking the refresh button on Picture Boats kept rendering stale function/assignment data.
+
+**Root cause**: Two separate naming-convention typos that crept in over the course of refactors. The canonical state slots use the long form (`pictureAssignments`, `securityAssignments`, `labourAssignments`); a few call sites still used the short form (`pbAssignments`, `sbAssignments`, `helperAssignments`) that was either never declared or renamed. Because JS silently returns `undefined` for missing object keys, both bugs were silent failures.
+
+**Fix**:
+- `static/app-monolith.js` `_findAssignment()` (around line 3522): replaced `state.pbAssignments`, `state.sbAssignments`, `state.helperAssignments` with the canonical `state.pictureAssignments`, `state.securityAssignments`, `state.labourAssignments`.
+- `static/app-monolith.js` picture-boats refresh handler (around line 13004): replaced `state.pbFunctions=f; state.pbAssignments=a;` with `state.pictureFunctions=f; state.pictureAssignments=a;`.
+
+**Verification**:
+- `node --check static/app-monolith.js` passes.
+- Full pytest suite (45 tests) passes.
+- Grep confirms no remaining `state.pbAssignments`, `state.sbAssignments`, `state.pbFunctions`, or `state.helperAssignments` references in `static/app-monolith.js`.
+
+**Branch**: `fix/2026-04-08-state-name-typos`
+**PR**: TBD
+**Side effects**: None — both bugs were silent failures, so the fix only restores intended behaviour.
+**Next priority**: Picture Boats and Security Boats lists are empty (P1 in ISSUES.md) — investigate whether the legacy `boats` table data should be migrated to `picture_boats` on bootstrap, or whether the architecture intentionally requires user-driven population.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
