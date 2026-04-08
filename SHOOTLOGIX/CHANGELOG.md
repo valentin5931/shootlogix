@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-08 — [P0] Fix multi-select day-override silently failing on Picture/Security/Labour schedules
+
+**Problem**:
+1. Multi-select bulk day-override (added in [AXE10.3]) silently does nothing on Picture Boats, Security Boats and Labour schedules. Only the main Boats schedule worked.
+2. Pull-to-refresh on the Picture Boats tab leaves stale picture functions and assignments — the freshly-fetched data is written to non-existent state slots, so the rendered list keeps showing old data.
+
+**Root cause**:
+Two stale state-variable name references that were never aligned with the rest of the codebase:
+
+- `_findAssignment()` (used by `_setDayOverrideStatus` / `_setDayOverrideValue` for the multi-select bulk override) iterated over `state.pbAssignments`, `state.sbAssignments`, `state.helperAssignments`. These slots are never written anywhere — the actual data lives in `state.pictureAssignments`, `state.securityAssignments`, `state.labourAssignments`. Result: `_findAssignment` always returned `null` for those three contexts, the override callbacks bailed out at `if (!asgn) return;`, and no PUT was sent to the API. Bulk overrides on the main `boats` schedule still worked because `state.assignments` is the only slot that was named correctly.
+- `_reloadCurrentTab()` for the picture-boats tab assigned the freshly-fetched data to `state.pbFunctions` / `state.pbAssignments`, leaving the canonical `state.pictureFunctions` / `state.pictureAssignments` untouched. The follow-up `renderPictureBoats()` then re-rendered using the stale canonical state.
+
+**Fix**:
+- `static/app-monolith.js` `_findAssignment()` (line 3522): renamed `state.pbAssignments` → `state.pictureAssignments`, `state.sbAssignments` → `state.securityAssignments`, `state.helperAssignments` → `state.labourAssignments`.
+- `static/app-monolith.js` `_reloadCurrentTab()` picture-boats branch (line 13004): renamed `state.pbFunctions` → `state.pictureFunctions`, `state.pbAssignments` → `state.pictureAssignments`.
+
+**Verification**:
+- `node -c static/app-monolith.js` passes.
+- `grep -nE 'state\.(pb|sb|helper)(Assignments|Functions)' static/app-monolith.js` returns nothing — no stale references remain.
+- Cross-checked: `_clearDayOverride()` already uses the canonical `state.pictureAssignments` / `state.securityAssignments` / `state.labourAssignments` names, so the fix aligns `_findAssignment` and `_reloadCurrentTab` with the rest of the codebase.
+
+**Branch**: fix/2026-04-08-state-names-multiselect-overrides
+**Side effects**: None — only renames refer to existing canonical state slots; no new fields or behaviour.
+**Next priority**: P1 — Picture Boats / Security Boats lists are still empty in seed data (see ISSUES.md). Investigate `_seed_picture_boats` / `_seed_security_boats` in `data_loader.py` (currently only seed function groups, never seed actual boat rows).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
