@@ -5782,7 +5782,19 @@ def generate_daily_checklist(prod_id, date):
                 (checklist_id, text, cat)
             )
 
-        return get_daily_checklist(prod_id, date)
+        # Read back the checklist within the same connection (before commit)
+        # so the newly inserted items are visible.
+        cl_row = conn.execute(
+            "SELECT * FROM daily_checklists WHERE production_id=? AND date=?",
+            (prod_id, date)
+        ).fetchone()
+        checklist = dict(cl_row)
+        item_rows = conn.execute(
+            "SELECT * FROM checklist_items WHERE checklist_id=? ORDER BY category, id",
+            (checklist_id,)
+        ).fetchall()
+        checklist["items"] = [dict(i) for i in item_rows]
+        return checklist
 
 
 def get_daily_checklist(prod_id, date):
