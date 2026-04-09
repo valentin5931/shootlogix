@@ -13102,6 +13102,547 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  Missing functions — ported from modules/*.js and app.js
+  //  (These were referenced by index.html onclick handlers
+  //   but never included in the monolith)
+  // ═══════════════════════════════════════════════════════════
+
+  // ── Mobile menu ──────────────────────────────────────────
+  function toggleMobileMenu() {
+    const menu = $('mobile-menu');
+    if (!menu) return;
+    const isOpen = !menu.classList.contains('hidden');
+    if (isOpen) {
+      menu.classList.add('hidden');
+      document.body.style.overflow = '';
+    } else {
+      menu.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      menu.querySelectorAll('.mobile-menu-item[data-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === state.tab);
+      });
+    }
+  }
+
+  // ── Notifications panel ──────────────────────────────────
+  let _notifPanelOpen = false;
+  let _notifData = [];
+  let _unreadCount = 0;
+
+  async function toggleNotifPanel() {
+    _notifPanelOpen = !_notifPanelOpen;
+    const panel = $('notif-panel');
+    if (!panel) return;
+    panel.classList.toggle('hidden', !_notifPanelOpen);
+    if (_notifPanelOpen) {
+      await _loadNotifications();
+    }
+  }
+
+  function closeNotifPanel() {
+    _notifPanelOpen = false;
+    const panel = $('notif-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function _loadNotifications() {
+    try {
+      const data = await api('GET', `/api/productions/${state.prodId}/notifications`);
+      _notifData = Array.isArray(data) ? data : [];
+      _unreadCount = _notifData.filter(n => !n.is_read).length;
+      _renderNotifications();
+      _updateNotifBadge();
+    } catch {
+      // Notifications API may not exist yet — show empty state
+      const list = $('notif-list');
+      if (list) list.innerHTML = '<div class="notif-empty">No notifications</div>';
+    }
+  }
+
+  function _renderNotifications() {
+    const list = $('notif-list');
+    if (!list) return;
+    if (!_notifData.length) {
+      list.innerHTML = '<div class="notif-empty">No notifications</div>';
+      return;
+    }
+    list.innerHTML = _notifData.map(n => `
+      <div class="notif-item${n.is_read ? '' : ' unread'}" style="padding:.5rem .75rem;border-bottom:1px solid var(--border);font-size:.82rem${n.is_read ? '' : ';background:var(--bg-surface)'}">
+        <div style="color:var(--text-1)">${esc(n.message || n.body || '')}</div>
+        <div style="color:var(--text-4);font-size:.7rem;margin-top:.15rem">${n.created_at || ''}</div>
+      </div>
+    `).join('');
+  }
+
+  function _updateNotifBadge() {
+    const badge = $('notif-badge');
+    if (!badge) return;
+    if (_unreadCount > 0) {
+      badge.textContent = _unreadCount;
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  async function markAllNotificationsRead() {
+    try {
+      await api('POST', `/api/productions/${state.prodId}/notifications/read-all`);
+      _notifData.forEach(n => n.is_read = 1);
+      _unreadCount = 0;
+      _updateNotifBadge();
+      _renderNotifications();
+      toast('All notifications marked as read', 'success');
+    } catch {
+      toast('Failed to mark all as read', 'error');
+    }
+  }
+
+  // ── Activity panel ───────────────────────────────────────
+  let _activityOpen = false;
+  let _activityPage = 0;
+  let _activityData = [];
+  const _ACTIVITY_PAGE_SIZE = 50;
+
+  async function toggleActivityPanel() {
+    if (_activityOpen) { closeActivityPanel(); return; }
+    _activityOpen = true;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+    loadActivity();
+  }
+
+  function closeActivityPanel() {
+    _activityOpen = false;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  async function loadActivity() {
+    _activityPage = 0;
+    _activityData = [];
+    const feed = $('activity-feed');
+    if (feed) feed.innerHTML = '<div class="activity-loading">Loading...</div>';
+    await _fetchActivity();
+  }
+
+  function loadMoreActivity() {
+    _activityPage++;
+    _fetchActivity();
+  }
+
+  async function _fetchActivity() {
+    try {
+      const module = $('activity-filter-module')?.value || '';
+      const user = $('activity-filter-user')?.value || '';
+      const action = $('activity-filter-action')?.value || '';
+      const from = $('activity-filter-from')?.value || '';
+      const to = $('activity-filter-to')?.value || '';
+      const qs = new URLSearchParams();
+      if (module) qs.set('module', module);
+      if (user) qs.set('user', user);
+      if (action) qs.set('action', action);
+      if (from) qs.set('from', from);
+      if (to) qs.set('to', to);
+      qs.set('limit', _ACTIVITY_PAGE_SIZE);
+      qs.set('offset', _activityPage * _ACTIVITY_PAGE_SIZE);
+
+      const data = await api('GET', `/api/productions/${state.prodId}/history?${qs}`);
+      const items = Array.isArray(data) ? data : [];
+      if (_activityPage === 0) _activityData = items;
+      else _activityData = _activityData.concat(items);
+      _renderActivity();
+      const btn = $('activity-load-more');
+      if (btn) btn.style.display = items.length >= _ACTIVITY_PAGE_SIZE ? '' : 'none';
+    } catch (e) {
+      const feed = $('activity-feed');
+      if (feed) feed.innerHTML = '<div style="padding:1rem;color:var(--red)">Error loading activity</div>';
+    }
+  }
+
+  function _renderActivity() {
+    const feed = $('activity-feed');
+    if (!feed) return;
+    if (!_activityData.length) {
+      feed.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-3)">No activity found</div>';
+      return;
+    }
+    feed.innerHTML = _activityData.map(item => {
+      const desc = item.human_description || `${item.action} ${item.table_name}`;
+      const time = item.created_at || '';
+      const user = item.user_nickname || 'System';
+      const actionColor = item.action === 'create' ? '#22C55E' : item.action === 'delete' ? '#EF4444' : '#3B82F6';
+      return `<div class="activity-item" style="padding:.5rem .75rem;border-bottom:1px solid var(--border);font-size:.82rem">
+        <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.15rem">
+          <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${actionColor}"></span>
+          <span style="font-weight:600;color:var(--text-1)">${esc(user)}</span>
+          <span style="color:var(--text-4);font-size:.7rem;margin-left:auto">${esc(time)}</span>
+        </div>
+        <div style="color:var(--text-2)">${esc(desc)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Comments panel ───────────────────────────────────────
+  let _commentsPanelOpen = false;
+  let _commentsEntity = { type: '', id: 0 };
+  let _commentCounts = {};
+
+  function closeCommentsPanel() {
+    _commentsPanelOpen = false;
+    const panel = $('comments-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function submitComment() {
+    const input = $('comments-input');
+    const body = (input?.value || '').trim();
+    if (!body) return;
+    if (input) input.disabled = true;
+    try {
+      await api('POST', `/api/productions/${state.prodId}/comments`, {
+        entity_type: _commentsEntity.type,
+        entity_id: _commentsEntity.id,
+        body
+      });
+      if (input) input.value = '';
+      const key = `${_commentsEntity.type}:${_commentsEntity.id}`;
+      _commentCounts[key] = (_commentCounts[key] || 0) + 1;
+      toast('Comment added', 'success');
+    } catch (e) {
+      toast(e.message || 'Failed to add comment', 'error');
+    } finally {
+      if (input) { input.disabled = false; input.focus(); }
+    }
+  }
+
+  function handleCommentKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitComment();
+    }
+  }
+
+  // ── Export date modal ────────────────────────────────────
+  let _exportDateCallback = null;
+  let _exportDateModule = null;
+
+  function openExportDateModal(moduleName, callback) {
+    _exportDateModule = moduleName;
+    _exportDateCallback = callback;
+    const overlay = $('export-date-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+  }
+
+  function closeExportDateModal() {
+    const overlay = $('export-date-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    _exportDateCallback = null;
+    _exportDateModule = null;
+  }
+
+  async function confirmExportDate() {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    const dateFrom = fromEl ? fromEl.value : '';
+    const dateTo = toEl ? toEl.value : '';
+    closeExportDateModal();
+    if (_exportDateCallback) {
+      _exportDateCallback(dateFrom, dateTo);
+    }
+  }
+
+  function exportDateShortcut(type) {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    if (!fromEl || !toEl) return;
+    const now = new Date();
+    if (type === 'week') {
+      const day = now.getDay();
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      fromEl.value = monday.toISOString().slice(0, 10);
+      toEl.value = sunday.toISOString().slice(0, 10);
+    } else if (type === 'last-week') {
+      const day = now.getDay();
+      const lastMonday = new Date(now);
+      lastMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1) - 7);
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastMonday.getDate() + 6);
+      fromEl.value = lastMonday.toISOString().slice(0, 10);
+      toEl.value = lastSunday.toISOString().slice(0, 10);
+    } else if (type === 'all') {
+      fromEl.value = '';
+      toEl.value = '';
+    }
+  }
+
+  // ── Price override change ────────────────────────────────
+  function onPriceOverrideChange() {
+    const poInput = $('am-price-override');
+    const orGroup = $('am-override-reason-group');
+    if (!poInput || !orGroup) return;
+    const val = parseFloat(poInput.value);
+    orGroup.style.display = (val > 0) ? '' : 'none';
+  }
+
+  // ── Save function (create/edit boat function) ────────────
+  function _rerenderCtx(ctx) {
+    if (ctx === 'boats') renderBoats();
+    else if (ctx === 'picture') renderPictureBoats();
+    else if (ctx === 'transport') renderTransport();
+    else if (ctx === 'security') _loadAndRenderSecurityBoats();
+    else if (ctx === 'labour') renderLabour();
+    else if (ctx === 'guard_camp') renderGcRoleCards();
+  }
+
+  async function saveFunction() {
+    const name = $('nf-name')?.value.trim();
+    if (!name) { toast('Name is required', 'error'); return; }
+    const ctx = $('add-func-overlay')?.dataset.ctx || 'boats';
+    const editId = $('nf-edit-id')?.value;
+
+    const data = {
+      name,
+      function_group: $('nf-group')?.value,
+      color:          $('nf-color')?.value,
+      default_start:  $('nf-start')?.value || null,
+      default_end:    $('nf-end')?.value   || null,
+      specs:          $('nf-specs')?.value.trim() || null,
+    };
+
+    try {
+      if (editId) {
+        const updated = await api('PUT', `/api/boat-functions/${editId}`, data);
+        const funcArrays = {
+          boats: 'functions', picture: 'pictureFunctions', transport: 'transportFunctions',
+          security: 'securityFunctions', labour: 'labourFunctions', guard_camp: 'gcFunctions',
+        };
+        const arr = state[funcArrays[ctx] || 'functions'];
+        if (arr) {
+          const idx = arr.findIndex(f => f.id === parseInt(editId));
+          if (idx !== -1) Object.assign(arr[idx], updated);
+        }
+        closeAddFunctionModal();
+        _rerenderCtx(ctx);
+        toast(`Function "${updated.name}" updated`);
+      } else {
+        data.sort_order = ctx === 'picture' ? (state.pictureFunctions?.length || 0)
+          : ctx === 'labour' ? (state.labourFunctions?.length || 0)
+          : ctx === 'guard_camp' ? (state.gcFunctions?.length || 0)
+          : ctx === 'transport' ? (state.transportFunctions?.length || 0)
+          : ctx === 'security' ? (state.securityFunctions?.length || 0)
+          : (state.functions?.length || 0);
+        data.context = ctx;
+        const func = await api('POST', `/api/productions/${state.prodId}/boat-functions`, data);
+        if (ctx === 'picture') state.pictureFunctions.push(func);
+        else if (ctx === 'transport') state.transportFunctions.push(func);
+        else if (ctx === 'security') state.securityFunctions.push(func);
+        else if (ctx === 'labour') state.labourFunctions.push(func);
+        else if (ctx === 'guard_camp') state.gcFunctions.push(func);
+        else state.functions.push(func);
+        closeAddFunctionModal();
+        _rerenderCtx(ctx);
+        toast(`Function "${func.name}" created`);
+      }
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // ── Auto-fill tides ──────────────────────────────────────
+  async function autoFillTides() {
+    const days = state.shootingDays;
+    if (!days || !days.length) { toast('No shooting days to fill', 'error'); return; }
+    const dates = days.map(d => d.date).filter(Boolean).sort();
+    if (!dates.length) { toast('No dates found', 'error'); return; }
+    const start = dates[0];
+    const end = dates[dates.length - 1];
+    toast('Fetching tide data...');
+    try {
+      const tideData = await api('GET', `/api/tides?lat=8.35&lng=-79.05&start=${start}&end=${end}`);
+      const tideMap = {};
+      (Array.isArray(tideData) ? tideData : []).forEach(t => { tideMap[t.date] = t; });
+      let updated = 0;
+      for (const day of days) {
+        const td = tideMap[day.date];
+        if (!td || td.height == null) continue;
+        if (day.maree_hauteur != null) continue;
+        await api('PUT', `/api/productions/${state.prodId}/shooting-days/${day.id}`, {
+          maree_hauteur: td.height,
+          maree_statut: td.status
+        });
+        updated++;
+      }
+      state.shootingDays = await api('GET', `/api/productions/${state.prodId}/shooting-days`);
+      renderPDT();
+      toast(`Tides filled for ${updated} day${updated !== 1 ? 's' : ''}`);
+    } catch (e) {
+      toast('Error fetching tides: ' + e.message, 'error');
+    }
+  }
+
+  // ── FAB menu toggle ──────────────────────────────────────
+  let _fabMenuOpen = false;
+  function _toggleFabMenu() {
+    if (_fabMenuOpen) {
+      const menu = $('fab-context-menu');
+      if (menu) { menu.classList.add('hidden'); menu.style.display = 'none'; }
+      _fabMenuOpen = false;
+    } else {
+      _fabMenuOpen = true;
+      // For single-action FAB, just call fabAction directly
+      fabAction();
+      _fabMenuOpen = false;
+    }
+  }
+
+  // ── Admin panel: additional functions ─────────────────────
+  let _permCurrentProjId = null;
+  let _permCurrentUserId = null;
+  let _permMembers = [];
+  let _permCurrentPerms = [];
+  let _epPerms = [];
+  let _epValidTypes = [];
+  let _logsDebounce = null;
+  const _LOGS_LIMIT = 50;
+  let _logsPage = 0;
+
+  async function adminPermLoadMembers() {
+    const sel = $('admin-perm-project');
+    if (!sel || !sel.value) return;
+    _permCurrentProjId = sel.value;
+    try {
+      _permMembers = await api('GET', `/api/admin/projects/${sel.value}/members`);
+      const userSel = $('admin-perm-user');
+      if (userSel) {
+        userSel.innerHTML = _permMembers.map(m =>
+          `<option value="${m.user_id}">${esc(m.nickname)}${m.is_admin ? ' (ADMIN)' : ''}</option>`
+        ).join('');
+      }
+      await adminPermLoadPerms();
+    } catch (e) { toast('Failed to load members: ' + e.message, 'error'); }
+  }
+
+  async function adminPermLoadPerms() {
+    const userSel = $('admin-perm-user');
+    if (!userSel || !userSel.value) {
+      const grid = $('admin-perm-grid');
+      if (grid) grid.innerHTML = '';
+      return;
+    }
+    _permCurrentUserId = userSel.value;
+    try {
+      const data = await api('GET', `/api/admin/projects/${_permCurrentProjId}/members/${_permCurrentUserId}/permissions`);
+      _permCurrentPerms = data;
+      const grid = $('admin-perm-grid');
+      if (grid) grid.innerHTML = '<div style="color:var(--text-3);font-size:.82rem">Permissions loaded</div>';
+    } catch (e) { toast('Failed to load permissions: ' + e.message, 'error'); }
+  }
+
+  function adminShowSaveTemplate() {
+    _adminModalAction = 'save-template';
+    const title = $('admin-modal-title');
+    const body = $('admin-modal-body');
+    const ok = $('admin-modal-ok');
+    const overlay = $('admin-modal-overlay');
+    if (title) title.textContent = 'Save as Template';
+    if (body) body.innerHTML = `
+      <div class="form-group"><label class="form-label">Template Name</label>
+        <input type="text" id="adm-tpl-name" class="form-control" placeholder="e.g. Survival Show Standard"></div>
+      <div class="form-group"><label class="form-label">Description (optional)</label>
+        <input type="text" id="adm-tpl-desc" class="form-control" placeholder="Functions, catering categories, guard posts..."></div>
+      <p style="color:var(--text-3);font-size:.75rem;margin-top:.5rem">Saves: boat functions, catering categories/items, guard posts, location sites from current project.</p>
+    `;
+    if (ok) ok.textContent = 'Save Template';
+    if (overlay) overlay.classList.remove('hidden');
+  }
+
+  async function adminEpLoadPerms() {
+    const userId = $('admin-ep-user')?.value;
+    if (!userId) {
+      const list = $('admin-ep-list');
+      if (list) list.innerHTML = '<p style="color:var(--text-3)">Select a user.</p>';
+      $('admin-ep-add-form')?.classList.add('hidden');
+      return;
+    }
+    const entityType = $('admin-ep-type')?.value || '';
+    try {
+      const qs = entityType ? `?entity_type=${entityType}` : '';
+      const data = await api('GET', `/api/admin/users/${userId}/entity-permissions${qs}`);
+      _epPerms = data.permissions || [];
+      if (data.valid_entity_types) _epValidTypes = data.valid_entity_types;
+      const list = $('admin-ep-list');
+      if (list) {
+        list.innerHTML = _epPerms.length ? _epPerms.map(p =>
+          `<div style="padding:.3rem;font-size:.82rem;border-bottom:1px solid var(--border)">${esc(p.entity_type)} #${p.entity_id} — ${esc(p.permission)}</div>`
+        ).join('') : '<p style="color:var(--text-3);font-size:.82rem">No entity permissions</p>';
+      }
+      $('admin-ep-add-form')?.classList.remove('hidden');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function adminEpAdd() {
+    const userId = $('admin-ep-user')?.value;
+    if (!userId) return;
+    const entityType = $('admin-ep-add-type')?.value;
+    const entityId = $('admin-ep-add-id')?.value;
+    const permission = $('admin-ep-add-perm')?.value || 'read';
+    if (!entityType || !entityId) { toast('Fill entity type and ID', 'error'); return; }
+    try {
+      await api('POST', `/api/admin/users/${userId}/entity-permissions`, {
+        entity_type: entityType,
+        entity_id: parseInt(entityId),
+        permission,
+      });
+      toast('Entity permission added');
+      const idInput = $('admin-ep-add-id');
+      if (idInput) idInput.value = '';
+      adminEpLoadPerms();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function adminLoadAccessLogs() {
+    clearTimeout(_logsDebounce);
+    _logsDebounce = setTimeout(async () => {
+      try {
+        const userId = $('admin-logs-user')?.value || '';
+        const date = $('admin-logs-date')?.value || '';
+        const endpoint = $('admin-logs-endpoint')?.value || '';
+        const qs = new URLSearchParams();
+        if (userId) qs.set('user_id', userId);
+        if (date) qs.set('date', date);
+        if (endpoint) qs.set('endpoint', endpoint);
+        qs.set('limit', _LOGS_LIMIT);
+        qs.set('offset', _logsPage * _LOGS_LIMIT);
+        const data = await api('GET', `/api/admin/access-logs?${qs}`);
+        const container = $('admin-logs-list');
+        if (container && data.logs) {
+          container.innerHTML = data.logs.map(l =>
+            `<div style="padding:.3rem;font-size:.8rem;border-bottom:1px solid var(--border)">
+              <span style="color:var(--text-3)">${esc(l.timestamp || '')}</span>
+              <span style="font-weight:600">${esc(l.nickname || '')}</span>
+              <span>${esc(l.method || '')} ${esc(l.path || '')}</span>
+              <span style="color:var(--text-4)">${l.status || ''}</span>
+            </div>`
+          ).join('') || '<div style="color:var(--text-3);padding:.5rem">No logs found</div>';
+        }
+      } catch (e) { toast(e.message, 'error'); }
+    }, 300);
+  }
+
+  function adminExportAccessLogs() {
+    const userId = $('admin-logs-user')?.value || '';
+    const date = $('admin-logs-date')?.value || '';
+    const qs = new URLSearchParams();
+    if (userId) qs.set('user_id', userId);
+    if (date) qs.set('date', date);
+    authDownload(`/api/admin/access-logs/export-csv?${qs}`);
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13246,6 +13787,28 @@ const App = (() => {
     openShortcutsPanel, closeShortcutsPanel,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
+    // Mobile menu
+    toggleMobileMenu,
+    // Notifications
+    toggleNotifPanel, closeNotifPanel, markAllNotificationsRead,
+    // Activity panel
+    toggleActivityPanel, closeActivityPanel, loadActivity, loadMoreActivity,
+    // Comments
+    closeCommentsPanel, submitComment, handleCommentKeydown,
+    // Export date modal
+    openExportDateModal, closeExportDateModal, confirmExportDate, exportDateShortcut,
+    // Price override
+    onPriceOverrideChange,
+    // Save function (create/edit boat function)
+    saveFunction,
+    // Auto-fill tides
+    autoFillTides,
+    // FAB menu
+    _toggleFabMenu,
+    // Admin extras
+    adminPermLoadMembers, adminPermLoadPerms, adminShowSaveTemplate,
+    adminEpLoadPerms, adminEpAdd,
+    adminLoadAccessLogs, adminExportAccessLogs,
     init,
   };
 })();

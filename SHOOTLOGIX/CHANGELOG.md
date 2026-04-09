@@ -1,5 +1,38 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-09 — [P0] Fix 25 missing JS functions — mobile menu, saveFunction, notifications, activity, comments, export date
+
+**Problem**: 25 functions referenced by `onclick` handlers in `index.html` were never defined in `app-monolith.js`. They existed only in unused module files (`static/modules/*.js`, `static/app.js`) that are never loaded by the app. Clicking these UI elements would throw `App.XXX is not a function` errors, breaking critical features.
+
+**Root cause**: When the app was consolidated into `app-monolith.js`, many functions from the module system (`window._SL`) were not ported. The module files exist in `static/modules/` but rely on a module loader that was never implemented in the monolith architecture.
+
+**Broken features** (before fix):
+- **Mobile navigation** (`toggleMobileMenu`): Hamburger menu did nothing — mobile users couldn't navigate
+- **Create/edit functions** (`saveFunction`): "Create function" button in modal did nothing — couldn't add roles/assignments
+- **Notifications panel** (`toggleNotifPanel`, `closeNotifPanel`, `markAllNotificationsRead`): Bell icon crashed
+- **Activity timeline** (`toggleActivityPanel`, `closeActivityPanel`, `loadActivity`, `loadMoreActivity`): History button crashed
+- **Comments** (`submitComment`, `closeCommentsPanel`, `handleCommentKeydown`): Comment panel broken
+- **Export date picker** (`closeExportDateModal`, `confirmExportDate`, `exportDateShortcut`): Date range export broken
+- **Price override** (`onPriceOverrideChange`): Assignment modal price override field broken
+- **Auto-fill tides** (`autoFillTides`): PDT tide auto-fill broken
+- **FAB menu** (`_toggleFabMenu`): Floating action button menu broken
+- **Admin panel** (`adminPermLoadMembers`, `adminPermLoadPerms`, `adminShowSaveTemplate`, `adminEpLoadPerms`, `adminEpAdd`, `adminLoadAccessLogs`, `adminExportAccessLogs`): 7 admin functions broken
+
+**Fix**: Ported all 25 missing functions into `app-monolith.js` (with their required state variables and helper functions), adapted to use the monolith's `api()`, `$()`, `esc()`, `toast()`, and `state` patterns. Added them to the `return` object so they're accessible as `App.XXX`.
+
+**Files changed**: `static/app-monolith.js` (~560 lines added before the `return` statement)
+
+**Verification**:
+- Node.js syntax check passes (`node --check`)
+- Braces/parens balanced (4866/4866 and 9785/9785)
+- All 25 previously missing functions now resolve correctly
+- App starts and serves JS file (200)
+- No regressions: all existing tabs still work, CRUD operations functional
+
+**Branch**: fix/2026-04-09-missing-monolith-functions
+**Side effects**: None
+**Next priority**: Test mobile menu UX; verify comments API endpoints exist; test save function workflow end-to-end
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

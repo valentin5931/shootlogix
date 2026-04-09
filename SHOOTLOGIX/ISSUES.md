@@ -1,11 +1,22 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [FIXED 2026-04-09] 25 missing JS functions in app-monolith.js
+- **Discovered**: 2026-04-09
+- **Status**: FIXED in branch fix/2026-04-09-missing-monolith-functions
+- **Symptoms**: Mobile menu, saveFunction, notifications, activity, comments, export date, price override, tides, FAB, admin functions all crashed with "not a function" error
+- **Root cause**: Functions existed in unused module files but were never ported to the monolith
+- **Fix**: Ported all 25 functions into app-monolith.js
+
+## [FIXED 2026-03-23] Fleet/Crew sub-tab layout overflow + missing CSS variables
 - **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
+- **Status**: FIXED in branch claude/fix-display-issues-q03dh
+
+## [P2] Fleet/Crew sub-tab event handlers — low risk after 2026-03-23 fix
+- **Discovered**: 2026-03-22
+- **Status**: Mostly fixed in 2026-03-23 (layout overflow + CSS vars). Sub-nav injection approach works but could be improved.
+- **Symptoms**: Minor layout shifts possible when sub-nav is moved between panels.
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Estimated effort**: Low priority cleanup
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
