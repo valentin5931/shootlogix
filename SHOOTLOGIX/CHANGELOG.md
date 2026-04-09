@@ -1,17 +1,20 @@
 # CHANGELOG — ShootLogix
 
-## 2026-04-09 — [P0] Fix Checklist tab completely broken + generate endpoint returning null
+## 2026-04-09 — [P0] Fix Checklist tab completely broken + generate endpoint returning null + rendering crash
 
 **Problem**:
 1. The Checklist tab was completely non-functional — clicking it showed nothing and no API calls were made.
 2. The "Generate" button for checklists silently returned `null` instead of the generated checklist data.
+3. Even if data loaded, rendering would crash with `ReferenceError: _esc is not defined`.
 
 **Root cause**:
 1. The checklist JS code in `app-monolith.js` used `state.production.id` to build API URLs, but `state.production` is never set in the monolith — the app uses `state.prodId` everywhere else (198 occurrences). The guard `if (!state.production) return;` caused all three checklist functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) to exit immediately.
 2. The `generate_daily_checklist()` function in `database.py` called `get_daily_checklist()` at the end to return the generated data. But this opened a second SQLite connection inside the first connection's `with get_db()` block, before the outer transaction was committed. The new connection couldn't see the uncommitted INSERT data, so it returned `None`.
+3. `_renderChecklist()` called `_esc(item.item_text)` but only `esc()` exists (defined at line 125).
 
 **Fix**:
 - `static/app-monolith.js` (lines 13032-13055): Replaced all 6 occurrences of `state.production` with `state.prodId` across `loadChecklist()`, `generateChecklist()`, and `toggleChecklistItem()`.
+- `static/app-monolith.js` (line 13097): Replaced `_esc(item.item_text)` with `esc(item.item_text)`.
 - `database.py` (`generate_daily_checklist`): Instead of calling `get_daily_checklist()` (which opens a new connection), read back the checklist and items within the same connection/transaction.
 
 **Verification**:
@@ -19,7 +22,7 @@
 - Generate button works: creates 94-95 items from current assignments and returns them immediately
 - Toggle checkbox works: checking/unchecking items persists correctly
 - All 45 existing tests pass
-- JS brace balance verified (depth 0)
+- JS syntax check passes
 
 **Branch**: fix/2026-04-09-checklist-tab-broken
 **Side effects**: None

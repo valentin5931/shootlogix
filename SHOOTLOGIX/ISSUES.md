@@ -3,9 +3,9 @@
 ## [RESOLVED] [P0] Checklist tab completely broken
 - **Discovered**: 2026-04-09
 - **Resolved**: 2026-04-09
-- **Symptoms**: Clicking the Checklist tab showed nothing — no loading, no errors, no API calls. The Generate button also did nothing.
-- **Root cause**: JS code used `state.production.id` (never set) instead of `state.prodId`. Additionally, `generate_daily_checklist()` returned null due to reading from a new DB connection before the write transaction committed.
-- **Fix**: Replaced `state.production` → `state.prodId` in JS; inlined checklist readback within the same DB connection in `database.py`.
+- **Symptoms**: Clicking the Checklist tab showed nothing — no loading, no errors, no API calls. Even if data loaded, rendering crashed with `_esc is not defined`.
+- **Root cause**: JS code used `state.production.id` (never set) instead of `state.prodId`; `_esc()` called instead of `esc()`; `generate_daily_checklist()` returned null due to reading from a new DB connection before the write transaction committed.
+- **Fix**: Replaced `state.production` → `state.prodId` and `_esc` → `esc` in JS; inlined checklist readback within the same DB connection in `database.py`.
 - **Branch**: fix/2026-04-09-checklist-tab-broken
 
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM

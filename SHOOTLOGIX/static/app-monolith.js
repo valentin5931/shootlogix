@@ -13094,7 +13094,7 @@ const App = (() => {
         const doneClass = item.checked ? ' cl-done' : '';
         html += `<label class="cl-item${doneClass}">
           <input type="checkbox" ${chk} onchange="App.toggleChecklistItem(${item.id}, this)">
-          <span class="cl-text">${_esc(item.item_text)}</span>
+          <span class="cl-text">${esc(item.item_text)}</span>
         </label>`;
       }
       html += '</div>';
