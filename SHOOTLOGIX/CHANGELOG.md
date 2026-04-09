@@ -1,5 +1,23 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-09 — [P0] Fix daily checklist first-generate returning null
+
+**Problem**: Clicking "Generate" on the Daily Checklist tab for a new date returned HTTP 201 with a body of `null`. The UI treated the `null` response as "no items" and showed the empty-state message, even though the checklist items were actually inserted into the database. A second click would then display them correctly.
+
+**Root cause**: `generate_daily_checklist()` in `database.py` opens a write transaction via `with get_db() as conn:`, performs all the INSERTs, and then returns `get_daily_checklist(prod_id, date)` — *while still inside the outer transaction*. `get_daily_checklist()` opens a *new* SQLite connection, which in DELETE journal mode cannot see the uncommitted writes from the outer connection. On a brand-new date, the `daily_checklists` row therefore didn't exist in the read snapshot and the function returned `None`. On the second call, the first call's writes had already committed, so it worked — hiding the bug from casual testing.
+
+**Fix**: `database.py` — inlined the readback inside the same `conn` used for the writes. No new connection, no transaction isolation issue. The returned dict is assembled from the rows we just wrote. Also added a comment explaining why a fresh `get_db()` call here would be wrong.
+
+**Verification**:
+- `POST /api/productions/1/checklists/generate?date=2026-04-15` (brand-new date) now returns the full checklist payload with all items on the first call (previously returned `null`).
+- `POST /api/productions/1/checklists/generate?date=2026-04-16` (second brand-new date) — same, works on first call.
+- `GET /api/productions/1/checklists?date=2026-04-15` still returns the same data (no regression on read path).
+- All 45 existing tests pass (`pytest tests/`).
+
+**Branch**: fix/2026-04-09-checklist-first-generate-returns-null
+**Side effects**: None — the return value is identical to what `get_daily_checklist()` would have returned, just read within the same connection.
+**Next priority**: Audit other `database.py` helpers that `return another_helper(...)` from inside an active `with get_db()` block (ripgrep confirmed only this one existed for the checklist helper, but a broader audit is worth one session). After that, the remaining P1 items from ISSUES.md (empty picture-boats/security-boats/transport/helpers/fuel/guards seed data).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

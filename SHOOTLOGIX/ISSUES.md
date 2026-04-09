@@ -1,11 +1,14 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
-- **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+## [P2] Audit database.py helpers for transaction visibility bugs
+- **Discovered**: 2026-04-09
+- **Symptoms**: `generate_daily_checklist()` was returning `null` on the first call for a new date because it called `get_daily_checklist()` (which opens a fresh connection) from inside its own uncommitted transaction, and SQLite readers on a separate connection can't see uncommitted writes. Fixed in 2026-04-09 changelog entry. Other helpers may have the same pattern.
+- **Likely cause**: `with get_db() as conn:` pattern used throughout, where helpers occasionally `return other_helper(...)` instead of reading within the same `conn`.
+- **Files involved**: `database.py` (grep for `return \w+(prod_id` patterns inside `with get_db` blocks).
+- **Estimated effort**: Medium — requires reading every helper that calls another helper and verifying it's not still inside an open transaction.
+
+## [RESOLVED 2026-03-23] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+- Resolved by the 2026-03-23 fleet/crew sub-nav layout overflow fix (see CHANGELOG.md) and the 2a93828 panel-stacking fix.
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
