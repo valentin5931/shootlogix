@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-09 — [P0] Fix Timeline endpoint crash — wrong column names in SQL queries
+
+**Problem**: Clicking the Timeline tab caused a 500 Internal Server Error. The `/api/productions/<id>/timeline` endpoint crashed with `sqlite3.OperationalError: no such column: site`.
+
+**Root cause**: The timeline endpoint in `app.py` (line 7893) queried `SELECT id, name, site FROM locations` but the `locations` table has no `site` column (the correct column is `location_type`). Additionally, line 7896 queried `SELECT id, date, prep, filming, wrap FROM location_schedules` but that table has no `prep`, `filming`, or `wrap` columns — it uses a single `status` column with values 'P', 'F', or 'W'.
+
+**Fix**:
+- `app.py` line 7893: Changed `SELECT id, name, site` → `SELECT id, name, location_type`
+- `app.py` line 7896: Changed `SELECT id, date, prep, filming, wrap` → `SELECT id, date, status`
+- `app.py` lines 7901-7909: Replaced three separate `if s['prep']/s['filming']/s['wrap']` checks with a single `status` value lookup
+- `app.py` line 7912: Changed `loc['site']` → `loc['location_type']`
+
+**Verification**:
+- `/api/productions/1/timeline` now returns 200 with 82 resources (47 boats, 14 vehicles, 21 locations)
+- Location subgroups correctly show `location_type` values (e.g., `tribal_camp`, `game`, `reward`)
+- All 12 key API endpoints tested — no regressions
+- Python syntax check passes
+
+**Branch**: fix/2026-04-09-timeline-crash-locations
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats lists are empty (data model issue)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
