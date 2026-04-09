@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-09 — [P0] Fix Timeline API crash — invalid column references
+
+**Problem**: The `/api/productions/{id}/timeline` endpoint crashed with `sqlite3.OperationalError: no such column: site`, making the Timeline/Gantt tab completely non-functional (500 error).
+
+**Root cause**: The `api_timeline` function in `app.py` had three bugs:
+1. Queried `locations.site` which doesn't exist — the correct column is `location_type`
+2. Queried `location_schedules.prep/filming/wrap` which don't exist — the table uses a single `status` column with values like "P", "F", "W"
+3. Queried `guard_camp_assignments.worker_id` which doesn't exist — the correct column is `helper_id`
+
+**Fix**:
+- `app.py:7893`: Changed `SELECT id, name, site` → `SELECT id, name, location_type` and added `AND deleted_at IS NULL`
+- `app.py:7896-7908`: Replaced `SELECT id, date, prep, filming, wrap` with `SELECT id, date, status` and simplified phase logic to use the `status` column directly
+- `app.py:7883`: Changed `WHERE worker_id=?` → `WHERE helper_id=?`
+- `app.py:7912`: Changed `loc['site']` → `loc['location_type']`
+- Added `AND deleted_at IS NULL` to all 6 entity queries (boats, picture_boats, security_boats, transport_vehicles, helpers, locations) to respect soft-delete
+
+**Verification**:
+- Timeline endpoint returns 200 with 81 resources (46 boats, 14 vehicles, 21 locations), 32 shooting days, 121 functions
+- Location subgroups display correctly (tribal_camp, game, reward)
+- All other endpoints (dashboard, boats, locations, FNB, budget, history) remain unaffected
+
+**Branch**: fix/2026-04-09-timeline-crash-no-site-column
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats lists are empty (data model issue)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
