@@ -1,5 +1,31 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-09 — [P0] Fix Timeline API crash — sqlite3.OperationalError: no such column: site
+
+**Problem**: The `/api/productions/{id}/timeline` endpoint crashed with a 500 error (`sqlite3.OperationalError: no such column: site`), making the Timeline tab completely non-functional.
+
+**Root cause**: The timeline endpoint's SQL queries referenced columns that don't exist in the actual database schema:
+1. `locations` table: queried `site` column, which doesn't exist — the correct column is `location_type`
+2. `location_schedules` table: queried `prep`, `filming`, `wrap` boolean columns, which don't exist — the table uses a single `status` column with values like `'P'`, `'F'`, `'W'`
+
+Additionally, none of the timeline entity queries filtered out soft-deleted records (`deleted_at IS NULL`), which could surface deleted boats/vehicles/locations in the Gantt view.
+
+**Fix**:
+- `app.py` (line 7893): Changed `SELECT id, name, site FROM locations` → `SELECT id, name, location_type FROM locations ... AND deleted_at IS NULL`
+- `app.py` (lines 7896-7908): Replaced 3-column `prep/filming/wrap` query with single `status` column query; adapted phase extraction logic to use the `status` value directly
+- `app.py` (line 7912): Changed `loc['site']` → `loc['location_type']` for the subgroup label
+- `app.py` (lines 7815-7880): Added `AND deleted_at IS NULL` filter to all 6 entity queries (boats, picture_boats, security_boats, transport_vehicles, helpers, guard_camp_workers)
+
+**Verification**:
+- Timeline endpoint now returns HTTP 200 with 81 resources (46 boats, 14 vehicles, 21 locations), 32 shooting days, 121 functions
+- Location resources render with correct `location_type` subgroup (e.g., `tribal_camp`, `game`)
+- All 45 existing tests pass (no regressions)
+- All other API endpoints confirmed working (dashboard, shooting-days, boats, locations, budget, etc.)
+
+**Branch**: fix/2026-04-09-timeline-api-crash
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data needs seeding or migration from main boats table)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
