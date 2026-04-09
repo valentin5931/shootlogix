@@ -1,5 +1,20 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [FIXED] [P0] Checklist tab broken — wrong state variable reference
+- **Discovered**: 2026-04-09
+- **Fixed**: 2026-04-09 (branch: fix/2026-04-09-checklist-broken-state-ref)
+- **Symptoms**: Clicking Checklist tab showed empty content. Generate button did nothing. No error visible to user.
+- **Root cause**: `state.production` used instead of `state.prodId` (3 occurrences) + `_esc()` used instead of `esc()` (1 occurrence)
+- **Files involved**: `static/app-monolith.js` (lines 13032-13097)
+
+## [P1] Transport `/api/productions/{id}/transport` route queries wrong table
+- **Discovered**: 2026-04-09
+- **Symptoms**: The `/api/productions/{id}/transport` endpoint returns `[]` even though 14 transport vehicles exist in `transport_vehicles` table. The endpoint calls `get_transport_schedules()` which JOINs with `vehicles` (empty table) instead of `transport_vehicles`.
+- **Likely cause**: `database.py` line 3059 uses `JOIN vehicles v` instead of `JOIN transport_vehicles v`
+- **Impact**: Low — the frontend uses `/api/productions/{id}/transport-vehicles` directly, so the UI works. Only affects any code that calls the legacy `/transport` endpoint.
+- **Files involved**: `database.py` (get_transport_schedules), `app.py` (api_transport)
+- **Estimated effort**: Quick fix — change table name in JOIN
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
