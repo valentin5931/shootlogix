@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-09 — [P1] Add missing confirmation dialogs for 5 destructive delete operations
+
+**Problem**: Five delete operations in the frontend executed immediately on click without asking the user to confirm, risking accidental data loss:
+1. Deleting events from shooting days (PDT modal ✕ button)
+2. Removing boat assignments from schedule
+3. Removing picture boat assignments
+4. Removing transport assignments
+5. Removing security boat assignments
+
+**Root cause**: These functions called `api('DELETE', ...)` directly without wrapping in `showConfirm()`. Other delete operations (boats, vehicles, workers, functions, etc.) already had confirmation dialogs.
+
+**Fix**:
+- `static/app-monolith.js`: Wrapped all 5 functions (`deleteEventFromDay`, `removeAssignmentById`, `pbRemoveAssignmentById`, `tbRemoveAssignmentById`, `sbRemoveAssignmentById`) in `showConfirm()` dialogs with descriptive messages. Changed from `async function` to regular `function` since the actual async work is now inside the callback.
+
+**Verification**:
+- JS brace/paren/bracket balance check passes
+- All 45 backend tests pass (no regressions)
+- App starts correctly, all API endpoints return expected data
+- `showConfirm` is the same custom modal used throughout the codebase
+
+**Branch**: fix/2026-04-09-missing-delete-confirmations
+**Side effects**: None — only added confirmation prompts before existing DELETE operations
+**Next priority**: P1 — RBAC UI controls (delete/edit buttons shown to READER role users who can't modify data)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

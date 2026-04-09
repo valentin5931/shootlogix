@@ -1,11 +1,15 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [RESOLVED] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Resolved**: 2026-03-23 — Fixed layout overflow and sub-nav height calculations. Event handlers work correctly as content is rendered in-place (no cloning).
+
+## [P1] RBAC: Delete/edit buttons shown to READER-role users
+- **Discovered**: 2026-04-09
+- **Symptoms**: Users with READER role can see delete (✕) and edit buttons on boat cards, assignment rows, vehicle cards, worker cards, etc. The backend rejects unauthorized actions, but the UI should not show controls the user cannot use.
+- **Likely cause**: Card/row rendering templates do not check `state.role` or `_canEdit()` before rendering action buttons.
+- **Files involved**: `static/app-monolith.js` — all render functions that output delete/edit buttons
+- **Estimated effort**: Medium — need to audit all render functions and wrap action buttons in role checks
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
@@ -14,12 +18,9 @@
 - **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
 - **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
 
-## [P1] Transport and Helpers lists are empty
+## [RESOLVED] Transport and Helpers lists are empty
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
-- **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+- **Resolved**: 2026-04-09 — Transport vehicles exist (14 in DB at `/api/productions/1/transport-vehicles`). The `/transport` endpoint returns schedules, not vehicles. Helpers can be created via UI — no seed data needed.
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22
