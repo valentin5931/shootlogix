@@ -271,6 +271,48 @@ def handle_validation_error(e):
     return jsonify({"error": "Validation failed", "fields": e.errors}), 422
 
 
+@app.errorhandler(404)
+def handle_not_found(e):
+    if request.path.startswith('/api/'):
+        return jsonify({"error": "Not found", "code": "NOT_FOUND"}), 404
+    return e
+
+
+@app.errorhandler(405)
+def handle_method_not_allowed(e):
+    if request.path.startswith('/api/'):
+        return jsonify({"error": "Method not allowed", "code": "METHOD_NOT_ALLOWED"}), 405
+    return e
+
+
+@app.errorhandler(500)
+def handle_internal_error(e):
+    if request.path.startswith('/api/'):
+        import traceback
+        app.logger.error("Internal error on %s %s: %s", request.method, request.path, traceback.format_exc())
+        return jsonify({"error": "Internal server error", "code": "INTERNAL_ERROR"}), 500
+    return e
+
+
+import sqlite3 as _sqlite3
+
+@app.errorhandler(_sqlite3.IntegrityError)
+def handle_integrity_error(e):
+    msg = str(e)
+    if 'NOT NULL' in msg:
+        field = msg.split('.')[-1] if '.' in msg else 'unknown'
+        return jsonify({"error": f"Missing required field: {field}", "code": "MISSING_FIELD"}), 400
+    if 'UNIQUE' in msg:
+        return jsonify({"error": "Duplicate entry", "code": "DUPLICATE"}), 409
+    return jsonify({"error": "Data integrity error", "code": "INTEGRITY_ERROR"}), 400
+
+
+@app.errorhandler(_sqlite3.OperationalError)
+def handle_operational_error(e):
+    app.logger.error("Database error on %s %s: %s", request.method, request.path, e)
+    return jsonify({"error": "Database error", "code": "DB_ERROR"}), 500
+
+
 def jsonify_cached(data):
     """Return a JSON response with ETag. If client sends matching If-None-Match, return 304."""
     body = json.dumps(data, separators=(',', ':'), sort_keys=True)

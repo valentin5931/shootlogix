@@ -1,5 +1,32 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-09 — [P1] Add global JSON error handlers for API endpoints
+
+**Problem**: All unhandled errors on `/api/` routes returned HTML (Werkzeug debugger in dev, generic error page in prod) instead of JSON. The frontend's `api()` function expects JSON responses, so HTML errors caused `JSON.parse` failures and silent catch blocks — users saw "Network error" or nothing at all. For example, POSTing a fuel entry without `assignment_id` returned a 500 with the full Werkzeug HTML debugger page.
+
+**Root cause**: Flask only had a `ValidationError` handler. No global error handlers existed for 404, 405, 500, `IntegrityError`, or `OperationalError` on API routes.
+
+**Fix**:
+- `app.py`: Added 5 new error handlers that return JSON for `/api/` routes:
+  - `404` → `{"error": "Not found", "code": "NOT_FOUND"}`
+  - `405` → `{"error": "Method not allowed", "code": "METHOD_NOT_ALLOWED"}`
+  - `500` → `{"error": "Internal server error", "code": "INTERNAL_ERROR"}` (with server-side logging)
+  - `IntegrityError` → Parses constraint type: `MISSING_FIELD` (NOT NULL), `DUPLICATE` (UNIQUE), or generic `INTEGRITY_ERROR`
+  - `OperationalError` → `{"error": "Database error", "code": "DB_ERROR"}` (with server-side logging)
+- Non-API routes (HTML pages) continue to use Flask's default error handling unchanged.
+
+**Verification**:
+- 404 on `/api/nonexistent` → JSON `{"error": "Not found"}`
+- 405 on `POST /api/productions/1/transport` → JSON `{"error": "Method not allowed"}`
+- Fuel entry without `assignment_id` → JSON `{"error": "Missing required field: assignment_id"}` (was 500 HTML)
+- Non-existent production → JSON `{"error": "Not found"}`
+- All 45 existing tests pass (no regressions)
+- Non-API 404 still returns HTML
+
+**Branch**: fix/2026-04-09-api-json-error-handlers
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables have no seed data (users see empty lists). Consider improving empty-state UX or seeding sample data.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
