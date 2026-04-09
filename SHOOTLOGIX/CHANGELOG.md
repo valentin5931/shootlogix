@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-09 — [P1] Add missing confirmation dialogs to 6 destructive operations
+
+**Problem**: Several delete/remove operations executed immediately without asking the user for confirmation, risking accidental data loss. Affected: boat assignment removal (4 modules: Boats, Picture Boats, Transport, Security Boats), PDT event deletion, and color group deletion.
+
+**Root cause**: These functions were implemented without wrapping the destructive action in `showConfirm()`, unlike their counterparts in Labour (`lbRemoveAssignmentById`) and Guard Camp (`gcRemoveAssignmentById`) which correctly used confirmation dialogs — an inconsistency across modules.
+
+**Fix**:
+- `static/app-monolith.js`:
+  - `removeAssignmentById()` (line ~2937): wrapped in `showConfirm('Remove this assignment?', ...)`
+  - `pbRemoveAssignmentById()` (line ~2951): wrapped in `showConfirm('Remove this assignment?', ...)`
+  - `tbRemoveAssignmentById()` (line ~6331): wrapped in `showConfirm('Remove this assignment?', ...)`
+  - `sbRemoveAssignmentById()` (line ~8830): wrapped in `showConfirm('Remove this assignment?', ...)`
+  - `deleteEventFromDay()` (line ~2165): wrapped in `showConfirm('Delete this event?', ...)`
+  - `removeGroup()` (line ~12557): wrapped in `showConfirm('Delete group "..."?', ...)`
+
+**Verification**:
+- JS syntax check passes (`node --check` exit code 0)
+- App starts and serves correctly (200 on all endpoints)
+- All existing functionality preserved (no regressions)
+- Confirmation dialogs now consistent across all modules
+
+**Branch**: fix/2026-04-09-missing-delete-confirmations
+**Side effects**: None
+**Next priority**: Fix silent error handling in fuel module catch blocks (P1), or investigate empty picture/security boat data (P1)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
