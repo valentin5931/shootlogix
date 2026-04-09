@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-09 — [P0] Port missing mobile menu, activity panel, notifications, and comments to monolith
+
+**Problem**: Clicking the mobile hamburger menu, activity history button, or notifications bell caused `TypeError: App.toggleMobileMenu/toggleActivityPanel/toggleNotifPanel is not a function`. The comments panel (`App.closeCommentsPanel`, `App.submitComment`, `App.handleCommentKeydown`, etc.) was also non-functional. All of these UI features were completely broken for all users.
+
+**Root cause**: The functions were implemented in `static/modules/activity.js`, `static/modules/notifications.js`, and `static/modules/comments.js`, which rely on `window._SL` (a module-loading system that was never implemented). These files are never loaded by `index.html`. The `toggleMobileMenu` function existed only in the old `static/app.js` (not the monolith). The monolith (`app-monolith.js`) had no implementations for any of these functions despite the HTML template calling them via inline `onclick` handlers.
+
+**Fix**: Ported all missing functions directly into `static/app-monolith.js` and added them to the public API return statement:
+- **Mobile menu**: `toggleMobileMenu()` — toggles the burger menu overlay, syncs active tab state
+- **Activity panel** (AXE 4.3): `toggleActivityPanel`, `closeActivityPanel`, `loadActivity`, `_activityEntryClick`, `loadEntityHistory`, `renderEntityHistoryHTML`, `_loadDetailHistory` — full activity timeline with filters, grouped by date, deep-linking to entities
+- **Notifications** (AXE 9.2): `toggleNotifPanel`, `closeNotifPanel`, `clickNotification`, `markAllNotificationsRead`, `pollNotificationCount`, `startNotifPolling`, `stopNotifPolling` — notification panel with badge count, polling, read/unread state
+- **Comments** (AXE 9.1): `openCommentsPanel`, `closeCommentsPanel`, `submitComment`, `deleteComment`, `handleCommentKeydown`, `loadCommentCounts`, `getCommentCount`, `commentBadgeHTML` — contextual comments on entities
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- App starts without errors, all API endpoints return correct data
+- All previously working tabs remain functional (no regressions)
+- `toggleMobileMenu`, `toggleActivityPanel`, `toggleNotifPanel` now defined and exported in monolith
+
+**Branch**: fix/2026-04-09-missing-mobile-activity-notif-functions
+**Side effects**: None — all new code is additive, no existing code modified
+**Next priority**: P1 — Picture Boats and Security Boats tables empty (data needs migration from main boats table)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

@@ -13102,6 +13102,562 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  MOBILE MENU (burger)
+  // ═══════════════════════════════════════════════════════════
+
+  function toggleMobileMenu() {
+    const menu = $('mobile-menu');
+    if (!menu) return;
+    const isOpen = !menu.classList.contains('hidden');
+    if (isOpen) {
+      menu.classList.add('hidden');
+      document.body.style.overflow = '';
+    } else {
+      menu.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      menu.querySelectorAll('.mobile-menu-item[data-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === state.tab);
+      });
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  ACTIVITY PANEL (AXE 4.3)
+  // ═══════════════════════════════════════════════════════════
+
+  let _activityOpen = false;
+  let _activityData = [];
+  let _activityGrouped = {};
+  const _ACTIVITY_PAGE_SIZE = 100;
+
+  const _ACTIVITY_MODULE_ICONS = {
+    pdt: { icon: '\u{1F4C5}', color: '#94A3B8' },
+    fleet: { icon: '\u2693', color: '#3B82F6' },
+    'picture-boats': { icon: '\u{1F4F7}', color: '#8B5CF6' },
+    'security-boats': { icon: '\u{1F6E1}', color: '#EF4444' },
+    transport: { icon: '\u{1F69B}', color: '#22C55E' },
+    fuel: { icon: '\u26FD', color: '#F59E0B' },
+    labour: { icon: '\u{1F465}', color: '#F59E0B' },
+    guards: { icon: '\u{1F482}', color: '#06B6D4' },
+    locations: { icon: '\u{1F4CD}', color: '#22C55E' },
+    fnb: { icon: '\u{1F37D}', color: '#F97316' },
+  };
+
+  const _ACTIVITY_ACTION_CONFIG = {
+    create: { label: 'Added', badge: '+', color: '#22C55E', bg: '#22C55E18' },
+    update: { label: 'Updated', badge: '~', color: '#3B82F6', bg: '#3B82F618' },
+    delete: { label: 'Removed', badge: '\u00D7', color: '#EF4444', bg: '#EF444418' },
+    lock:   { label: 'Locked', badge: '\u{1F512}', color: '#F59E0B', bg: '#F59E0B18' },
+    unlock: { label: 'Unlocked', badge: '\u{1F513}', color: '#8B5CF6', bg: '#8B5CF618' },
+    cascade:{ label: 'Cascaded', badge: '\u2197', color: '#06B6D4', bg: '#06B6D418' },
+  };
+
+  const _ACTIVITY_MODULE_LABELS = {
+    pdt: 'PDT (Schedule)', fleet: 'Fleet (Boats)',
+    'picture-boats': 'Picture Boats', 'security-boats': 'Security Boats',
+    transport: 'Transport', fuel: 'Fuel', labour: 'Labour',
+    guards: 'Guards', locations: 'Locations', fnb: 'FNB (Food & Beverage)',
+  };
+
+  function _actRelativeTime(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00Z'));
+    const now = new Date();
+    const diffMin = Math.floor((now - d) / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 7) return `${diffDay}d ago`;
+    return dateStr.slice(0, 10);
+  }
+
+  function _actFormatTime(dateStr) {
+    if (!dateStr || dateStr.length < 16) return '';
+    return dateStr.slice(11, 16);
+  }
+
+  function _actFormatDateHeader(dateStr) {
+    if (!dateStr || dateStr === 'unknown') return 'Unknown date';
+    try {
+      const d = new Date(dateStr + 'T00:00:00');
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      if (dateStr === today.toISOString().slice(0, 10)) return 'Today';
+      if (dateStr === yesterday.toISOString().slice(0, 10)) return 'Yesterday';
+      return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    } catch { return dateStr; }
+  }
+
+  function _renderChangeDetail(change) {
+    const oldVal = change.old == null ? 'empty' : change.old;
+    const newVal = change.new == null ? 'empty' : change.new;
+    return `<div class="activity-change-row">
+      <span class="activity-change-field">${esc(change.field)}</span>
+      <span class="activity-change-old">${esc(String(oldVal))}</span>
+      <span class="activity-change-arrow">&rarr;</span>
+      <span class="activity-change-new">${esc(String(newVal))}</span>
+    </div>`;
+  }
+
+  function _renderActivityEntry(entry) {
+    const mod = _ACTIVITY_MODULE_ICONS[entry.module] || { icon: '\u2699', color: '#6b7280' };
+    const act = _ACTIVITY_ACTION_CONFIG[entry.action] || _ACTIVITY_ACTION_CONFIG.update;
+    const time = _actFormatTime(entry.timestamp);
+    const relTime = _actRelativeTime(entry.timestamp);
+    const undoneClass = entry.undone ? ' activity-entry-undone' : '';
+    let changesHTML = '';
+    if (entry.changes && entry.changes.length > 0) {
+      changesHTML = `<div class="activity-changes">
+        ${entry.changes.slice(0, 5).map(c => _renderChangeDetail(c)).join('')}
+        ${entry.changes.length > 5 ? `<div class="activity-change-more">+${entry.changes.length - 5} more changes</div>` : ''}
+      </div>`;
+    }
+    return `<div class="activity-entry${undoneClass}" data-module="${entry.module}" data-record="${entry.record_id || ''}"
+      onclick="App._activityEntryClick('${entry.table_name}', ${entry.record_id || 'null'})">
+      <div class="activity-timeline-dot">
+        <div class="activity-timeline-line"></div>
+        <div class="activity-dot" style="background:${act.color}"></div>
+      </div>
+      <div class="activity-entry-content">
+        <div class="activity-entry-header">
+          <span class="activity-module-icon">${mod.icon}</span>
+          <span class="activity-action-tag" style="background:${act.bg};color:${act.color}">${esc(act.label)}</span>
+          <span class="activity-entry-time" title="${esc(entry.timestamp)}">${esc(time)} - ${esc(relTime)}</span>
+        </div>
+        <div class="activity-entry-desc">${esc(entry.description)}</div>
+        ${changesHTML}
+        <div class="activity-entry-user">${esc(entry.user)}</div>
+      </div>
+    </div>`;
+  }
+
+  function _renderGroupedTimeline() {
+    const feed = $('activity-feed');
+    if (!feed) return;
+    if (_activityData.length === 0) {
+      feed.innerHTML = '<div class="activity-empty">No activity found</div>';
+      return;
+    }
+    let html = '';
+    const dates = Object.keys(_activityGrouped).sort().reverse();
+    for (const date of dates) {
+      const entries = _activityGrouped[date];
+      html += `<div class="activity-date-group">
+        <div class="activity-date-header">
+          <span class="activity-date-label">${esc(_actFormatDateHeader(date))}</span>
+          <span class="activity-date-count">${entries.length} action${entries.length > 1 ? 's' : ''}</span>
+        </div>
+        <div class="activity-date-entries">
+          ${entries.map(e => _renderActivityEntry(e)).join('')}
+        </div>
+      </div>`;
+    }
+    feed.innerHTML = html;
+  }
+
+  async function toggleActivityPanel() {
+    if (_activityOpen) { closeActivityPanel(); return; }
+    _activityOpen = true;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+    loadActivity();
+  }
+
+  function closeActivityPanel() {
+    _activityOpen = false;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  async function loadActivity() {
+    _activityData = [];
+    _activityGrouped = {};
+    const feed = $('activity-feed');
+    if (feed) feed.innerHTML = '<div class="activity-loading">Loading...</div>';
+    await _fetchActivity();
+  }
+
+  async function _fetchActivity() {
+    if (!state.prodId) return;
+    const module = $('activity-filter-module')?.value || '';
+    const userId = $('activity-filter-user')?.value || '';
+    const action = $('activity-filter-action')?.value || '';
+    const dateFrom = $('activity-filter-from')?.value || '';
+    const dateTo = $('activity-filter-to')?.value || '';
+    const params = new URLSearchParams();
+    params.set('limit', _ACTIVITY_PAGE_SIZE);
+    if (module) params.set('module', module);
+    if (userId) params.set('user_id', userId);
+    if (action) params.set('action_type', action);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    try {
+      const res = await authFetch(`/api/productions/${state.prodId}/activity?${params.toString()}`);
+      if (!res.ok) throw new Error('Failed to load activity');
+      const data = await res.json();
+      let entries = data.entries || [];
+      if (action) entries = entries.filter(e => e.action === action);
+      _activityData = entries;
+      _activityGrouped = {};
+      for (const e of entries) {
+        const dk = e.date || 'unknown';
+        if (!_activityGrouped[dk]) _activityGrouped[dk] = [];
+        _activityGrouped[dk].push(e);
+      }
+      _renderGroupedTimeline();
+      if (data.modules) _actPopulateModuleFilter(data.modules);
+      _actPopulateUserFilter(entries);
+    } catch {
+      const feed = $('activity-feed');
+      if (feed) feed.innerHTML = '<div class="activity-empty">Failed to load activity</div>';
+    }
+  }
+
+  function _actPopulateModuleFilter(modules) {
+    const sel = $('activity-filter-module');
+    if (!sel) return;
+    const cv = sel.value;
+    sel.innerHTML = '<option value="">All modules</option>';
+    for (const mod of modules) {
+      sel.innerHTML += `<option value="${mod}">${esc(_ACTIVITY_MODULE_LABELS[mod] || mod)}</option>`;
+    }
+    sel.value = cv;
+  }
+
+  function _actPopulateUserFilter(data) {
+    const sel = $('activity-filter-user');
+    if (!sel) return;
+    const cv = sel.value;
+    const users = new Map();
+    for (const entry of data) {
+      if (entry.user_id && entry.user) users.set(entry.user_id, entry.user);
+    }
+    sel.innerHTML = '<option value="">All users</option>';
+    for (const [id, nick] of users) {
+      sel.innerHTML += `<option value="${id}">${esc(nick)}</option>`;
+    }
+    sel.value = cv;
+  }
+
+  function _activityEntryClick(tableName, recordId) {
+    if (!recordId) return;
+    const TAB_MAP = {
+      shooting_days: 'pdt',
+      boats: 'boats', boat_assignments: 'boats', boat_functions: 'boats',
+      picture_boats: 'picture-boats', picture_boat_assignments: 'picture-boats',
+      security_boats: 'security-boats', security_boat_assignments: 'security-boats',
+      transport_vehicles: 'transport', transport_assignments: 'transport',
+      fuel_entries: 'fuel', fuel_machinery: 'fuel',
+      helpers: 'labour', helper_assignments: 'labour',
+      guard_camp_workers: 'guards', guard_camp_assignments: 'guards',
+      location_sites: 'locations', location_schedules: 'locations',
+      guard_location_schedules: 'guards', guard_posts: 'guards',
+      fnb_categories: 'fnb', fnb_items: 'fnb', fnb_entries: 'fnb', fnb_tracking: 'fnb',
+    };
+    const tab = TAB_MAP[tableName];
+    if (tab) { closeActivityPanel(); setTab(tab); }
+  }
+
+  // Entity History (AXE 4.4) — reusable from detail modals
+  const _ACT_COLORS = { create:'#22C55E', update:'#3B82F6', delete:'#EF4444', lock:'#F59E0B', unlock:'#8B5CF6', cascade:'#06B6D4' };
+  const _ACT_ICONS  = { create:'+', update:'~', delete:'x', lock:'L', unlock:'U', cascade:'C' };
+
+  async function loadEntityHistory(tableName, entityId) {
+    if (!state.prodId || !entityId) return [];
+    try {
+      const params = new URLSearchParams({ entity_type: tableName, entity_id: entityId, limit: '100' });
+      const res = await authFetch(`/api/productions/${state.prodId}/history?${params.toString()}`);
+      if (!res.ok) return [];
+      return await res.json();
+    } catch { return []; }
+  }
+
+  function renderEntityHistoryHTML(entries) {
+    if (!entries || entries.length === 0) return '<div class="entity-history-empty">No history for this entity</div>';
+    return `<div class="entity-history-list">
+      ${entries.map(e => {
+        const actionColor = _ACT_COLORS[e.action] || '#6b7280';
+        const time = _actRelativeTime(e.created_at);
+        const user = e.user_nickname || 'System';
+        const desc = e.human_description || `${e.action} on ${e.table_name}`;
+        return `<div class="entity-history-entry">
+          <span class="entity-history-action" style="color:${actionColor}">${esc(_ACT_ICONS[e.action] || '?')}</span>
+          <span class="entity-history-desc">${esc(desc)}</span>
+          <span class="entity-history-meta">${esc(user)} - ${esc(time)}</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  async function _loadDetailHistory(tableName, entityId) {
+    const container = document.getElementById('bd-history-list');
+    if (!container) return;
+    container.innerHTML = '<div class="entity-history-empty">Loading...</div>';
+    const entries = await loadEntityHistory(tableName, entityId);
+    container.innerHTML = renderEntityHistoryHTML(entries);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  NOTIFICATIONS PANEL (AXE 9.2)
+  // ═══════════════════════════════════════════════════════════
+
+  let _notifPanelOpen = false;
+  let _notifData = [];
+  let _unreadCount = 0;
+  let _notifPollTimer = null;
+
+  function _notifUpdateBadge() {
+    const badge = $('notif-badge');
+    if (!badge) return;
+    if (_unreadCount > 0) {
+      badge.textContent = _unreadCount > 99 ? '99+' : _unreadCount;
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  async function pollNotificationCount() {
+    if (!state.prodId) return;
+    try {
+      const res = await authFetch(`/api/notifications/count?production_id=${state.prodId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      _unreadCount = data.count || 0;
+      _notifUpdateBadge();
+    } catch { /* silent */ }
+  }
+
+  function startNotifPolling() {
+    if (_notifPollTimer) clearInterval(_notifPollTimer);
+    pollNotificationCount();
+    _notifPollTimer = setInterval(pollNotificationCount, 30000);
+  }
+
+  function stopNotifPolling() {
+    if (_notifPollTimer) { clearInterval(_notifPollTimer); _notifPollTimer = null; }
+  }
+
+  async function toggleNotifPanel() {
+    _notifPanelOpen = !_notifPanelOpen;
+    const panel = $('notif-panel');
+    if (!panel) return;
+    panel.classList.toggle('hidden', !_notifPanelOpen);
+    if (_notifPanelOpen) await _loadNotifications();
+  }
+
+  function closeNotifPanel() {
+    _notifPanelOpen = false;
+    const panel = $('notif-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  function _notifTypeIcon(type) {
+    const icons = {
+      assignment_created: '<svg width="14" height="14" fill="none" stroke="#22C55E" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+      assignment_updated: '<svg width="14" height="14" fill="none" stroke="#3B82F6" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+      assignment_deleted: '<svg width="14" height="14" fill="none" stroke="#EF4444" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>',
+      comment_added: '<svg width="14" height="14" fill="none" stroke="#8B5CF6" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>',
+    };
+    return icons[type] || icons.assignment_updated;
+  }
+
+  function _notifFmtTime(iso) {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso + 'Z');
+      const diff = (new Date() - d) / 1000;
+      if (diff < 60) return 'just now';
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch { return iso; }
+  }
+
+  async function _loadNotifications() {
+    const list = $('notif-list');
+    if (!list) return;
+    list.innerHTML = '<div class="notif-loading">Loading...</div>';
+    try {
+      const res = await authFetch(`/api/notifications?production_id=${state.prodId}&limit=50`);
+      if (!res.ok) throw new Error('Failed');
+      _notifData = await res.json();
+      _renderNotifications();
+    } catch {
+      list.innerHTML = '<div class="notif-empty">Failed to load notifications</div>';
+    }
+  }
+
+  function _renderNotifications() {
+    const list = $('notif-list');
+    if (!list) return;
+    if (!_notifData.length) {
+      list.innerHTML = '<div class="notif-empty">No notifications</div>';
+      return;
+    }
+    list.innerHTML = _notifData.map(n => {
+      const time = _notifFmtTime(n.created_at);
+      const unread = !n.is_read;
+      const icon = _notifTypeIcon(n.type);
+      return `<div class="notif-item ${unread ? 'notif-unread' : ''}" data-id="${n.id}" onclick="App.clickNotification(${n.id})">
+        <div class="notif-icon">${icon}</div>
+        <div class="notif-content">
+          <div class="notif-title">${esc(n.title)}</div>
+          ${n.body ? `<div class="notif-body">${esc(n.body)}</div>` : ''}
+          <div class="notif-time">${esc(time)}</div>
+        </div>
+        ${unread ? '<div class="notif-dot"></div>' : ''}
+      </div>`;
+    }).join('');
+  }
+
+  async function clickNotification(notifId) {
+    try {
+      await authFetch(`/api/notifications/${notifId}/read`, { method: 'POST' });
+      const n = _notifData.find(x => x.id === notifId);
+      if (n) n.is_read = 1;
+      _unreadCount = Math.max(0, _unreadCount - 1);
+      _notifUpdateBadge();
+      _renderNotifications();
+    } catch { /* silent */ }
+  }
+
+  async function markAllNotificationsRead() {
+    try {
+      await authFetch(`/api/notifications/read-all?production_id=${state.prodId}`, { method: 'POST' });
+      _notifData.forEach(n => n.is_read = 1);
+      _unreadCount = 0;
+      _notifUpdateBadge();
+      _renderNotifications();
+      toast('All notifications marked as read', 'success');
+    } catch {
+      toast('Failed to mark all as read', 'error');
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  COMMENTS PANEL (AXE 9.1)
+  // ═══════════════════════════════════════════════════════════
+
+  let _commentCounts = {};
+  let _commentsPanelOpen = false;
+  let _commentsEntityType = '';
+  let _commentsEntityId = null;
+
+  async function loadCommentCounts(entityType, entityIds) {
+    if (!entityIds || !entityIds.length) return;
+    try {
+      const res = await authFetch(
+        `/api/productions/${state.prodId}/comments/counts?entity_type=${entityType}&entity_ids=${entityIds.join(',')}`
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      for (const [eid, cnt] of Object.entries(data)) {
+        _commentCounts[`${entityType}:${eid}`] = cnt;
+      }
+    } catch { /* silent */ }
+  }
+
+  function getCommentCount(entityType, entityId) {
+    return _commentCounts[`${entityType}:${entityId}`] || 0;
+  }
+
+  function commentBadgeHTML(entityType, entityId) {
+    const cnt = getCommentCount(entityType, entityId);
+    if (!cnt) return '';
+    return `<span class="comment-badge" title="${cnt} comment${cnt > 1 ? 's' : ''}">\u{1F4AC}${cnt}</span>`;
+  }
+
+  async function openCommentsPanel(entityType, entityId, title) {
+    _commentsEntityType = entityType;
+    _commentsEntityId = entityId;
+    _commentsPanelOpen = true;
+    const panel = $('comments-panel');
+    if (panel) panel.classList.remove('hidden');
+    const titleEl = $('comments-panel-title');
+    if (titleEl) titleEl.textContent = title || 'Comments';
+    await _loadComments();
+  }
+
+  function closeCommentsPanel() {
+    _commentsPanelOpen = false;
+    const panel = $('comments-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function _loadComments() {
+    const list = $('comments-list');
+    if (!list) return;
+    list.innerHTML = '<div class="comments-empty">Loading...</div>';
+    try {
+      const res = await authFetch(
+        `/api/productions/${state.prodId}/comments?entity_type=${_commentsEntityType}&entity_id=${_commentsEntityId}`
+      );
+      if (!res.ok) throw new Error('Failed');
+      const comments = await res.json();
+      if (!comments.length) {
+        list.innerHTML = '<div class="comments-empty">No comments yet</div>';
+        return;
+      }
+      list.innerHTML = comments.map(c => {
+        const time = _notifFmtTime(c.created_at);
+        const canDel = authState.is_admin || c.user_id === authState.user_id;
+        return `<div class="comment-item">
+          <div class="comment-header">
+            <span class="comment-user">${esc(c.user_nickname || 'Unknown')}</span>
+            <span class="comment-time">${esc(time)}</span>
+            ${canDel ? `<button class="comment-delete" onclick="App.deleteComment(${c.id})" title="Delete">\u00D7</button>` : ''}
+          </div>
+          <div class="comment-body">${esc(c.content)}</div>
+        </div>`;
+      }).join('');
+    } catch {
+      list.innerHTML = '<div class="comments-empty">Failed to load comments</div>';
+    }
+  }
+
+  async function submitComment() {
+    const input = $('comments-input');
+    if (!input) return;
+    const content = input.value.trim();
+    if (!content) return;
+    try {
+      await authFetch(`/api/productions/${state.prodId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entity_type: _commentsEntityType, entity_id: _commentsEntityId, content }),
+      });
+      input.value = '';
+      await _loadComments();
+      const key = `${_commentsEntityType}:${_commentsEntityId}`;
+      _commentCounts[key] = (_commentCounts[key] || 0) + 1;
+    } catch {
+      toast('Failed to post comment', 'error');
+    }
+  }
+
+  async function deleteComment(commentId) {
+    try {
+      await authFetch(`/api/productions/${state.prodId}/comments/${commentId}`, { method: 'DELETE' });
+      await _loadComments();
+      const key = `${_commentsEntityType}:${_commentsEntityId}`;
+      _commentCounts[key] = Math.max(0, (_commentCounts[key] || 1) - 1);
+    } catch {
+      toast('Failed to delete comment', 'error');
+    }
+  }
+
+  function handleCommentKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitComment();
+    }
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13246,6 +13802,18 @@ const App = (() => {
     openShortcutsPanel, closeShortcutsPanel,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
+    // Mobile menu
+    toggleMobileMenu,
+    // Activity panel (AXE 4.3)
+    toggleActivityPanel, closeActivityPanel, loadActivity,
+    loadEntityHistory, renderEntityHistoryHTML,
+    _activityEntryClick, _loadDetailHistory,
+    // Notifications (AXE 9.2)
+    toggleNotifPanel, closeNotifPanel, clickNotification,
+    markAllNotificationsRead, pollNotificationCount, startNotifPolling, stopNotifPolling,
+    // Comments (AXE 9.1)
+    openCommentsPanel, closeCommentsPanel, submitComment, deleteComment,
+    handleCommentKeydown, loadCommentCounts, getCommentCount, commentBadgeHTML,
     init,
   };
 })();
