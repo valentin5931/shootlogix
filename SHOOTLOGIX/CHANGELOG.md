@@ -1,5 +1,32 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-09 — [P0] Fleet/Crew sub-nav: replace DOM moving with static per-panel hosts
+
+**Problem**: `renderFleetUnified()` and `renderCrewUnified()` used `targetPanel.prepend(nav)` to move a single sub-nav DOM node between view panels on every sub-tab switch. This was fragile: it caused layout shifts, relied on the node still being found via `$('fleet-sub-nav')` even after being relocated, and risked invalidating event handlers if the host panel was ever re-rendered. The crew version was worse — it created a detached `crew-sub-nav-injected` element and also kept a duplicate static `.crew-sub-nav` inside `view-crew` that was never shown.
+
+**Root cause**: Both fleet and crew sub-navs tried to share one DOM node across multiple absolute-positioned view panels. Since each `.view-panel` fills `#main-content`, the sub-nav had to live inside the *currently active* panel — so the code moved it around.
+
+**Fix**:
+- `templates/index.html`:
+  - Added `<div class="fleet-subnav-host"></div>` as the first child of `view-boats`, `view-picture-boats`, and `view-security-boats`.
+  - Added `<div class="crew-subnav-host"></div>` as the first child of `view-labour` and `view-guards`.
+  - Removed the now-unused `<div id="fleet-sub-nav"></div>` from `view-fleet`.
+  - Removed the now-unused static `<div class="crew-sub-nav">` and associated buttons from `view-crew` (view-crew is never shown directly).
+- `static/app-monolith.js`:
+  - `renderFleetUnified()`: builds the sub-nav HTML as a string and writes it into `targetPanel.querySelector('.fleet-subnav-host')`. No DOM moving.
+  - `renderCrewUnified()`: same pattern using `.crew-subnav-host`. Dropped the `crew-sub-nav-injected` element entirely.
+  - `--subnav-bar-h` CSS var is still updated from the host's measured height so the existing layout height calculations keep working.
+
+**Verification**:
+- `node -c static/app-monolith.js` — JS syntax OK.
+- `python -m pytest tests/` — 45/45 pass.
+- Served index.html contains 3 `fleet-subnav-host` and 2 `crew-subnav-host` divs; the old `id="fleet-sub-nav"` is gone.
+- All key API endpoints (`/boats`, `/picture-boats`, `/security-boats`, `/helpers`, `/guard-camp-workers`) return 200 with the running Flask server.
+
+**Branch**: fix/2026-04-09-fleet-crew-subnav-static-hosts
+**Side effects**: None. The rendered sub-nav HTML is identical (same button classes, same onclick handlers, same styling). Only the DOM ownership model changed.
+**Next priority**: P1 data-population issues in ISSUES.md (picture_boats / security_boats / transport / helpers / fuel / guards tables are empty — users need to create data through the UI or via CSV import).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
