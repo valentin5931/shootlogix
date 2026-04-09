@@ -682,6 +682,7 @@ const App = (() => {
     localStorage.setItem('currentRole', role);
     _updateTopbarUser();
     _applyUIRestrictions();
+    _searchDataLoaded = false; // Reset search cache on project switch
     try {
       await Promise.all([loadShootingDays(), loadBoatsData(), loadPictureBoatsData(), _loadFuelGlobals()]);
       renderPDT();
@@ -12172,6 +12173,35 @@ const App = (() => {
 
   let _searchOpen = false;
 
+  let _searchDataLoaded = false;
+
+  async function _ensureSearchData() {
+    if (_searchDataLoaded) return;
+    _searchDataLoaded = true;
+    const pid = state.prodId;
+    if (!pid) return;
+    const fetches = [];
+    if (!state.transportVehicles || !state.transportVehicles.length) {
+      fetches.push(api('GET', `/api/productions/${pid}/transport-vehicles`).then(d => { state.transportVehicles = d; }).catch(() => {}));
+    }
+    if (!state.securityBoats || !state.securityBoats.length) {
+      fetches.push(api('GET', `/api/productions/${pid}/security-boats`).then(d => { state.securityBoats = d; }).catch(() => {}));
+    }
+    if (!state.lbWorkers || !state.lbWorkers.length) {
+      fetches.push(api('GET', `/api/productions/${pid}/helpers`).then(d => { state.lbWorkers = d; }).catch(() => {}));
+    }
+    if (!state.gcWorkers || !state.gcWorkers.length) {
+      fetches.push(api('GET', `/api/productions/${pid}/guard-camp-workers`).then(d => { state.gcWorkers = d; }).catch(() => {}));
+    }
+    if (!state.guardPosts || !state.guardPosts.length) {
+      fetches.push(api('GET', `/api/productions/${pid}/guard-posts`).then(d => { state.guardPosts = d; }).catch(() => {}));
+    }
+    if (!state.locationSites || !state.locationSites.length) {
+      fetches.push(api('GET', `/api/productions/${pid}/locations`).then(d => { state.locationSites = d; }).catch(() => {}));
+    }
+    if (fetches.length) await Promise.all(fetches);
+  }
+
   function _openSearch() {
     if (_searchOpen) return;
     _searchOpen = true;
@@ -12194,6 +12224,9 @@ const App = (() => {
     input.value = '';
     input.focus();
     $('search-results').innerHTML = '<div style="color:var(--text-4);padding:1rem;text-align:center;font-size:.8rem">Start typing to search...</div>';
+
+    // Pre-load entity data that may not have been fetched yet
+    _ensureSearchData();
 
     input.oninput = () => {
       clearTimeout(input._debounce);

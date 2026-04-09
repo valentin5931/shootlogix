@@ -1,5 +1,25 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-09 — [P1] Fix global search (Cmd+K) not finding transport, labour, guards, locations
+
+**Problem**: The global search (Cmd+K) only returned results for boats, picture boats, shooting days, and functions. Transport vehicles, security boats, helpers/workers, guard camp workers, guard posts, and locations were invisible in search — returning "No results" even when matching entities existed.
+
+**Root cause**: Search operates on in-memory `state.*` arrays (e.g. `state.transportVehicles`, `state.lbWorkers`, `state.locationSites`). These arrays are only populated when the user navigates to the corresponding tab (lazy-loaded). Until a tab is visited, its data is empty, so search silently omits those entities.
+
+**Fix**:
+- `static/app-monolith.js`: Added `_ensureSearchData()` which pre-fetches entity lists (transport vehicles, security boats, helpers, guard camp workers, guard posts, locations) in parallel when the search overlay opens. Uses the same `api()` function with ETag caching so subsequent opens are fast. Data is only fetched once per session (tracked by `_searchDataLoaded` flag, reset on project switch).
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- All 6 API endpoints return valid JSON (200)
+- Search now finds transport vehicles, guard posts, and locations immediately without visiting those tabs first
+- No regressions: existing search for boats, picture boats, shooting days, functions still works
+- Flag resets on project switch via `_selectProject()`
+
+**Branch**: fix/2026-04-09-global-search-missing-data
+**Side effects**: None — data fetched is the same data those tabs would fetch; ETag caching prevents duplicate network requests
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data needs migration or manual entry); empty Helpers/Guards tables
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
