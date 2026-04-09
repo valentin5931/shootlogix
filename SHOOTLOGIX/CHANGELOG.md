@@ -1,5 +1,25 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-09 — [P1] Fix currency field silently ignored in all create entity modals
+
+**Problem**: All 5 create-entity modals (boats, picture boats, security boats, transport vehicles, helpers) have a currency dropdown in the HTML but the JavaScript create functions never read or send the selected currency value. Additionally, the boats and picture boats create modals were missing the vendor field entirely (available only in the edit/detail view).
+
+**Root cause**: The currency `<select>` elements (`nb-currency`, `npb-currency`, `nsb-currency`, `ntv-currency`, `nw-currency`) were added to the HTML templates but the corresponding JS `create*()` functions were never updated to read `$('xx-currency').value` and include it in the API payload. The database `create_boat()` function already accepted `currency` in its allowed columns — the disconnect was purely in the frontend.
+
+**Fix**:
+- `static/app-monolith.js`: Added `currency` field reading to `createBoat()`, `createPictureBoat()`, `saveSecurityBoat()`, `createTransportVehicle()`, and `createWorker()`. Added `vendor` field reading to `createBoat()` and `createPictureBoat()`. Updated `showAddBoatModal()`, `showAddPictureBoatModal()`, and `showAddSecurityBoatModal()` to reset currency and vendor fields when opening.
+- `templates/index.html`: Added vendor input field (`nb-vendor`, `npb-vendor`) to the boats and picture boats create modals.
+
+**Verification**:
+- Created test boat with EUR currency and vendor via API — saved correctly
+- All existing API endpoints return 200 (no regressions)
+- JS syntax check passes
+- HTML parse check passes
+
+**Branch**: fix/2026-04-09-currency-vendor-create-modals
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables empty (data issue, not code bug)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

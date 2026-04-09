@@ -2957,9 +2957,10 @@ const App = (() => {
 
   // ── Add boat ───────────────────────────────────────────────
   function showAddBoatModal() {
-    ['nb-name','nb-price','nb-capacity','nb-captain','nb-notes'].forEach(id => $(id).value = '');
+    ['nb-name','nb-price','nb-capacity','nb-captain','nb-vendor','nb-notes'].forEach(id => { const el = $(id); if (el) el.value = ''; });
     $('nb-wave').value    = 'Waves';
     $('nb-night').checked = false;
+    const cur = $('nb-currency'); if (cur) cur.value = 'USD';
     $('add-boat-overlay').classList.remove('hidden');
     setTimeout(() => $('nb-name').focus(), 80);
   }
@@ -2973,8 +2974,10 @@ const App = (() => {
       const boat = await api('POST', `/api/productions/${state.prodId}/boats`, {
         name,
         daily_rate_estimate: parseFloat($('nb-price').value) || 0,
+        currency:   $('nb-currency')?.value || 'USD',
         capacity:   $('nb-capacity').value.trim() || null,
         captain:    $('nb-captain').value.trim() || null,
+        vendor:     $('nb-vendor')?.value.trim() || null,
         wave_rating: $('nb-wave').value,
         night_ok:   $('nb-night').checked ? 1 : 0,
         notes:      $('nb-notes').value.trim() || null,
@@ -2991,9 +2994,10 @@ const App = (() => {
 
   // ── Add / edit picture boats ───────────────────────────────
   function showAddPictureBoatModal() {
-    ['npb-name','npb-price','npb-capacity','npb-captain','npb-notes'].forEach(id => $(id).value = '');
+    ['npb-name','npb-price','npb-capacity','npb-captain','npb-vendor','npb-notes'].forEach(id => { const el = $(id); if (el) el.value = ''; });
     $('npb-wave').value    = 'Waves';
     $('npb-night').checked = false;
+    const cur = $('npb-currency'); if (cur) cur.value = 'USD';
     $('add-picture-boat-overlay').classList.remove('hidden');
     setTimeout(() => $('npb-name').focus(), 80);
   }
@@ -3007,8 +3011,10 @@ const App = (() => {
       const pb = await api('POST', `/api/productions/${state.prodId}/picture-boats`, {
         name,
         daily_rate_estimate: parseFloat($('npb-price').value) || 0,
+        currency:    $('npb-currency')?.value || 'USD',
         capacity:    $('npb-capacity').value.trim() || null,
         captain:     $('npb-captain').value.trim()  || null,
+        vendor:      $('npb-vendor')?.value.trim() || null,
         wave_rating: $('npb-wave').value,
         night_ok:    $('npb-night').checked ? 1 : 0,
         notes:       $('npb-notes').value.trim() || null,
@@ -6208,6 +6214,7 @@ const App = (() => {
       const v = await api('POST', `/api/productions/${state.prodId}/transport-vehicles`, {
         name,
         daily_rate_estimate: parseFloat($('ntv-price').value) || 0,
+        currency:    $('ntv-currency')?.value || 'USD',
         vehicle_nr:  parseInt($('ntv-nr').value) || null,
         type:        $('ntv-type').value,
         driver:      $('ntv-driver').value.trim() || null,
@@ -7614,6 +7621,7 @@ const App = (() => {
       const w = await api('POST', `/api/productions/${state.prodId}/helpers`, {
         name,
         daily_rate_estimate: parseFloat($('nw-price').value) || 0,
+        currency:     $('nw-currency')?.value || 'USD',
         group_name:   $('nw-group').value || 'GENERAL',
         role:         $('nw-role').value.trim()    || null,
         contact:      $('nw-contact').value.trim() || null,
@@ -8866,6 +8874,7 @@ const App = (() => {
       if (!boat) return;
       $('nsb-name').value = boat.name || '';
       $('nsb-price').value = boat.daily_rate_estimate || '';
+      const curE = $('nsb-currency'); if (curE) curE.value = boat.currency || 'USD';
       $('nsb-capacity').value = boat.capacity || '';
       $('nsb-captain').value = boat.captain || '';
       $('nsb-wave').value = boat.wave_rating || 'Waves';
@@ -8878,6 +8887,7 @@ const App = (() => {
     } else {
       $('nsb-name').value = '';
       $('nsb-price').value = '';
+      const curN = $('nsb-currency'); if (curN) curN.value = 'USD';
       $('nsb-capacity').value = '';
       $('nsb-captain').value = '';
       $('nsb-wave').value = 'Waves';
@@ -8902,6 +8912,7 @@ const App = (() => {
     const data = {
       name,
       daily_rate_estimate: parseFloat($('nsb-price').value) || 0,
+      currency: $('nsb-currency')?.value || 'USD',
       capacity: $('nsb-capacity').value.trim(),
       captain: $('nsb-captain').value.trim(),
       wave_rating: $('nsb-wave').value,
