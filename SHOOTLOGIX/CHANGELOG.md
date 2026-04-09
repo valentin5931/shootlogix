@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-09 — [P1] Fix _seed_helpers wrong context + missing seeders on existing path
+
+**Problem**: Helper functions were seeded with `context='helpers'` instead of `context='labour'`. On a fresh deployment (Railway/gunicorn), the Labour tab would show 0 functions until the app restarted, because the migration that renames `helpers` → `labour` runs before bootstrap, finding 0 rows. Additionally, `_seed_helpers`, `_seed_security_boats`, and `_seed_transport` were only called during first-time bootstrap — not on subsequent startups — meaning if initial seeding failed, these modules would never recover.
+
+**Root cause**: `_seed_helpers()` in `data_loader.py` created boat_functions with the deprecated `context='helpers'` value. The DB migration in `init_db()` renames `helpers` → `labour`, but it runs BEFORE `bootstrap()`, so on fresh DBs it renames 0 rows. The functions are then created with the wrong context.
+
+**Fix**:
+- `data_loader.py`: Changed `_seed_helpers()` to create functions with `context='labour'` (the final/correct name)
+- `data_loader.py`: Updated existence check to look for `context IN ('labour', 'helpers')` for backward compat
+- `data_loader.py`: Added `_seed_helpers()`, `_seed_security_boats()`, `_seed_transport()` to the existing-production bootstrap path so they can recover from failed initial seeding
+
+**Verification**:
+- Fresh DB: 73 functions created with `context='labour'`, 0 with `context='helpers'`
+- Existing DB: no duplicate seeding, no errors, all functions remain `context='labour'`
+- All API endpoints return 200
+- Labour tab loads 73 functions and 73 assignments correctly
+
+**Branch**: fix/2026-04-09-seed-helpers-context-labour
+**Side effects**: None
+**Next priority**: Picture Boats and Security Boats tables are empty (P1) — functions exist but no boat entities have been seeded or created by users
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
