@@ -1,5 +1,23 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-09 — [P1] Add missing confirmation dialogs on assignment deletion
+
+**Problem**: Clicking the "Remove" (✕) button on assignment cards in Boats, Picture Boats, Security Boats, and Transport modules immediately deleted the assignment without any confirmation prompt. Users could accidentally lose assignment data with a single misclick.
+
+**Root cause**: Four `*RemoveAssignmentById` functions (`removeAssignmentById`, `pbRemoveAssignmentById`, `tbRemoveAssignmentById`, `sbRemoveAssignmentById`) called the DELETE API directly without wrapping in `showConfirm()`. The equivalent functions in Labour (`lbRemoveAssignmentById`) and Guards (`gcRemoveAssignmentById`) already had confirmation.
+
+**Fix**: Wrapped all 4 functions in `showConfirm('Remove this assignment?', ...)` to match the existing pattern used by labour and guards modules.
+
+**Verification**:
+- All 6 `*RemoveAssignmentById` functions now consistently use `showConfirm`
+- JS syntax verified (balanced brackets/parentheses)
+- All 25 API endpoints return 200 (no regressions)
+- App starts and serves correctly
+
+**Branch**: fix/2026-04-09-missing-confirm-on-assignment-delete
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data model issue: all 46 boats in main boats table, none in picture_boats/security_boats)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
