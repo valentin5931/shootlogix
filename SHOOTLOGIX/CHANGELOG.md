@@ -1,5 +1,36 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P0] Fix Timeline API crash — 3 SQL column mismatches + soft-delete filter
+
+**Problem**: The Timeline tab (`/api/productions/<id>/timeline`) returned a 500 error, completely breaking the Gantt timeline view. Three separate SQL column references pointed to columns that don't exist in the database schema.
+
+**Root cause**: The `api_timeline()` function was written with assumed column names that don't match the actual database schema:
+1. `guard_camp_assignments.worker_id` → actual column is `helper_id`
+2. `locations.site` → actual column is `location_type`
+3. `location_schedules.prep/filming/wrap` → these boolean columns don't exist; the table uses a single `status` column with values like `'P'`, `'F'`, `'W'`
+
+Additionally, none of the entity queries filtered out soft-deleted records (`deleted_at IS NOT NULL`), so deleted boats, vehicles, helpers, etc. appeared in the timeline.
+
+A secondary fix in `database.py` corrected the `_NAME_FIELDS` mapping for `guard_camp_assignments` which referenced non-existent `worker_name_override` and `worker_id` columns (used for history/audit trail entity name extraction).
+
+**Fix**:
+- `app.py` (line 7883): Changed `WHERE worker_id=?` to `WHERE helper_id=?`
+- `app.py` (line 7893): Changed `SELECT id, name, site` to `SELECT id, name, location_type`; replaced `loc['site']` with `loc['location_type']`
+- `app.py` (lines 7895-7906): Replaced `SELECT id, date, prep, filming, wrap` with `SELECT id, date, status` and simplified phase extraction to use the single `status` column
+- `app.py` (7 entity queries): Added `AND deleted_at IS NULL` filter to boats, picture_boats, security_boats, transport_vehicles, helpers, guard_camp_workers, and locations queries
+- `database.py` (line 63): Changed `["worker_name_override", "worker_id"]` to `["helper_name_override", "helper_id"]`
+
+**Verification**:
+- Timeline endpoint returns 200 (was 500)
+- Response contains 81 resources: 46 boats, 14 vehicles, 21 locations
+- Soft-deleted test entities are properly excluded
+- All 20+ API endpoints pass regression test (200 OK)
+- Python syntax check passes
+
+**Branch**: fix/2026-04-10-timeline-api-crash-worker-id
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats empty lists (all 46 boats are in main `boats` table with category "picture", not in `picture_boats`/`security_boats` tables)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

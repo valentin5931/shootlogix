@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~Timeline API crash — 3 SQL column mismatches~~ FIXED 2026-04-10
+- **Discovered**: 2026-04-10
+- **Fixed**: 2026-04-10 (branch: fix/2026-04-10-timeline-api-crash-worker-id)
+- **Symptoms**: `/api/productions/<id>/timeline` returned 500 error, breaking the Gantt timeline view
+- **Root cause**: `api_timeline()` referenced non-existent columns: `worker_id` (should be `helper_id`), `site` (should be `location_type`), `prep/filming/wrap` (should be `status`). Also missing `deleted_at IS NULL` filters.
+- **Files involved**: `app.py`, `database.py`
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
@@ -14,12 +21,16 @@
 - **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
 - **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
 
-## [P1] Transport and Helpers lists are empty
+## [P1] ~~Transport list is empty~~ NOT A BUG — verified 2026-04-10
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
+- **Updated**: 2026-04-10 — Transport actually has 14 vehicles in `transport_vehicles` table. The `/api/productions/1/transport` endpoint is a summary/schedule endpoint; the JS frontend correctly uses `/api/productions/1/transport-vehicles` which returns 14 items. **Not a bug.**
+
+## [P1] Helpers list is empty
+- **Discovered**: 2026-03-22
+- **Symptoms**: `/api/productions/1/helpers` returns `[]` (but helper-assignments has 73 rows). No helpers have been created.
+- **Likely cause**: Helper assignments were seeded with inline names but no corresponding helper entities were created in the `helpers` table.
 - **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+- **Estimated effort**: Quick — user needs to add helpers through the UI, or a migration script could create them from existing assignment data
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22
