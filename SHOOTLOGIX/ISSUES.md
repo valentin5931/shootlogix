@@ -1,5 +1,19 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] FIXED — 25 missing onclick handler functions (2026-04-10)
+- **Discovered**: 2026-04-10
+- **Status**: FIXED in branch `fix/2026-04-10-missing-onclick-handlers`
+- **Symptoms**: Clicking mobile menu burger, notification bell, activity button, "Create function" button, export date shortcuts, tide auto-fill, and admin sub-panels caused JS errors (App.xxx is not a function)
+- **Root cause**: HTML onclick handlers referenced 25 App functions that were never defined in app-monolith.js
+- **Fix**: Implemented all 25 functions with proper API integration
+
+## [P1] Admin access-logs endpoint references non-existent `auth_users` table
+- **Discovered**: 2026-04-10
+- **Symptoms**: `/api/admin/access-logs` returns 500 error with `sqlite3.OperationalError: no such table: auth_users`
+- **Likely cause**: `auth/admin_routes.py` line 574 uses `LEFT JOIN auth_users u` but the actual table is `users`
+- **Files involved**: `auth/admin_routes.py` (lines 571-574, 609-612)
+- **Estimated effort**: Quick fix — rename `auth_users` to `users` in SQL queries
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

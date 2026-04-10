@@ -1,5 +1,38 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P1] Implement 25 missing onclick handler functions
+
+**Problem**: 25 functions referenced by onclick/onchange handlers in `index.html` were never implemented in `app-monolith.js`, causing JavaScript errors when users interacted with: mobile menu, notification bell, activity panel, comments panel, export date modal, "Create function" button, tide auto-fill, FAB context menu, price override field, and several admin sub-panels.
+
+**Root cause**: HTML templates were wired up with `App.xxx()` calls, but the corresponding JS functions were never defined or exported. This appears to be from features added to the HTML during UI design but whose JS implementations were never completed.
+
+**Fix** (`static/app-monolith.js`):
+- **Mobile**: `toggleMobileMenu()` — toggles `#mobile-menu` visibility
+- **Notifications**: `toggleNotifPanel()`, `closeNotifPanel()`, `markAllNotificationsRead()`, `_onNotifClick()` — full notification panel with API integration (`/api/notifications`)
+- **Activity**: `toggleActivityPanel()`, `closeActivityPanel()`, `loadActivity()`, `loadMoreActivity()` — activity timeline with filters and pagination via `/api/productions/:id/history`
+- **Comments**: `closeCommentsPanel()`, `submitComment()`, `handleCommentKeydown()` — comment submission with Enter key support via `/api/productions/:id/comments`
+- **Export Date Modal**: `closeExportDateModal()`, `exportDateShortcut()`, `confirmExportDate()` — date range presets (this week, last week, all)
+- **Create Function**: `saveFunction()` — alias for existing `createFunction()` (name mismatch fix)
+- **Tides**: `autoFillTides()` — fetches tide data from `/api/tides` and updates shooting days
+- **FAB**: `_toggleFabMenu()` — handles right-click/long-press on floating action button
+- **Price Override**: `onPriceOverrideChange()` — shows/hides override reason field
+- **Admin Templates**: `adminShowSaveTemplate()`, `_adminDeleteTemplate()` — save/delete production templates via `/api/admin/templates`
+- **Admin Entity Permissions**: `adminEpLoadPerms()`, `adminEpAdd()`, `_adminEpRemove()` — CRUD for entity-level permissions via `/api/admin/users/:id/entity-permissions`
+- **Admin Permissions**: `adminPermLoadMembers()`, `adminPermLoadPerms()` — load project members and their module permissions
+- **Admin Access Logs**: `adminLoadAccessLogs()`, `adminExportAccessLogs()` — view and export access logs via `/api/admin/access-logs`
+
+All 25 functions added to the public API exports.
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- All 163 `App.xxx()` references in HTML now have matching exported functions
+- API endpoints return correct responses (notifications, history, comments, templates)
+- No regressions on existing tab navigation, CRUD, or export functionality
+
+**Branch**: fix/2026-04-10-missing-onclick-handlers
+**Side effects**: None
+**Next priority**: Fix `auth_users` table reference in admin access-logs endpoint (backend bug); remaining P1 empty data issues (picture boats, security boats, helpers, guards)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
