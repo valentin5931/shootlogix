@@ -20,8 +20,8 @@ from database import (
     get_db, get_setting, set_setting,
     create_production, seed_departments,
     create_boat, create_boat_function, create_boat_assignment,
-    create_picture_boat,
     create_helper, create_helper_assignment,
+    create_picture_boat, create_picture_boat_assignment,
     create_security_boat, create_security_boat_assignment,
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
@@ -268,6 +268,132 @@ def _seed_picture_boats(prod_id):
             })
 
 
+# ─── Seed Picture Boat Entities ─────────────────────────────────────────────
+
+PICTURE_BOAT_SEED = [
+    {'name': 'PB - YELLOW',  'capacity': '8',  'rate': 500, 'group': 'YELLOW',  'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'PB - RED',     'capacity': '8',  'rate': 500, 'group': 'RED',     'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'PB - NEUTRAL', 'capacity': '6',  'rate': 450, 'group': 'NEUTRAL', 'vendor': ''},
+    {'name': 'PB - EXILE',   'capacity': '6',  'rate': 450, 'group': 'EXILE',   'vendor': ''},
+]
+
+
+def _seed_picture_boat_entities(prod_id):
+    """Seed picture boat entities and assignments if none exist. Idempotent via flag."""
+    if get_setting("picture_boats_seed_v1"):
+        return
+
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM picture_boats WHERE production_id=?", (prod_id,)
+        ).fetchall()
+    if existing:
+        set_setting("picture_boats_seed_v1", "1")
+        return
+
+    # Ensure picture boat functions exist first
+    _seed_picture_boats(prod_id)
+
+    print(f"  Seeding {len(PICTURE_BOAT_SEED)} picture boat entities...")
+    with get_db() as conn:
+        funcs = conn.execute(
+            "SELECT id, name FROM boat_functions WHERE production_id=? AND context='picture'",
+            (prod_id,)
+        ).fetchall()
+        func_map = {r['name']: r['id'] for r in funcs}
+
+    for i, pb in enumerate(PICTURE_BOAT_SEED, 1):
+        pb_id = create_picture_boat({
+            'production_id': prod_id,
+            'boat_nr': i,
+            'name': pb['name'],
+            'capacity': pb['capacity'],
+            'vendor': pb['vendor'],
+            'group_name': pb['group'],
+            'daily_rate_estimate': pb['rate'],
+            'currency': 'USD',
+        })
+        # Create assignment if matching function exists
+        func_id = func_map.get(pb['group'])
+        if func_id:
+            create_picture_boat_assignment({
+                'boat_function_id': func_id,
+                'picture_boat_id': pb_id,
+                'start_date': '2026-03-20',
+                'end_date': '2026-04-25',
+                'price_override': pb['rate'],
+                'include_sunday': 1,
+            })
+            print(f"    {pb['name']} -> {pb['group']} (${pb['rate']}/day)")
+
+    set_setting("picture_boats_seed_v1", "1")
+    print(f"  Seeded {len(PICTURE_BOAT_SEED)} picture boats with assignments")
+
+
+# ─── Seed Security Boat Entities ────────────────────────────────────────────
+
+SECURITY_BOAT_SEED = [
+    {'name': 'SB - SAFETY GAMES',   'capacity': '6', 'rate': 400, 'group': 'SAFETY', 'func': 'SAFETY GAMES',   'start': '2026-03-20', 'end': '2026-04-25'},
+    {'name': 'SB - SAFETY COUNCIL', 'capacity': '6', 'rate': 400, 'group': 'SAFETY', 'func': 'SAFETY COUNCIL', 'start': '2026-03-25', 'end': '2026-04-25'},
+    {'name': 'SB - SAFETY ARENA',   'capacity': '6', 'rate': 400, 'group': 'SAFETY', 'func': 'SAFETY ARENA',   'start': '2026-03-20', 'end': '2026-04-25'},
+    {'name': 'SB - EVAC',           'capacity': '8', 'rate': 880, 'group': 'EVAC',   'func': 'SAFETY EVAC',    'start': '2026-02-23', 'end': '2026-04-30'},
+    {'name': 'SB - MEDICAL',        'capacity': '6', 'rate': 642, 'group': 'MEDICAL','func': 'SAFETY MEDICAL',  'start': '2026-02-23', 'end': '2026-05-04'},
+    {'name': 'SB - STANDBY',        'capacity': '6', 'rate': 350, 'group': 'STANDBY','func': 'SAFETY STANDBY',  'start': '2026-03-20', 'end': '2026-04-25'},
+]
+
+
+def _seed_security_boat_entities(prod_id):
+    """Seed security boat entities and assignments if none exist. Idempotent via flag."""
+    if get_setting("security_boats_seed_v1"):
+        return
+
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM security_boats WHERE production_id=?", (prod_id,)
+        ).fetchall()
+    if existing:
+        set_setting("security_boats_seed_v1", "1")
+        return
+
+    # Ensure security boat functions exist first
+    _seed_security_boats(prod_id)
+
+    print(f"  Seeding {len(SECURITY_BOAT_SEED)} security boat entities...")
+    with get_db() as conn:
+        funcs = conn.execute(
+            "SELECT id, name FROM boat_functions WHERE production_id=? AND context='security'",
+            (prod_id,)
+        ).fetchall()
+        func_map = {r['name']: r['id'] for r in funcs}
+
+    for i, sb in enumerate(SECURITY_BOAT_SEED, 1):
+        sb_id = create_security_boat({
+            'production_id': prod_id,
+            'boat_nr': i,
+            'name': sb['name'],
+            'capacity': sb['capacity'],
+            'vendor': '',
+            'group_name': sb['group'],
+            'daily_rate_estimate': sb['rate'],
+            'currency': 'USD',
+        })
+        # Create assignment if matching function exists
+        func_id = func_map.get(sb['func'])
+        if func_id:
+            create_security_boat_assignment({
+                'boat_function_id': func_id,
+                'security_boat_id': sb_id,
+                'start_date': sb['start'],
+                'end_date': sb['end'],
+                'price_override': sb['rate'],
+                'include_sunday': 1,
+            })
+            print(f"    {sb['name']} -> {sb['func']} (${sb['rate']}/day)")
+
+    set_setting("security_boats_seed_v1", "1")
+    print(f"  Seeded {len(SECURITY_BOAT_SEED)} security boats with assignments")
+
+
 def _backup_db():
     """Create a timestamped backup of the database before destructive migrations.
     Keeps the 5 most recent backups."""
@@ -331,7 +457,9 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _seed_picture_boat_entities(prod_id)
         _seed_security_boats(prod_id)
+        _seed_security_boat_entities(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -371,8 +499,10 @@ def bootstrap():
               f"delta={bv.get('delta')}")
 
     _seed_picture_boats(prod_id)
+    _seed_picture_boat_entities(prod_id)
     _seed_helpers(prod_id)
     _seed_security_boats(prod_id)
+    _seed_security_boat_entities(prod_id)
     _seed_transport(prod_id)
     _seed_location_sites(prod_id)
     _seed_guard_posts(prod_id)

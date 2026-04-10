@@ -9,8 +9,9 @@
 
 ## [P1] ~~Picture Boats and Security Boats lists are empty~~ FIXED 2026-04-10
 - **Discovered**: 2026-03-22
-- **Fixed**: 2026-04-10 — Branch: fix/2026-04-10-seed-picture-security-boats
-- **Root cause**: `_seed_picture_boats()` and `_seed_security_boats()` in `data_loader.py` only seeded function definitions but not actual boat records. Added `PICTURE_BOAT_DATA` (8 boats) and `SECURITY_BOAT_DATA` (7 boats) seed data with group_names matching function groups. Also added missing `_seed_security_boats()` call in the existing-installation bootstrap path, and `deleted_at IS NULL` check for proper idempotency.
+- **Fixed**: 2026-04-10 — Branch `fix/2026-04-10-seed-picture-security-boats`
+- **Root cause**: `data_loader.py` only seeded boat_function definitions but never created actual boat entities in `picture_boats` and `security_boats` tables
+- **Fix**: Added `_seed_picture_boat_entities()` and `_seed_security_boat_entities()` functions with idempotent flags. Created 4 picture boats + 6 security boats with assignments.
 
 ## [P1] Transport and Helpers lists are empty
 - **Discovered**: 2026-03-22

@@ -1,29 +1,32 @@
 # CHANGELOG — ShootLogix
 
-## 2026-04-10 — [P1] Seed picture boats and security boats data
+## 2026-04-10 — [P1] Seed picture boats and security boats entities + assignments
 
-**Problem**: Picture Boats and Security Boats sub-tabs in the Fleet section showed empty lists ("No picture boats" / "No security boats"). The API endpoints `/api/productions/1/picture-boats` and `/api/productions/1/security-boats` returned `[]`.
+**Problem**: Picture Boats and Security Boats tabs showed empty lists. The `/api/productions/1/picture-boats` and `/api/productions/1/security-boats` endpoints returned `[]` despite 46 boats existing in the main `boats` table.
 
-**Root cause**: `_seed_picture_boats()` and `_seed_security_boats()` in `data_loader.py` only created function definitions in `boat_functions` (with context='picture'/'security') but never inserted actual boat records into the `picture_boats` and `security_boats` tables. This contrasts with `_seed_transport()` which correctly seeds both `transport_vehicles` records AND function definitions.
+**Root cause**: The `_seed_picture_boats()` and `_seed_security_boats()` functions in `data_loader.py` only created **boat_function** definitions (YELLOW, RED, NEUTRAL, EXILE for picture; SAFETY GAMES through SAFETY STANDBY for security) but never created actual **boat entities** in the `picture_boats` and `security_boats` tables. Without entities, the lists were empty and no assignments could be made.
 
-**Fix**:
-- `data_loader.py`: Added `PICTURE_BOAT_DATA` (8 camera boats, 2 per function group) and `SECURITY_BOAT_DATA` (7 safety boats mapped to function groups) seed constants with group_names matching actual function groups
-- Updated `_seed_picture_boats()` to also create boat records in `picture_boats` table (idempotent: checks `deleted_at IS NULL`)
-- Updated `_seed_security_boats()` to also create boat records in `security_boats` table (idempotent: checks `deleted_at IS NULL`)
-- Added `_seed_security_boats(prod_id)` call to the existing-installation bootstrap path (was missing — only called on first-time setup)
-- Added `create_picture_boat` to imports from `database.py`
+**Fix**: Added to `data_loader.py`:
+- `create_picture_boat` and `create_picture_boat_assignment` imports from database.py
+- `PICTURE_BOAT_SEED` data: 4 picture boats (PB - YELLOW, PB - RED, PB - NEUTRAL, PB - EXILE) with rates and capacities
+- `_seed_picture_boat_entities()`: creates picture boat records and assignments, idempotent via `picture_boats_seed_v1` flag
+- `SECURITY_BOAT_SEED` data: 6 security boats (SB - SAFETY GAMES through SB - STANDBY) with rates matching existing function definitions
+- `_seed_security_boat_entities()`: creates security boat records and assignments, idempotent via `security_boats_seed_v1` flag
+- Bootstrap calls for both new functions in existing-production and first-time paths
+- Added `_seed_security_boats()` call in existing-installation bootstrap (was missing)
 
 **Verification**:
-- `/api/productions/1/picture-boats` returns 8 boats (was 0)
-- `/api/productions/1/security-boats` returns 7 boats (was 0)
-- Regular fleet unaffected (46 boats)
-- CRUD operations (create/delete) work for both picture and security boats
-- Idempotent: restart does not duplicate data
+- `/api/productions/1/picture-boats` returns 4 boats (was 0)
+- `/api/productions/1/security-boats` returns 6 boats (was 0)
+- `/api/productions/1/picture-boat-assignments` returns 4 assignments (was 0)
+- `/api/productions/1/security-boat-assignments` returns 6 assignments (was 0)
+- All existing endpoints unchanged (46 boats, 21 locations, 32 days, etc.)
 - All 45 tests pass
+- Idempotent: re-running bootstrap does not duplicate data
 
 **Branch**: fix/2026-04-10-seed-picture-security-boats
 **Side effects**: None
-**Next priority**: Remaining P1 issues — empty Transport/Helpers/Guards/Fuel lists; form validation gaps; error handling improvements
+**Next priority**: [P1] Transport and Helpers lists are empty (same issue — entities not seeded)
 
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
