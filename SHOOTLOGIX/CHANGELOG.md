@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P0] Fix wrong state keys in _findAssignment() and _reloadCurrentTab()
+
+**Problem**: Day override operations (status changes, value changes on schedule grid cells) silently failed for Picture Boats, Security Boats, and Labour assignments. Pull-to-refresh on the Picture Boats tab stored freshly fetched data in orphan state keys, so the UI never updated. Pull-to-refresh on the Boats tab fetched all assignments instead of only boat-context ones.
+
+**Root cause**: `_findAssignment()` searched `state.pbAssignments`, `state.sbAssignments`, and `state.helperAssignments` — keys that are never populated anywhere in the codebase. The correct keys are `state.pictureAssignments`, `state.securityAssignments`, and `state.labourAssignments`. Similarly, `_reloadCurrentTab()` for picture-boats wrote to `state.pbFunctions` and `state.pbAssignments` instead of `state.pictureFunctions` and `state.pictureAssignments`. For boats, it fetched `/assignments` without `?context=boats`, returning all assignment types instead of just boats.
+
+**Fix**:
+- `static/app-monolith.js` line 3524-3525: Changed `_findAssignment()` to use `state.pictureAssignments`, `state.securityAssignments`, `state.labourAssignments`
+- `static/app-monolith.js` line 13004: Changed `_reloadCurrentTab()` picture-boats handler to use `state.pictureFunctions` and `state.pictureAssignments`
+- `static/app-monolith.js` line 13003: Added `?context=boats` to boats reload assignments endpoint
+
+**Verification**:
+- JS syntax check passes
+- All API endpoints return correct data
+- `_findAssignment()` now correctly searches all 6 assignment arrays
+- `_reloadCurrentTab()` now stores picture boat data in the correct state keys
+- No regressions on other tabs
+
+**Branch**: fix/2026-04-10-wrong-state-keys-assignments
+**Side effects**: None
+**Next priority**: P1 — _loadAndRender* functions call render even when API fails (transport, labour, security boats, guard camp); add early return on error to prevent showing stale/empty UI without feedback
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

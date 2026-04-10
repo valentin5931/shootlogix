@@ -1,5 +1,26 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] FIXED — Wrong state keys in _findAssignment() and _reloadCurrentTab()
+- **Discovered**: 2026-04-10
+- **Fixed**: 2026-04-10 (branch: fix/2026-04-10-wrong-state-keys-assignments)
+- **Symptoms**: Day override clicks silently failed for Picture Boats, Security Boats, Labour. Pull-to-refresh on Picture Boats didn't update the UI.
+- **Root cause**: `_findAssignment()` used non-existent state keys (`pbAssignments`, `sbAssignments`, `helperAssignments`). `_reloadCurrentTab()` stored picture boat data in wrong keys.
+- **Files involved**: `static/app-monolith.js` (lines 3524, 13003, 13004)
+
+## [P1] _loadAndRender* functions call render on API failure
+- **Discovered**: 2026-04-10
+- **Symptoms**: When API calls fail (network error, 500, etc.), the transport/labour/security-boats/guard-camp tabs still call their render functions. Users see empty UI with no explanation instead of an error state.
+- **Likely cause**: `renderX()` is called outside the `try {}` block, so it always runs regardless of whether data loaded successfully.
+- **Files involved**: `static/app-monolith.js` (_loadAndRenderTransport line 5572, _loadAndRenderLabour line 7227, _loadAndRenderSecurityBoats line 8119, _loadAndRenderGuardCamp line 10208)
+- **Estimated effort**: Quick fix — move `render*()` inside try block or add early return in catch
+
+## [P1] Missing checklist handler in _reloadCurrentTab()
+- **Discovered**: 2026-04-10
+- **Symptoms**: Pull-to-refresh on the Checklist tab does nothing — no data reload.
+- **Likely cause**: `_reloadCurrentTab()` has no `else if (tab === 'checklist')` case.
+- **Files involved**: `static/app-monolith.js` (line 13014)
+- **Estimated effort**: Quick fix
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
