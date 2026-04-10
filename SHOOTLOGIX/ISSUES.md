@@ -1,6 +1,10 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## ~~[P1] Missing confirmation dialogs on destructive actions~~ FIXED 2026-04-10
+- **Fixed in**: fix/2026-04-10-missing-delete-confirmations
+- **Details**: Added `showConfirm()` to 5 delete functions (Boats, Picture Boats, Transport, Security Boats, F&B)
+
+## ~~[P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM~~ FIXED 2026-03-23
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
 - **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.

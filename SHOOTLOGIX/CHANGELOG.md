@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P1] Add missing confirmation dialogs on destructive actions
+
+**Problem**: Five assignment/entry deletion functions executed immediately on click without asking the user for confirmation, risking accidental data loss. This affected Boats, Picture Boats, Security Boats, Transport, and F&B (Catering) modules.
+
+**Root cause**: When these functions were originally implemented, the `showConfirm()` pattern was not applied consistently. The Labour and Guards modules already had confirmations, but Boats, Picture Boats, Transport, Security Boats, and F&B did not.
+
+**Fix**:
+- `static/app-monolith.js`: Wrapped the following 5 functions with `showConfirm()` dialogs:
+  - `removeAssignmentById()` — Boats assignment removal (line ~2935)
+  - `pbRemoveAssignmentById()` — Picture Boats assignment removal (line ~2947)
+  - `tbRemoveAssignmentById()` — Transport assignment removal (line ~6325)
+  - `sbRemoveAssignmentById()` — Security Boats assignment removal (line ~8822)
+  - `fnbCellClear()` — F&B entry clearing, with contextual message for single vs. week mode (line ~11574)
+
+**Verification**:
+- JS syntax check passes
+- All 45 pytest tests pass
+- Existing `showConfirm()` pattern used throughout; Labour and Guards already had confirmations — now all modules are consistent
+
+**Branch**: fix/2026-04-10-missing-delete-confirmations
+**Side effects**: None — users will now see a confirmation dialog before these deletions, preventing accidental data loss
+**Next priority**: P1 — Empty data in Picture Boats and Security Boats tables (ISSUES.md)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

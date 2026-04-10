@@ -2933,26 +2933,30 @@ const App = (() => {
   }
 
   async function removeAssignmentById(assignmentId) {
-    try {
-      await api('DELETE', `/api/assignments/${assignmentId}`);
-      state.assignments = state.assignments.filter(a => a.id !== assignmentId);
-      closeSchedulePopover();
-      renderBoats();
-      toast('Assignment removed');
-    } catch (e) {
-      toast('Error: ' + e.message, 'error');
-    }
+    showConfirm('Remove this assignment?', async () => {
+      try {
+        await api('DELETE', `/api/assignments/${assignmentId}`);
+        state.assignments = state.assignments.filter(a => a.id !== assignmentId);
+        closeSchedulePopover();
+        renderBoats();
+        toast('Assignment removed');
+      } catch (e) {
+        toast('Error: ' + e.message, 'error');
+      }
+    });
   }
 
   async function pbRemoveAssignmentById(assignmentId) {
-    try {
-      await api('DELETE', `/api/picture-boat-assignments/${assignmentId}`);
-      state.pictureAssignments = state.pictureAssignments.filter(a => a.id !== assignmentId);
-      renderPictureBoats();
-      toast('Assignment removed');
-    } catch (e) {
-      toast('Error: ' + e.message, 'error');
-    }
+    showConfirm('Remove this assignment?', async () => {
+      try {
+        await api('DELETE', `/api/picture-boat-assignments/${assignmentId}`);
+        state.pictureAssignments = state.pictureAssignments.filter(a => a.id !== assignmentId);
+        renderPictureBoats();
+        toast('Assignment removed');
+      } catch (e) {
+        toast('Error: ' + e.message, 'error');
+      }
+    });
   }
 
   // ── Add boat ───────────────────────────────────────────────
@@ -6323,14 +6327,16 @@ const App = (() => {
   }
 
   async function tbRemoveAssignmentById(assignmentId) {
-    try {
-      await api('DELETE', `/api/transport-assignments/${assignmentId}`);
-      state.transportAssignments = state.transportAssignments.filter(a => a.id !== assignmentId);
-      renderTransport();
-      toast('Assignment removed');
-    } catch (e) {
-      toast('Error: ' + e.message, 'error');
-    }
+    showConfirm('Remove this assignment?', async () => {
+      try {
+        await api('DELETE', `/api/transport-assignments/${assignmentId}`);
+        state.transportAssignments = state.transportAssignments.filter(a => a.id !== assignmentId);
+        renderTransport();
+        toast('Assignment removed');
+      } catch (e) {
+        toast('Error: ' + e.message, 'error');
+      }
+    });
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -8820,12 +8826,14 @@ const App = (() => {
   }
 
   async function sbRemoveAssignmentById(assignmentId) {
-    try {
-      await api('DELETE', `/api/security-boat-assignments/${assignmentId}`);
-      state.securityAssignments = state.securityAssignments.filter(a => a.id !== assignmentId);
-      renderSecurityBoats();
-      toast('Assignment removed');
-    } catch (e) { toast('Error: ' + e.message, 'error'); }
+    showConfirm('Remove this assignment?', async () => {
+      try {
+        await api('DELETE', `/api/security-boat-assignments/${assignmentId}`);
+        state.securityAssignments = state.securityAssignments.filter(a => a.id !== assignmentId);
+        renderSecurityBoats();
+        toast('Assignment removed');
+      } catch (e) { toast('Error: ' + e.message, 'error'); }
+    });
   }
 
   async function sbConfirmDeleteFunc(funcId) {
@@ -11572,24 +11580,27 @@ const App = (() => {
   }
 
   async function fnbCellClear(itemId, entryType, mode, ref) {
-    const weeks = _fnbWeeks();
-    if (mode === 'week') {
-      const wDates = weeks[ref];
-      for (const d of wDates) {
-        const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === d);
+    const label = mode === 'week' ? 'Clear all entries for this week?' : 'Clear this entry?';
+    showConfirm(label, async () => {
+      const weeks = _fnbWeeks();
+      if (mode === 'week') {
+        const wDates = weeks[ref];
+        for (const d of wDates) {
+          const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === d);
+          if (e) {
+            await api('DELETE', `/api/fnb-entries/${e.id}`);
+            state.fnbEntries = state.fnbEntries.filter(en => en.id !== e.id);
+          }
+        }
+      } else {
+        const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === ref);
         if (e) {
           await api('DELETE', `/api/fnb-entries/${e.id}`);
           state.fnbEntries = state.fnbEntries.filter(en => en.id !== e.id);
         }
       }
-    } else {
-      const e = (state.fnbEntries || []).find(en => en.item_id === itemId && en.entry_type === entryType && en.date === ref);
-      if (e) {
-        await api('DELETE', `/api/fnb-entries/${e.id}`);
-        state.fnbEntries = state.fnbEntries.filter(en => en.id !== e.id);
-      }
-    }
-    renderFnb();
+      renderFnb();
+    });
   }
 
   // ── FNB Category CRUD modals ─────────────────────────────────
