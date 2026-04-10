@@ -1,5 +1,25 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] Silent API error handling in location/guard/FNB data loading — DISCOVERED 2026-04-10
+- **Discovered**: 2026-04-10
+- **Symptoms**: When API calls fail while loading Locations, Guards, or FNB data, the user sees empty tables/panels without any error feedback. The errors are silently caught with `catch(e) { state.data = []; }`.
+- **Likely cause**: Error handling uses `try/catch` with empty fallback arrays but no `toast()` notification to inform the user.
+- **Files involved**: `static/app-monolith.js` — renderLocations (~line 8993), renderGuardLocation (~line 9682), guard camp preload (~line 9646), admin templates (~line 12715), logout (~line 750)
+- **Estimated effort**: Quick fix — add `toast('Error loading data', 'error')` in catch blocks
+
+## [P1] Missing loading states for FNB cell edits — DISCOVERED 2026-04-10
+- **Discovered**: 2026-04-10
+- **Symptoms**: When editing FNB quantities via cell click, multiple API calls (DELETE + POST) run without a loading indicator. User can click rapidly and cause race conditions.
+- **Likely cause**: `fnbCellClick()` makes sequential API calls without disabling UI or showing a spinner.
+- **Files involved**: `static/app-monolith.js` (~line 11507)
+- **Estimated effort**: Quick — add a flag to prevent double-clicks during async operations
+
+## [FIXED] [P1] Missing confirmation dialogs on assignment remove buttons — FIXED 2026-04-10
+- **Discovered**: 2026-04-10
+- **Symptoms**: Clicking ✕ on boat/vehicle/picture boat/security boat assignments deleted them immediately with no confirmation.
+- **Fix**: Added `showConfirm()` dialogs to `removeAssignmentById`, `pbRemoveAssignmentById`, `tbRemoveAssignmentById`, `sbRemoveAssignmentById` in `app-monolith.js`.
+- **Branch**: fix/2026-04-10-missing-assignment-delete-confirmations
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
