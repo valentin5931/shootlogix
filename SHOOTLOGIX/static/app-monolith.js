@@ -13102,6 +13102,469 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  MISSING HANDLERS — Mobile, Notifications, Activity,
+  //  Comments, Export Date, Tides, Admin, FAB, Price Override
+  // ═══════════════════════════════════════════════════════════
+
+  // ── Mobile menu ───────────────────────────────────────────
+  function toggleMobileMenu() {
+    const menu = $('mobile-menu');
+    if (menu) menu.classList.toggle('hidden');
+  }
+
+  // ── Notification panel ────────────────────────────────────
+  let _notifPanelOpen = false;
+
+  function toggleNotifPanel() {
+    const panel = $('notif-panel');
+    if (!panel) return;
+    _notifPanelOpen = !_notifPanelOpen;
+    panel.classList.toggle('hidden', !_notifPanelOpen);
+    if (_notifPanelOpen) _loadNotifications();
+  }
+
+  function closeNotifPanel() {
+    const panel = $('notif-panel');
+    if (panel) panel.classList.add('hidden');
+    _notifPanelOpen = false;
+  }
+
+  async function _loadNotifications() {
+    try {
+      const data = await api('GET', `/api/notifications?production_id=${state.prodId}`);
+      const list = $('notif-list');
+      if (!list) return;
+      if (!data || !data.length) {
+        list.innerHTML = '<div class="notif-empty">No notifications</div>';
+        return;
+      }
+      list.innerHTML = data.map(n => `
+        <div class="notif-item ${n.read_at ? '' : 'unread'}" onclick="App._onNotifClick(${n.id})">
+          <div style="font-size:.75rem;font-weight:600;color:var(--text-1)">${esc(n.title || '')}</div>
+          <div style="font-size:.7rem;color:var(--text-3)">${esc(n.body || '')}</div>
+          <div style="font-size:.6rem;color:var(--text-4);margin-top:.2rem">${n.created_at || ''}</div>
+        </div>`).join('');
+      // Update badge
+      const unread = data.filter(n => !n.read_at).length;
+      const badge = $('notif-badge');
+      if (badge) {
+        badge.textContent = unread > 99 ? '99+' : unread;
+        badge.style.display = unread > 0 ? '' : 'none';
+      }
+    } catch (e) {
+      console.warn('Failed to load notifications:', e);
+    }
+  }
+
+  async function _onNotifClick(notifId) {
+    try {
+      await api('POST', `/api/notifications/${notifId}/read`);
+      _loadNotifications();
+    } catch (e) { /* ignore */ }
+  }
+
+  async function markAllNotificationsRead() {
+    try {
+      await api('POST', `/api/notifications/read-all?production_id=${state.prodId}`);
+      _loadNotifications();
+      toast('All notifications marked as read');
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // ── Activity panel ────────────────────────────────────────
+  let _activityPage = 0;
+  const _ACTIVITY_LIMIT = 50;
+
+  function toggleActivityPanel() {
+    const overlay = $('activity-overlay');
+    if (!overlay) return;
+    const isHidden = overlay.classList.contains('hidden');
+    overlay.classList.toggle('hidden');
+    if (isHidden) {
+      _activityPage = 0;
+      loadActivity();
+    }
+  }
+
+  function closeActivityPanel() {
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  async function loadActivity() {
+    _activityPage = 0;
+    const feed = $('activity-feed');
+    if (feed) feed.innerHTML = '<div class="activity-loading">Loading...</div>';
+    await _fetchActivity(false);
+  }
+
+  async function loadMoreActivity() {
+    _activityPage++;
+    await _fetchActivity(true);
+  }
+
+  async function _fetchActivity(append) {
+    const feed = $('activity-feed');
+    if (!feed) return;
+    try {
+      const module = $('activity-filter-module')?.value || '';
+      const userId = $('activity-filter-user')?.value || '';
+      const action = $('activity-filter-action')?.value || '';
+      const from   = $('activity-filter-from')?.value || '';
+      const to     = $('activity-filter-to')?.value || '';
+      let url = `/api/productions/${state.prodId}/history?limit=${_ACTIVITY_LIMIT}&offset=${_activityPage * _ACTIVITY_LIMIT}`;
+      if (module) url += `&entity_type=${module}`;
+      if (userId) url += `&user_id=${userId}`;
+      if (action) url += `&action_type=${action}`;
+      if (from) url += `&date_from=${from}`;
+      if (to) url += `&date_to=${to}`;
+      const data = await api('GET', url);
+      const items = Array.isArray(data) ? data : (data.items || []);
+      const html = items.map(h => `
+        <div class="activity-item">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:.7rem;font-weight:600;color:var(--text-1)">${esc(h.user_nickname || h.action || '')}</span>
+            <span style="font-size:.6rem;color:var(--text-4)">${h.created_at || ''}</span>
+          </div>
+          <div style="font-size:.72rem;color:var(--text-2)">${esc(h.human_description || h.action || '')}</div>
+          <div style="font-size:.6rem;color:var(--text-4)">${esc(h.table_name || '')} #${h.record_id || ''}</div>
+        </div>`).join('');
+      if (append) {
+        feed.insertAdjacentHTML('beforeend', html);
+      } else {
+        feed.innerHTML = html || '<div class="activity-empty" style="padding:2rem;text-align:center;color:var(--text-4)">No activity found</div>';
+      }
+      // Show/hide load more button
+      const btn = $('activity-load-more');
+      if (btn) btn.style.display = items.length >= _ACTIVITY_LIMIT ? '' : 'none';
+    } catch (e) {
+      if (!append) feed.innerHTML = '<div style="padding:1rem;color:#EF4444">Error loading activity</div>';
+      console.warn('Activity load error:', e);
+    }
+  }
+
+  // ── Comments panel ────────────────────────────────────────
+  let _commentsEntity = null; // { type, id }
+
+  function closeCommentsPanel() {
+    const panel = $('comments-panel');
+    if (panel) panel.classList.add('hidden');
+    _commentsEntity = null;
+  }
+
+  async function submitComment() {
+    if (!_commentsEntity) return;
+    const input = $('comments-input');
+    const body = (input?.value || '').trim();
+    if (!body) return;
+    try {
+      await api('POST', `/api/productions/${state.prodId}/comments`, {
+        entity_type: _commentsEntity.type,
+        entity_id: _commentsEntity.id,
+        body,
+      });
+      input.value = '';
+      // Reload comments
+      const data = await api('GET', `/api/productions/${state.prodId}/comments?entity_type=${_commentsEntity.type}&entity_id=${_commentsEntity.id}`);
+      _renderCommentsList(data);
+      toast('Comment posted');
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  function handleCommentKeydown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitComment();
+    }
+  }
+
+  function _renderCommentsList(comments) {
+    const list = $('comments-list');
+    if (!list) return;
+    if (!comments || !comments.length) {
+      list.innerHTML = '<div class="comments-empty">No comments yet</div>';
+      return;
+    }
+    list.innerHTML = comments.map(c => `
+      <div class="comment-item" style="padding:.5rem;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;margin-bottom:.2rem">
+          <span style="font-size:.7rem;font-weight:600;color:var(--text-1)">${esc(c.user_nickname || 'User')}</span>
+          <span style="font-size:.6rem;color:var(--text-4)">${c.created_at || ''}</span>
+        </div>
+        <div style="font-size:.75rem;color:var(--text-2);white-space:pre-wrap">${esc(c.body || '')}</div>
+      </div>`).join('');
+  }
+
+  // ── Export date modal ─────────────────────────────────────
+  let _exportDateCallback = null;
+
+  function closeExportDateModal() {
+    const overlay = $('export-date-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    _exportDateCallback = null;
+  }
+
+  function exportDateShortcut(preset) {
+    const fromEl = $('export-date-from');
+    const toEl   = $('export-date-to');
+    if (!fromEl || !toEl) return;
+    const today = new Date();
+    if (preset === 'week') {
+      const monday = new Date(today);
+      monday.setDate(today.getDate() - today.getDay() + 1);
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      fromEl.value = monday.toISOString().slice(0, 10);
+      toEl.value   = sunday.toISOString().slice(0, 10);
+    } else if (preset === 'last-week') {
+      const monday = new Date(today);
+      monday.setDate(today.getDate() - today.getDay() - 6);
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      fromEl.value = monday.toISOString().slice(0, 10);
+      toEl.value   = sunday.toISOString().slice(0, 10);
+    } else if (preset === 'all') {
+      fromEl.value = '';
+      toEl.value   = '';
+    }
+  }
+
+  function confirmExportDate() {
+    if (_exportDateCallback) {
+      const from = $('export-date-from')?.value || '';
+      const to   = $('export-date-to')?.value || '';
+      _exportDateCallback(from, to);
+    }
+    closeExportDateModal();
+  }
+
+  // ── saveFunction alias ────────────────────────────────────
+  function saveFunction() { createFunction(); }
+
+  // ── Auto-fill tides ───────────────────────────────────────
+  async function autoFillTides() {
+    if (!state.shootingDays || !state.shootingDays.length) {
+      toast('No shooting days to fill tides for', 'error');
+      return;
+    }
+    const days = state.shootingDays;
+    const startDate = days[0].date;
+    const endDate   = days[days.length - 1].date;
+    try {
+      // Pearl Islands, Panama coordinates
+      const tides = await api('GET', `/api/tides?lat=8.38&lng=-79.05&start=${startDate}&end=${endDate}`);
+      if (!tides || !tides.length) {
+        toast('No tide data available for this date range', 'error');
+        return;
+      }
+      // Build a map: date -> best tide
+      const tideMap = {};
+      for (const t of tides) {
+        const d = (t.date || t.datetime || '').slice(0, 10);
+        if (!d) continue;
+        if (!tideMap[d] || Math.abs(t.height) > Math.abs(tideMap[d].height)) {
+          tideMap[d] = t;
+        }
+      }
+      // Update each shooting day
+      let updated = 0;
+      for (const day of days) {
+        const tide = tideMap[day.date];
+        if (tide) {
+          await api('PUT', `/api/productions/${state.prodId}/shooting-days/${day.id}`, {
+            maree_hauteur: tide.height,
+            maree_statut: tide.height >= 3 ? 'H' : tide.height >= 2 ? 'M' : 'D',
+          });
+          day.maree_hauteur = tide.height;
+          day.maree_statut  = tide.height >= 3 ? 'H' : tide.height >= 2 ? 'M' : 'D';
+          updated++;
+        }
+      }
+      renderPDT();
+      toast(`Tide data updated for ${updated} days`);
+    } catch (e) {
+      toast('Error fetching tides: ' + e.message, 'error');
+    }
+  }
+
+  // ── FAB toggle menu (context menu on long press) ──────────
+  function _toggleFabMenu() {
+    // On right-click/long-press of the FAB, offer secondary actions
+    // For now, just trigger the primary action
+    fabAction();
+  }
+
+  // ── Price override change ─────────────────────────────────
+  function onPriceOverrideChange() {
+    const overrideInput = $('am-price-override');
+    const reasonGroup   = $('am-override-reason-group');
+    if (overrideInput && reasonGroup) {
+      const hasOverride = overrideInput.value.trim() !== '';
+      reasonGroup.style.display = hasOverride ? '' : 'none';
+    }
+  }
+
+  // ── Admin: Save Template ──────────────────────────────────
+  async function adminShowSaveTemplate() {
+    const name = prompt('Template name:');
+    if (!name) return;
+    const desc = prompt('Description (optional):') || '';
+    try {
+      await api('POST', '/api/admin/templates', { name, description: desc, production_id: state.prodId });
+      toast(`Template "${name}" saved`);
+      _adminLoadTemplates();
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function _adminLoadTemplates() {
+    try {
+      const templates = await api('GET', '/api/admin/templates');
+      const list = $('admin-templates-list');
+      if (!list) return;
+      if (!templates || !templates.length) {
+        list.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;padding:1rem">No templates saved yet</div>';
+        return;
+      }
+      list.innerHTML = templates.map(t => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem;border-bottom:1px solid var(--border)">
+          <div>
+            <div style="font-weight:600;font-size:.8rem">${esc(t.name)}</div>
+            <div style="font-size:.7rem;color:var(--text-3)">${esc(t.description || '')}</div>
+          </div>
+          <button class="btn btn-sm" style="color:#EF4444" onclick="App._adminDeleteTemplate(${t.id})">Delete</button>
+        </div>`).join('');
+    } catch (e) {
+      console.warn('Failed to load templates:', e);
+    }
+  }
+
+  async function _adminDeleteTemplate(id) {
+    if (!confirm('Delete this template?')) return;
+    try {
+      await api('DELETE', `/api/admin/templates/${id}`);
+      toast('Template deleted');
+      _adminLoadTemplates();
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  // ── Admin: Entity Permissions ─────────────────────────────
+  async function adminEpLoadPerms() {
+    const userId = $('admin-ep-user')?.value;
+    const list = $('admin-ep-list');
+    const addForm = $('admin-ep-add-form');
+    if (!userId || !list) return;
+    if (addForm) addForm.classList.remove('hidden');
+    try {
+      const perms = await api('GET', `/api/admin/users/${userId}/entity-permissions`);
+      if (!perms || !perms.length) {
+        list.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;padding:.5rem">No entity restrictions — full access based on role</div>';
+        return;
+      }
+      list.innerHTML = `<table class="budget-table" style="font-size:.75rem"><thead><tr>
+        <th>Type</th><th>Entity ID</th><th>Permission</th><th></th>
+      </tr></thead><tbody>${perms.map(p => `<tr>
+        <td>${esc(p.entity_type || '')}</td>
+        <td>${p.entity_id}</td>
+        <td>${esc(p.permission || '')}</td>
+        <td><button class="btn btn-icon btn-sm" style="color:#EF4444" onclick="App._adminEpRemove(${userId},${p.id})">✕</button></td>
+      </tr>`).join('')}</tbody></table>`;
+    } catch (e) { list.innerHTML = '<div style="color:#EF4444">Error loading permissions</div>'; }
+  }
+
+  async function adminEpAdd() {
+    const userId = $('admin-ep-user')?.value;
+    const entType = $('admin-ep-add-type')?.value;
+    const entId = $('admin-ep-add-id')?.value;
+    const perm = $('admin-ep-add-perm')?.value;
+    if (!userId || !entType || !entId) { toast('Fill all fields', 'error'); return; }
+    try {
+      await api('POST', `/api/admin/users/${userId}/entity-permissions`, {
+        entity_type: entType, entity_id: parseInt(entId), permission: perm
+      });
+      toast('Permission added');
+      adminEpLoadPerms();
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function _adminEpRemove(userId, permId) {
+    if (!confirm('Remove this permission?')) return;
+    try {
+      await api('DELETE', `/api/admin/users/${userId}/entity-permissions/${permId}`);
+      toast('Permission removed');
+      adminEpLoadPerms();
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  // ── Admin: Permissions tab ────────────────────────────────
+  async function adminPermLoadMembers() {
+    const projId = $('admin-perm-project')?.value;
+    const userSelect = $('admin-perm-user');
+    if (!projId || !userSelect) return;
+    try {
+      const members = await api('GET', `/api/admin/projects/${projId}/members`);
+      userSelect.innerHTML = '<option value="">-- Select user --</option>' +
+        (members || []).map(m => `<option value="${m.user_id}">${esc(m.nickname)} (${m.role})</option>`).join('');
+    } catch (e) { console.warn('Failed to load members:', e); }
+  }
+
+  async function adminPermLoadPerms() {
+    const projId = $('admin-perm-project')?.value;
+    const userId = $('admin-perm-user')?.value;
+    const grid = $('admin-perm-grid');
+    if (!projId || !userId || !grid) return;
+    try {
+      const perms = await api('GET', `/api/admin/projects/${projId}/members/${userId}/permissions`);
+      const modules = perms.modules || {};
+      grid.innerHTML = Object.entries(modules).map(([mod, p]) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:.4rem .5rem;border-bottom:1px solid var(--border)">
+          <span style="font-size:.75rem;font-weight:600">${esc(mod)}</span>
+          <span style="font-size:.7rem;color:${p.can_edit ? 'var(--green)' : 'var(--text-4)'}">${p.can_edit ? 'Read/Write' : 'Read Only'}</span>
+        </div>`).join('') || '<div style="color:var(--text-4);padding:.5rem">No module permissions found</div>';
+    } catch (e) { grid.innerHTML = '<div style="color:#EF4444">Error loading permissions</div>'; }
+  }
+
+  // ── Admin: Access Logs ────────────────────────────────────
+  async function adminLoadAccessLogs() {
+    const grid = $('admin-logs-list');
+    if (!grid) return;
+    const userId = $('admin-logs-user')?.value || '';
+    const date = $('admin-logs-date')?.value || '';
+    let url = '/api/admin/access-logs?limit=100';
+    if (userId) url += `&user_id=${userId}`;
+    if (date) url += `&date=${date}`;
+    try {
+      const resp = await api('GET', url);
+      const logs = resp.logs || resp || [];
+      if (!logs.length) {
+        grid.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;padding:.5rem">No access logs found</div>';
+        return;
+      }
+      grid.innerHTML = `<table class="budget-table" style="font-size:.7rem"><thead><tr>
+        <th>Time</th><th>User</th><th>Endpoint</th><th>Method</th><th>Status</th><th>IP</th>
+      </tr></thead><tbody>${logs.map(l => `<tr>
+        <td>${l.created_at || ''}</td>
+        <td>${l.user_id || ''}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(l.endpoint || '')}</td>
+        <td>${esc(l.method || '')}</td>
+        <td>${l.status_code || ''}</td>
+        <td>${esc(l.ip_address || '')}</td>
+      </tr>`).join('')}</tbody></table>`;
+    } catch (e) {
+      grid.innerHTML = '<div style="color:#EF4444">Error loading access logs</div>';
+    }
+  }
+
+  function adminExportAccessLogs() {
+    authDownload('/api/admin/access-logs/export-csv');
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13246,6 +13709,18 @@ const App = (() => {
     openShortcutsPanel, closeShortcutsPanel,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
+    // Missing handlers (P1 fix 2026-04-10)
+    toggleMobileMenu,
+    toggleNotifPanel, closeNotifPanel, markAllNotificationsRead, _onNotifClick,
+    toggleActivityPanel, closeActivityPanel, loadActivity, loadMoreActivity,
+    closeCommentsPanel, submitComment, handleCommentKeydown,
+    closeExportDateModal, exportDateShortcut, confirmExportDate,
+    saveFunction, autoFillTides,
+    _toggleFabMenu, onPriceOverrideChange,
+    adminShowSaveTemplate, _adminDeleteTemplate,
+    adminEpLoadPerms, adminEpAdd, _adminEpRemove,
+    adminPermLoadMembers, adminPermLoadPerms,
+    adminLoadAccessLogs, adminExportAccessLogs,
     init,
   };
 })();
