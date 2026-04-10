@@ -1,23 +1,27 @@
 # CHANGELOG — ShootLogix
 
-## 2026-04-10 — [P0] Fix Checklist tab — completely broken due to undefined state reference
+## 2026-04-10 — [P0] Fix Checklist tab completely broken — wrong state variable + transaction bug
 
-**Problem**: The Checklist tab was completely non-functional. Clicking the tab, generating a checklist, and toggling checklist items all silently failed — no data loaded, no error shown.
+**Problem**: The Checklist tab was entirely non-functional. Clicking it, generating a checklist, or toggling checklist items all silently did nothing.
 
-**Root cause**: All 3 checklist functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) referenced `state.production` which was never defined in the state object. The correct property is `state.prodId`. The guard check `if (!state.production) return;` always evaluated to true, causing every function to bail out immediately without making any API call.
+**Root cause**:
+1. The three checklist JS functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) referenced `state.production` and `state.production.id`, but `state.production` was never set anywhere in the app. The rest of the codebase uses `state.prodId`. This caused all three functions to silently bail out at their guard clauses (`if (!state.production) return`).
+2. The backend `generate_daily_checklist()` in `database.py` called `get_daily_checklist()` inside its own `with get_db() as conn:` block. Since `get_daily_checklist()` opens a separate connection, it couldn't see the uncommitted transaction data, causing the generate API to return `null` even though the checklist was successfully created.
 
-**Fix**: `static/app-monolith.js` (lines 13032, 13034, 13044, 13046, 13053, 13055) — replaced all 6 occurrences of `state.production` / `state.production.id` with `state.prodId`.
+**Fix**:
+- `static/app-monolith.js`: Replaced all 6 occurrences of `state.production` / `state.production.id` with `state.prodId` in the three checklist functions.
+- `database.py`: Moved the `return get_daily_checklist(prod_id, date)` call outside the `with get_db() as conn:` block so the transaction commits before the read query.
 
 **Verification**:
-- Checklist tab now loads and displays items when navigated to
-- Generate button creates a checklist with 94 items (boats + labour + locations) for today's date
-- Toggling individual checklist items works (checked state persists)
-- All other tabs still work (no regressions)
-- JS syntax check passes (balanced braces, parens, brackets)
+- Checklist tab now loads and shows "No items. Click Generate" on fresh date.
+- Generate button creates checklist with 96 items from current assignments.
+- Checking/unchecking items persists correctly.
+- All other tabs (Dashboard, PDT, Boats, Locations, Transport, Fuel, FNB, Budget) continue working — no regressions.
+- JS syntax check passes.
 
 **Branch**: fix/2026-04-10-checklist-tab-broken-state-ref
 **Side effects**: None
-**Next priority**: P1 — Picture Boats and Security Boats empty lists (data model issue: all boats stored in main boats table with category "picture", separate picture_boats/security_boats tables are empty)
+**Next priority**: P1 — Picture Boats and Security Boats empty lists (data model mismatch)
 
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
