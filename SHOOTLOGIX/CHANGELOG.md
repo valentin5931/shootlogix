@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P1] Seed picture boats and security boats data
+
+**Problem**: Picture Boats and Security Boats sub-tabs in the Fleet section showed empty lists ("No picture boats" / "No security boats"). The API endpoints `/api/productions/1/picture-boats` and `/api/productions/1/security-boats` returned `[]`.
+
+**Root cause**: `_seed_picture_boats()` and `_seed_security_boats()` in `data_loader.py` only created function definitions in `boat_functions` (with context='picture'/'security') but never inserted actual boat records into the `picture_boats` and `security_boats` tables. This contrasts with `_seed_transport()` which correctly seeds both `transport_vehicles` records AND function definitions.
+
+**Fix**:
+- `data_loader.py`: Added `PICTURE_BOAT_DATA` (4 camera boats: PB-01 through PB-04) and `SECURITY_BOAT_DATA` (6 safety boats: SB-01 through SB-06) seed constants
+- Updated `_seed_picture_boats()` to also create boat records in `picture_boats` table (idempotent: skips if boats already exist)
+- Updated `_seed_security_boats()` to also create boat records in `security_boats` table (idempotent: skips if boats already exist)
+- Added `_seed_security_boats(prod_id)` call to the existing-installation bootstrap path (was missing — only called on first-time setup)
+- Added `create_picture_boat` to imports from `database.py`
+
+**Verification**:
+- `/api/productions/1/picture-boats` returns 4 boats (was 0)
+- `/api/productions/1/security-boats` returns 6 boats (was 0)
+- Regular fleet unaffected (46 boats)
+- CRUD operations (create/delete) work for both picture and security boats
+- Idempotent: restart does not duplicate data
+- All 45 tests pass
+
+**Branch**: fix/2026-04-10-seed-picture-security-boats
+**Side effects**: None
+**Next priority**: Remaining P1 issues — empty Transport/Helpers/Guards/Fuel lists; form validation gaps; error handling improvements
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
