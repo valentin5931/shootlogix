@@ -1,5 +1,38 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P0] Fix 4 broken Admin panel tabs (Templates, Permissions, Entity Access, Access Logs)
+
+**Problem**: The Admin panel has 7 tabs but only 3 worked (Users, Projects, Members). Clicking Templates crashed with a JS error (`_adminLoadTemplates is not defined`). Clicking Permissions, Entity Access, or Access Logs showed blank panels because `adminSetTab()` had no handlers for them. Additionally, the Access Logs backend query referenced a non-existent `auth_users` table (correct table is `users`), causing a 500 error.
+
+**Root cause**:
+- The HTML template and backend routes for all 4 tabs were fully implemented (in `index.html` and `auth/admin_routes.py`), but the frontend JS functions to load data and render content were never written in `app-monolith.js`.
+- `adminSetTab()` only handled `users`, `projects`, `invitations`, and `templates` — but `_adminLoadTemplates()` was never defined, and `permissions`, `entity-permissions`, `access-logs` had no case at all.
+- The Access Logs endpoint in `admin_routes.py` used `LEFT JOIN auth_users` but the table is named `users`.
+
+**Fix**:
+- `static/app-monolith.js`:
+  - Added `_adminLoadTemplates()`, `_renderAdminTemplates()`, `adminShowSaveTemplate()`, `adminDeleteTemplate()` — Templates tab now lists, creates, and deletes production templates
+  - Added `_adminLoadPermissions()`, `adminPermLoadMembers()`, `adminPermLoadPerms()`, `adminPermSave()` — Permissions tab now shows RBAC V2 permission grid per user/project with save
+  - Added `_adminLoadEntityPermissions()`, `adminEpLoadPerms()`, `adminEpAdd()`, `adminEpDelete()` — Entity Access tab now lists/adds/removes entity-level permissions
+  - Added `_adminLoadAccessLogs()`, `adminLoadAccessLogs()`, `adminLogsPage()`, `adminExportAccessLogs()` — Access Logs tab now shows paginated logs with filters and CSV export
+  - Updated `adminSetTab()` to dispatch to the 4 new tab handlers
+  - Added `save-template` case in `adminModalConfirm()`
+  - Exported all new functions in the `App` object
+- `auth/admin_routes.py`: Changed `LEFT JOIN auth_users` to `LEFT JOIN users` in both access log queries
+
+**Verification**:
+- All 4 admin tabs now load data when clicked (no JS errors)
+- Templates: list/save/delete confirmed via API
+- Permissions: RBAC V2 grid renders correctly with all 11 modules
+- Entity Access: list/add/remove entity permissions works
+- Access Logs: paginated listing works, 63 log entries found, CSV export link functional
+- All 45 existing tests still pass
+- JS brace balance verified (15476/15476)
+
+**Branch**: fix/2026-04-10-admin-panel-missing-tabs
+**Side effects**: None
+**Next priority**: P1 — Empty data for Picture Boats/Security Boats/Transport/Labour/Guards (data seeding or migration issue)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

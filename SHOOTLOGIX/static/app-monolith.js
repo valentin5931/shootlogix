@@ -12591,6 +12591,9 @@ const App = (() => {
     else if (tab === 'projects') _adminLoadProjects();
     else if (tab === 'invitations') _adminLoadInvitations();
     else if (tab === 'templates') _adminLoadTemplates();
+    else if (tab === 'permissions') _adminLoadPermissions();
+    else if (tab === 'entity-permissions') _adminLoadEntityPermissions();
+    else if (tab === 'access-logs') _adminLoadAccessLogs();
   }
 
   async function _adminLoadUsers() {
@@ -12795,6 +12798,16 @@ const App = (() => {
         await api('PUT', `/api/admin/users/${userId}/password`, { password });
         toast('Password reset');
         adminCloseModal();
+      } else if (_adminModalAction === 'save-template') {
+        const prodId = $('adm-tpl-project')?.value;
+        const name = $('adm-tpl-name')?.value?.trim();
+        if (!prodId || !name) { toast('Project and name are required', 'error'); return; }
+        await api('POST', '/api/admin/templates', {
+          production_id: parseInt(prodId), name, description: $('adm-tpl-desc')?.value?.trim() || ''
+        });
+        toast(`Template '${name}' saved`);
+        adminCloseModal();
+        _adminLoadTemplates();
       } else if (_adminModalAction === 'rename-project') {
         const { projId } = _adminModalData;
         const name = $('adm-rename')?.value?.trim();
@@ -12876,6 +12889,372 @@ const App = (() => {
       await api('DELETE', `/api/admin/projects/${projId}/members/${userId}`);
       toast(`'${nickname}' removed`);
       adminLoadMembers();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ── Admin: Templates (AXE 10.1) ──────────────────────────────
+
+  let _adminTemplates = [];
+
+  async function _adminLoadTemplates() {
+    try {
+      _adminTemplates = await api('GET', '/api/admin/templates');
+      _renderAdminTemplates();
+    } catch (e) { toast('Failed to load templates: ' + e.message, 'error'); }
+  }
+
+  function _renderAdminTemplates() {
+    const el = $('admin-templates-list');
+    if (!el) return;
+    if (!_adminTemplates.length) {
+      el.innerHTML = '<p style="color:var(--text-3)">No templates saved yet. Use "Save Current as Template" to create one from an existing project.</p>';
+      return;
+    }
+    let html = '<table class="admin-table"><thead><tr><th>Name</th><th>Description</th><th>Created</th><th>By</th><th>Actions</th></tr></thead><tbody>';
+    for (const t of _adminTemplates) {
+      html += `<tr>
+        <td><strong>${esc(t.name)}</strong></td>
+        <td>${esc(t.description || '')}</td>
+        <td>${esc((t.created_at || '').slice(0, 10))}</td>
+        <td>${esc(t.creator_nickname || '')}</td>
+        <td class="admin-actions">
+          <button class="btn-danger-sm" onclick="App.adminDeleteTemplate(${t.id}, '${esc(t.name)}')">Delete</button>
+        </td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }
+
+  function adminShowSaveTemplate() {
+    _adminModalAction = 'save-template';
+    $('admin-modal-title').textContent = 'Save Production as Template';
+    // Load projects for dropdown
+    const projOpts = (state.productions || [state.production]).filter(Boolean)
+      .map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    $('admin-modal-body').innerHTML = `
+      <div class="form-group"><label class="form-label">Source Project</label>
+        <select id="adm-tpl-project" class="form-control">${projOpts}</select></div>
+      <div class="form-group"><label class="form-label">Template Name</label>
+        <input type="text" id="adm-tpl-name" class="form-control" placeholder="e.g. Standard TV Show"></div>
+      <div class="form-group"><label class="form-label">Description (optional)</label>
+        <input type="text" id="adm-tpl-desc" class="form-control" placeholder="Brief description"></div>
+    `;
+    $('admin-modal-ok').textContent = 'Save Template';
+    $('admin-modal-overlay').classList.remove('hidden');
+  }
+
+  async function adminDeleteTemplate(templateId, name) {
+    if (!confirm(`Delete template '${name}'? This cannot be undone.`)) return;
+    try {
+      await api('DELETE', `/api/admin/templates/${templateId}`);
+      toast(`Template '${name}' deleted`);
+      _adminLoadTemplates();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ── Admin: Permissions (RBAC V2) ────────────────────────────
+
+  let _adminPermModules = {};
+  let _adminPermGlobal = {};
+
+  async function _adminLoadPermissions() {
+    try {
+      if (!_adminProjects || !_adminProjects.length) {
+        _adminProjects = await api('GET', '/api/admin/projects');
+      }
+      const sel = $('admin-perm-project');
+      if (sel && !sel.options.length) {
+        sel.innerHTML = _adminProjects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+      }
+      await adminPermLoadMembers();
+    } catch (e) { toast('Failed to load permissions: ' + e.message, 'error'); }
+  }
+
+  async function adminPermLoadMembers() {
+    const projSel = $('admin-perm-project');
+    const userSel = $('admin-perm-user');
+    if (!projSel || !projSel.value) return;
+    try {
+      const members = await api('GET', `/api/admin/projects/${projSel.value}/members`);
+      if (userSel) {
+        userSel.innerHTML = '<option value="">-- Select user --</option>' +
+          members.map(m => `<option value="${m.user_id}">${esc(m.nickname)} (${m.role})</option>`).join('');
+      }
+      $('admin-perm-grid').innerHTML = '<p style="color:var(--text-3)">Select a user to view/edit permissions.</p>';
+    } catch (e) { toast('Failed to load members: ' + e.message, 'error'); }
+  }
+
+  async function adminPermLoadPerms() {
+    const projSel = $('admin-perm-project');
+    const userSel = $('admin-perm-user');
+    const grid = $('admin-perm-grid');
+    if (!projSel?.value || !userSel?.value || !grid) return;
+    try {
+      const data = await api('GET', `/api/admin/projects/${projSel.value}/members/${userSel.value}/permissions`);
+      if (data.is_admin) {
+        grid.innerHTML = '<p style="color:var(--text-3)">Admin users have full access — no configurable permissions.</p>';
+        return;
+      }
+      _adminPermModules = data.modules || {};
+      _adminPermGlobal = data.global || {};
+      const allModules = data.all_modules || Object.keys(_adminPermModules);
+
+      let html = '<table class="admin-table" style="font-size:.8rem"><thead><tr><th>Module</th><th>Access</th><th>Export</th><th>Import</th><th>Money Read</th><th>Money Write</th></tr></thead><tbody>';
+      for (const mod of allModules) {
+        const p = _adminPermModules[mod] || { access: 'none', can_export: false, can_import: false, money_read: false, money_write: false };
+        html += `<tr>
+          <td><strong>${esc(mod)}</strong></td>
+          <td><select data-mod="${mod}" data-field="access" class="form-control" style="font-size:.75rem;padding:.2rem" onchange="App.adminPermChanged()">
+            <option value="none" ${p.access === 'none' ? 'selected' : ''}>None</option>
+            <option value="read" ${p.access === 'read' ? 'selected' : ''}>Read</option>
+            <option value="write" ${p.access === 'write' ? 'selected' : ''}>Write</option>
+          </select></td>
+          <td><input type="checkbox" data-mod="${mod}" data-field="can_export" ${p.can_export ? 'checked' : ''} onchange="App.adminPermChanged()"></td>
+          <td><input type="checkbox" data-mod="${mod}" data-field="can_import" ${p.can_import ? 'checked' : ''} onchange="App.adminPermChanged()"></td>
+          <td><input type="checkbox" data-mod="${mod}" data-field="money_read" ${p.money_read ? 'checked' : ''} onchange="App.adminPermChanged()"></td>
+          <td><input type="checkbox" data-mod="${mod}" data-field="money_write" ${p.money_write ? 'checked' : ''} onchange="App.adminPermChanged()"></td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+
+      // Global permissions
+      html += `<div style="margin-top:1rem;padding:.5rem;background:var(--bg-2);border-radius:6px">
+        <strong style="font-size:.8rem">Global Permissions</strong>
+        <div style="display:flex;gap:1rem;margin-top:.3rem">
+          <label style="font-size:.8rem"><input type="checkbox" id="admin-perm-lock" ${_adminPermGlobal.can_lock_unlock ? 'checked' : ''} onchange="App.adminPermChanged()"> Can lock/unlock</label>
+          <label style="font-size:.8rem"><input type="checkbox" id="admin-perm-history" ${_adminPermGlobal.can_view_history ? 'checked' : ''} onchange="App.adminPermChanged()"> Can view history</label>
+        </div>
+      </div>`;
+      html += '<div style="margin-top:.75rem"><button class="btn btn-primary btn-sm" onclick="App.adminPermSave()">Save Permissions</button></div>';
+      grid.innerHTML = html;
+    } catch (e) { toast('Failed to load permissions: ' + e.message, 'error'); }
+  }
+
+  function adminPermChanged() { /* No-op — just marks dirty state visually if needed */ }
+
+  async function adminPermSave() {
+    const projSel = $('admin-perm-project');
+    const userSel = $('admin-perm-user');
+    if (!projSel?.value || !userSel?.value) return;
+    const grid = $('admin-perm-grid');
+    if (!grid) return;
+
+    const modules = {};
+    grid.querySelectorAll('select[data-mod]').forEach(sel => {
+      const mod = sel.dataset.mod;
+      if (!modules[mod]) modules[mod] = {};
+      modules[mod].access = sel.value;
+    });
+    grid.querySelectorAll('input[type="checkbox"][data-mod]').forEach(cb => {
+      const mod = cb.dataset.mod;
+      const field = cb.dataset.field;
+      if (!modules[mod]) modules[mod] = {};
+      modules[mod][field] = cb.checked;
+    });
+
+    const globalPerms = {
+      can_lock_unlock: $('admin-perm-lock')?.checked || false,
+      can_view_history: $('admin-perm-history')?.checked || false,
+    };
+
+    try {
+      await api('PUT', `/api/admin/projects/${projSel.value}/members/${userSel.value}/permissions`, {
+        modules, global: globalPerms
+      });
+      toast('Permissions saved');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ── Admin: Entity Permissions (P6.15) ───────────────────────
+
+  let _adminEpPerms = [];
+  let _adminEpValidTypes = [];
+
+  async function _adminLoadEntityPermissions() {
+    try {
+      if (!_adminUsers || !_adminUsers.length) {
+        _adminUsers = await api('GET', '/api/admin/users');
+      }
+      const userSel = $('admin-ep-user');
+      if (userSel && userSel.options.length <= 1) {
+        userSel.innerHTML = '<option value="">-- Select user --</option>' +
+          _adminUsers.filter(u => !u.is_admin).map(u => `<option value="${u.id}">${esc(u.nickname)}</option>`).join('');
+      }
+      $('admin-ep-list').innerHTML = '<p style="color:var(--text-3)">Select a user to view entity permissions.</p>';
+    } catch (e) { toast('Failed to load entity permissions: ' + e.message, 'error'); }
+  }
+
+  async function adminEpLoadPerms() {
+    const userSel = $('admin-ep-user');
+    const typeSel = $('admin-ep-type');
+    const list = $('admin-ep-list');
+    if (!userSel?.value) {
+      if (list) list.innerHTML = '<p style="color:var(--text-3)">Select a user to view entity permissions.</p>';
+      return;
+    }
+    try {
+      const entityType = typeSel?.value || '';
+      const url = `/api/admin/users/${userSel.value}/entity-permissions` + (entityType ? `?entity_type=${entityType}` : '');
+      const data = await api('GET', url);
+      _adminEpPerms = data.permissions || [];
+      _adminEpValidTypes = data.valid_entity_types || [];
+
+      // Populate type filter and add-form type if not yet done
+      if (typeSel && typeSel.options.length <= 1 && _adminEpValidTypes.length) {
+        typeSel.innerHTML = '<option value="">All types</option>' +
+          _adminEpValidTypes.map(t => `<option value="${t}">${esc(t)}</option>`).join('');
+      }
+      const addTypeSel = $('admin-ep-add-type');
+      if (addTypeSel && addTypeSel.options.length === 0 && _adminEpValidTypes.length) {
+        addTypeSel.innerHTML = _adminEpValidTypes.map(t => `<option value="${t}">${esc(t)}</option>`).join('');
+      }
+
+      // Show add form
+      const addForm = $('admin-ep-add-form');
+      if (addForm) addForm.classList.remove('hidden');
+
+      if (!_adminEpPerms.length) {
+        list.innerHTML = '<p style="color:var(--text-3)">No entity-level restrictions. User has full access based on their role.</p>';
+        return;
+      }
+
+      let html = '<table class="admin-table" style="font-size:.8rem"><thead><tr><th>Entity Type</th><th>Entity ID</th><th>Permission</th><th>Actions</th></tr></thead><tbody>';
+      for (const p of _adminEpPerms) {
+        html += `<tr>
+          <td>${esc(p.entity_type)}</td>
+          <td>${p.entity_id}</td>
+          <td><span class="badge badge-${p.permission}">${esc(p.permission)}</span></td>
+          <td class="admin-actions"><button class="btn-danger-sm" onclick="App.adminEpDelete(${userSel.value}, ${p.id})">Remove</button></td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+      list.innerHTML = html;
+    } catch (e) { toast('Failed to load entity permissions: ' + e.message, 'error'); }
+  }
+
+  async function adminEpAdd() {
+    const userSel = $('admin-ep-user');
+    if (!userSel?.value) { toast('Select a user first', 'error'); return; }
+    const entityType = $('admin-ep-add-type')?.value;
+    const entityId = $('admin-ep-add-id')?.value;
+    const permission = $('admin-ep-add-perm')?.value || 'read';
+    if (!entityType || !entityId) { toast('Entity type and ID are required', 'error'); return; }
+    try {
+      await api('POST', `/api/admin/users/${userSel.value}/entity-permissions`, {
+        entity_type: entityType, entity_id: parseInt(entityId), permission
+      });
+      toast('Entity permission added');
+      adminEpLoadPerms();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function adminEpDelete(userId, permId) {
+    if (!confirm('Remove this entity permission?')) return;
+    try {
+      await api('DELETE', `/api/admin/users/${userId}/entity-permissions/${permId}`);
+      toast('Entity permission removed');
+      adminEpLoadPerms();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ── Admin: Access Logs (P6.14) ──────────────────────────────
+
+  let _adminLogsPage = 0;
+  const _LOGS_PER_PAGE = 50;
+
+  async function _adminLoadAccessLogs() {
+    try {
+      if (!_adminUsers || !_adminUsers.length) {
+        _adminUsers = await api('GET', '/api/admin/users');
+      }
+      const userSel = $('admin-logs-user');
+      if (userSel && userSel.options.length <= 1) {
+        userSel.innerHTML = '<option value="">All users</option>' +
+          _adminUsers.map(u => `<option value="${u.id}">${esc(u.nickname)}</option>`).join('');
+      }
+      _adminLogsPage = 0;
+      await adminLoadAccessLogs();
+    } catch (e) { toast('Failed to load access logs: ' + e.message, 'error'); }
+  }
+
+  async function adminLoadAccessLogs() {
+    const list = $('admin-logs-list');
+    const pagination = $('admin-logs-pagination');
+    if (!list) return;
+
+    const userId = $('admin-logs-user')?.value || '';
+    const date = $('admin-logs-date')?.value || '';
+    const endpoint = $('admin-logs-endpoint')?.value || '';
+
+    let url = `/api/admin/access-logs?limit=${_LOGS_PER_PAGE}&offset=${_adminLogsPage * _LOGS_PER_PAGE}`;
+    if (userId) url += `&user_id=${userId}`;
+    if (date) url += `&date=${date}`;
+    if (endpoint) url += `&endpoint=${encodeURIComponent(endpoint)}`;
+
+    try {
+      const data = await api('GET', url);
+      const logs = data.logs || [];
+      const total = data.total || 0;
+
+      if (!logs.length) {
+        list.innerHTML = '<p style="color:var(--text-3)">No access logs found.</p>';
+        if (pagination) pagination.innerHTML = '';
+        return;
+      }
+
+      let html = '<table class="admin-table" style="font-size:.75rem"><thead><tr><th>Time</th><th>User</th><th>Method</th><th>Endpoint</th><th>Status</th><th>IP</th></tr></thead><tbody>';
+      for (const log of logs) {
+        const statusColor = log.status_code >= 400 ? '#EF4444' : log.status_code >= 300 ? '#F59E0B' : '#22C55E';
+        html += `<tr>
+          <td style="white-space:nowrap">${esc((log.timestamp || '').slice(0, 19))}</td>
+          <td>${esc(log.nickname || '?')}</td>
+          <td><span style="font-weight:600">${esc(log.method)}</span></td>
+          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(log.endpoint)}">${esc(log.endpoint)}</td>
+          <td><span style="color:${statusColor};font-weight:600">${log.status_code}</span></td>
+          <td>${esc(log.ip_address || '')}</td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+      list.innerHTML = html;
+
+      // Pagination
+      const totalPages = Math.ceil(total / _LOGS_PER_PAGE);
+      if (pagination && totalPages > 1) {
+        let pHtml = '';
+        if (_adminLogsPage > 0) pHtml += `<button class="btn btn-sm btn-secondary" onclick="App.adminLogsPage(${_adminLogsPage - 1})">Prev</button>`;
+        pHtml += `<span style="font-size:.75rem;color:var(--text-3)">Page ${_adminLogsPage + 1} of ${totalPages} (${total} total)</span>`;
+        if (_adminLogsPage < totalPages - 1) pHtml += `<button class="btn btn-sm btn-secondary" onclick="App.adminLogsPage(${_adminLogsPage + 1})">Next</button>`;
+        pagination.innerHTML = pHtml;
+      } else if (pagination) {
+        pagination.innerHTML = `<span style="font-size:.75rem;color:var(--text-3)">${total} entries</span>`;
+      }
+    } catch (e) { toast('Failed to load logs: ' + e.message, 'error'); }
+  }
+
+  function adminLogsPage(page) {
+    _adminLogsPage = page;
+    adminLoadAccessLogs();
+  }
+
+  async function adminExportAccessLogs() {
+    const userId = $('admin-logs-user')?.value || '';
+    const date = $('admin-logs-date')?.value || '';
+    let url = '/api/admin/access-logs/export-csv?';
+    if (userId) url += `user_id=${userId}&`;
+    if (date) url += `date=${date}&`;
+    try {
+      const resp = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${authState.token}` }
+      });
+      if (!resp.ok) throw new Error('Export failed');
+      const blob = await resp.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `access_logs${date ? '_' + date : ''}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('Access logs exported');
     } catch (e) { toast(e.message, 'error'); }
   }
 
@@ -13221,6 +13600,14 @@ const App = (() => {
     adminResetPassword, adminDeleteUser,
     adminRenameProject, adminArchiveProject,
     adminChangeRole, adminRemoveMember,
+    // Admin: Templates
+    adminShowSaveTemplate, adminDeleteTemplate,
+    // Admin: Permissions (RBAC V2)
+    adminPermLoadMembers, adminPermLoadPerms, adminPermChanged, adminPermSave,
+    // Admin: Entity Permissions (P6.15)
+    adminEpLoadPerms, adminEpAdd, adminEpDelete,
+    // Admin: Access Logs (P6.14)
+    adminLoadAccessLogs, adminLogsPage, adminExportAccessLogs,
     toggleTheme,
     // Dashboard
     renderDashboard,
