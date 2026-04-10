@@ -2,25 +2,28 @@
 
 ## 2026-04-10 — [P0] Fix completely broken Checklist tab
 
-**Problem**: The Checklist tab was entirely non-functional. Loading, generating, and toggling checklist items all silently failed. No data was ever displayed.
+**Problem**: The Checklist tab was entirely non-functional. Loading, generating, and toggling checklist items all silently failed. No data was ever displayed. Additionally, the `generate_daily_checklist` backend function returned `null` on first call for any date.
 
-**Root cause**: Two bugs in `static/app-monolith.js`:
+**Root cause**: Three bugs:
 1. The checklist module referenced `state.production` (never defined) instead of `state.prodId`. All three functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) had `if (!state.production) return;` guards that always returned early, preventing any API calls.
 2. The `_renderChecklist` function used `_esc()` (undefined in this scope) instead of `esc()` to escape item text. Even if the API calls had succeeded, rendering would have crashed with a `ReferenceError`.
+3. `generate_daily_checklist()` in `database.py` called `get_daily_checklist()` at the end, which opens a new SQLite connection. Since SQLite with `journal_mode=DELETE` doesn't support reading uncommitted data from another connection, the newly inserted items were invisible.
 
 **Fix**:
 - `static/app-monolith.js` (lines 13032-13055): Replaced all 6 occurrences of `state.production` / `state.production.id` with `state.prodId`
 - `static/app-monolith.js` (line 13097): Changed `_esc(item.item_text)` to `esc(item.item_text)`
+- `database.py` (line 5785): Replaced the call to `get_daily_checklist(prod_id, date)` with an inline query using the same `conn` object, so newly inserted items are readable within the same transaction.
 
 **Verification**:
 - JS syntax check passes (`node --check`)
-- All 45 backend tests pass
 - Checklist API endpoints return correct data (94 items for today)
-- No remaining references to `state.production` or `_esc()` in app-monolith.js
+- Generate returns items immediately (was `null` before the database.py fix)
+- Toggle checkbox works (HTTP 200)
+- No regressions on any other endpoint
 
 **Branch**: fix/2026-04-10-checklist-tab-broken
 **Side effects**: None
-**Next priority**: P1 items — Picture Boats/Security Boats empty lists, form validation gaps, missing loading states
+**Next priority**: P1 — Picture Boats/Security Boats empty lists, form validation gaps, missing loading states
 
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
