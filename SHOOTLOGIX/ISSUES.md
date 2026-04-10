@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~Fuel entry creation crashes with 500~~ (FIXED 2026-04-10)
+- **Discovered**: 2026-04-10
+- **Fixed**: 2026-04-10 — branch `fix/2026-04-10-fuel-entry-crash-missing-source-type`
+- **Symptoms**: POST to `/api/productions/:id/fuel-entries` without `source_type` or `assignment_id` returned raw 500 HTML error page
+- **Root cause**: `validate_fuel_entry()` didn't validate DB NOT NULL fields `source_type` and `assignment_id`
+- **Fix**: Added validation + global IntegrityError handler
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
@@ -34,6 +41,20 @@
 - **Likely cause**: Guards need to be created separately from guard posts
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
+
+## [P0] No global error handler for unhandled exceptions — raw 500 HTML pages
+- **Discovered**: 2026-04-10
+- **Symptoms**: Any unhandled exception (e.g. IntegrityError) returns a Werkzeug debugger HTML page in dev mode, or a blank 500 in production, instead of a JSON error
+- **Likely cause**: Missing global exception handler; only ValidationError has a handler. IntegrityError handler was added in the 2026-04-10 fix, but other exception types (e.g. OperationalError, TypeError) still lack handlers.
+- **Files involved**: `app.py` (error handlers section)
+- **Estimated effort**: Quick fix — add a generic 500 handler that returns JSON
+
+## [P1] All boats in `boats` table have category='picture' — but picture_boats/security_boats tables are empty
+- **Discovered**: 2026-04-10 (reconfirmed from 2026-03-22)
+- **Symptoms**: 47 boats exist in `boats` table all with category='picture'. The `picture_boats` and `security_boats` tables have 0 rows. Users see empty lists when clicking Picture Boats or Security Boats tabs.
+- **Likely cause**: Original data import put all boats in the main `boats` table regardless of intended category. The separate `picture_boats` and `security_boats` tables were never populated.
+- **Files involved**: `database.py`, `data_loader.py`
+- **Estimated effort**: Medium — needs investigation to determine which boats belong in which table, possibly a migration script
 
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22

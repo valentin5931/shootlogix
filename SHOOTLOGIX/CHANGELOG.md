@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P0] Fix fuel entry creation crash (500 → 422 with validation)
+
+**Problem**: Creating a fuel entry via `POST /api/productions/:id/fuel-entries` without `source_type` or `assignment_id` caused an unhandled `sqlite3.IntegrityError: NOT NULL constraint failed: fuel_entries.source_type`, returning a raw 500 HTML error page instead of a JSON error response.
+
+**Root cause**: `validate_fuel_entry()` in `validation.py` only validated `date`, `liters`, and `fuel_type`, but did not check for `source_type` (NOT NULL in DB) or `assignment_id` (NOT NULL in DB). The validation passed, then the DB INSERT crashed.
+
+**Fix**:
+- `validation.py`: Added `source_type` validation (required, must be one of: boats, picture_boats, security_boats, transport, machinery) and `assignment_id` validation (required) to `validate_fuel_entry()`
+- `app.py`: Added `import sqlite3` and a global `@app.errorhandler(sqlite3.IntegrityError)` handler that returns a proper 422 JSON response instead of a raw 500 — this provides defense-in-depth for any future DB constraint violations across all endpoints
+
+**Verification**:
+- Missing source_type/assignment_id → 422 with clear field-level error messages
+- Invalid source_type enum → 422 with allowed values listed
+- Valid fuel entry creation → 200 with correct data
+- All 45 existing tests pass
+- No regressions on any existing endpoint (boats, shooting-days, locations, transport, dashboard)
+
+**Branch**: fix/2026-04-10-fuel-entry-crash-missing-source-type
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data exists in boats table with category='picture' but picture_boats/security_boats tables have 0 rows)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

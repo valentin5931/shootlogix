@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import os
+import sqlite3
 import tempfile
 import threading
 from flask import Flask, jsonify, request, render_template, abort, Response, g, make_response
@@ -269,6 +270,11 @@ def api_export_download(job_id):
 @app.errorhandler(ValidationError)
 def handle_validation_error(e):
     return jsonify({"error": "Validation failed", "fields": e.errors}), 422
+
+
+@app.errorhandler(sqlite3.IntegrityError)
+def handle_integrity_error(e):
+    return jsonify({"error": "Database constraint violation", "detail": str(e)}), 422
 
 
 def jsonify_cached(data):
