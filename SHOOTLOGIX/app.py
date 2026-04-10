@@ -7890,26 +7890,23 @@ def api_timeline(prod_id):
             })
 
         # --- Locations ---
-        locations = conn.execute("SELECT id, name, site FROM locations WHERE production_id=?", (prod_id,)).fetchall()
+        locations = conn.execute("SELECT id, name, location_type FROM locations WHERE production_id=? AND deleted_at IS NULL", (prod_id,)).fetchall()
         for loc in locations:
             schedules = conn.execute(
-                "SELECT id, date, prep, filming, wrap FROM location_schedules WHERE location_id=?",
+                "SELECT id, date, status FROM location_schedules WHERE location_id=?",
                 (loc['id'],)
             ).fetchall()
             loc_assignments = []
             for s in schedules:
-                phases = []
-                if s['prep']: phases.append('P')
-                if s['filming']: phases.append('F')
-                if s['wrap']: phases.append('W')
-                if phases:
+                phase = (s['status'] or '').upper()
+                if phase:
                     loc_assignments.append({
                         'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
-                        'status': 'confirmed', 'phases': '/'.join(phases)
+                        'status': 'confirmed', 'phases': phase
                     })
             resources.append({
                 'id': f"loc-{loc['id']}", 'name': loc['name'], 'type': 'location', 'group': 'Locations',
-                'subgroup': loc['site'] or 'Location',
+                'subgroup': loc['location_type'] or 'Location',
                 'assignments': loc_assignments
             })
 

@@ -1,5 +1,19 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~Timeline API crash: no such column 'site'~~ FIXED 2026-04-10
+- **Discovered**: 2026-04-10
+- **Fixed**: 2026-04-10 — branch `fix/2026-04-10-timeline-api-crash-site-column`
+- **Symptoms**: `/api/productions/1/timeline` returned 500 error, Timeline tab completely broken
+- **Root cause**: Query referenced non-existent columns (`site` in locations, `prep/filming/wrap` in location_schedules)
+- **Fix**: Updated queries to use actual column names (`location_type`, `status`)
+
+## [P1] Helpers list is empty but helper-assignments exist (73)
+- **Discovered**: 2026-04-10
+- **Symptoms**: `/api/productions/1/helpers` returns `[]` but `/api/productions/1/helper-assignments` returns 73 entries. Labour tab may show empty sidebar.
+- **Likely cause**: Helper assignments were seeded with references to boat_functions but no corresponding helper entities were created in the `helpers` table. The data model expects helpers to be created first, then assigned.
+- **Files involved**: `database.py`, `data_loader.py`, `app.py`
+- **Estimated effort**: Medium — need to create helper entities from existing helper-assignment data or from boat_functions with context='labour'
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

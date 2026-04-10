@@ -1,5 +1,32 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P0] Fix Timeline API crash — invalid column references
+
+**Problem**: The Timeline API endpoint (`/api/productions/:id/timeline`) crashed with a 500 error (`sqlite3.OperationalError`), making the Timeline tab completely non-functional.
+
+**Root cause**: The timeline query in `app.py` referenced two non-existent columns:
+1. `site` in the `locations` table (should be `location_type`)
+2. `prep`, `filming`, `wrap` in the `location_schedules` table (should be `status` — a single column with values like 'P', 'F', 'W')
+
+These queries were written assuming a different schema than what actually exists in the database.
+
+**Fix**:
+- `app.py` line 7893: Changed `SELECT id, name, site FROM locations` to `SELECT id, name, location_type FROM locations WHERE ... AND deleted_at IS NULL`
+- `app.py` line 7896: Changed `SELECT id, date, prep, filming, wrap FROM location_schedules` to `SELECT id, date, status FROM location_schedules`
+- `app.py` lines 7900-7905: Replaced 3-boolean phase logic with single `status` field parsing
+- `app.py` line 7912: Changed `loc['site']` to `loc['location_type']`
+
+**Verification**:
+- Timeline API returns 200 with 81 resources and 32 shooting days
+- Location resources correctly show `location_type` as subgroup (tribal_camp, game, reward)
+- Location schedules correctly mapped from `status` column
+- All other endpoints still return 200 (no regressions)
+- Python syntax check passes
+
+**Branch**: fix/2026-04-10-timeline-api-crash-site-column
+**Side effects**: None
+**Next priority**: P1 — Empty helpers list (0 helpers but 73 helper-assignments exist); Picture Boats and Security Boats still empty
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
