@@ -6264,11 +6264,13 @@ const App = (() => {
     $('bd-delete-btn').classList.remove('hidden');
     $('bd-delete-btn').onclick = () => {
       showConfirm(`Delete vehicle "${v.name}"?`, async () => {
-        await api('DELETE', `/api/transport-vehicles/${vehicleId}`);
-        state.transportVehicles = state.transportVehicles.filter(x => x.id !== vehicleId);
-        closeBoatDetail();
-        renderTbVehicleList();
-        toast('Vehicle deleted');
+        try {
+          await api('DELETE', `/api/transport-vehicles/${vehicleId}`);
+          state.transportVehicles = state.transportVehicles.filter(x => x.id !== vehicleId);
+          closeBoatDetail();
+          renderTbVehicleList();
+          toast('Vehicle deleted');
+        } catch (e) { toast('Error: ' + e.message, 'error'); }
       });
     };
 
@@ -6941,10 +6943,12 @@ const App = (() => {
 
   async function deleteFuelMachinery(id) {
     showConfirm('Delete this machinery row?', async () => {
-      await api('DELETE', `/api/fuel-machinery/${id}`);
-      state.fuelMachinery = (state.fuelMachinery||[]).filter(m => m.id !== id);
-      renderFuelMachineryGrid();
-      toast('Deleted');
+      try {
+        await api('DELETE', `/api/fuel-machinery/${id}`);
+        state.fuelMachinery = (state.fuelMachinery||[]).filter(m => m.id !== id);
+        renderFuelMachineryGrid();
+        toast('Deleted');
+      } catch (e) { toast('Error: ' + e.message, 'error'); }
     });
   }
 
@@ -7177,7 +7181,11 @@ const App = (() => {
 
   function _confirmOk() {
     $('confirm-overlay').classList.add('hidden');
-    if (state.confirmCallback) { state.confirmCallback(); state.confirmCallback = null; }
+    if (state.confirmCallback) {
+      const cb = state.confirmCallback;
+      state.confirmCallback = null;
+      Promise.resolve(cb()).catch(e => toast('Error: ' + (e.message || e), 'error'));
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -7577,11 +7585,13 @@ const App = (() => {
     $('bd-delete-btn').classList.remove('hidden');
     $('bd-delete-btn').onclick = () => {
       showConfirm(`Delete worker "${w.name}"?`, async () => {
-        await api('DELETE', `/api/helpers/${workerId}`);
-        state.labourWorkers = state.labourWorkers.filter(x => x.id !== workerId);
-        closeBoatDetail();
-        renderLabour();
-        toast('Worker deleted');
+        try {
+          await api('DELETE', `/api/helpers/${workerId}`);
+          state.labourWorkers = state.labourWorkers.filter(x => x.id !== workerId);
+          closeBoatDetail();
+          renderLabour();
+          toast('Worker deleted');
+        } catch (e) { toast('Error: ' + e.message, 'error'); }
       });
     };
     const asgns = state.labourAssignments.filter(a => a.helper_id === workerId);
@@ -10514,11 +10524,13 @@ const App = (() => {
     $('bd-delete-btn').classList.remove('hidden');
     $('bd-delete-btn').onclick = () => {
       showConfirm(`Delete guard "${w.name}"?`, async () => {
-        await api('DELETE', `/api/guard-camp-workers/${workerId}`);
-        state.gcWorkers = state.gcWorkers.filter(x => x.id !== workerId);
-        closeBoatDetail();
-        renderGuardCamp();
-        toast('Guard deleted');
+        try {
+          await api('DELETE', `/api/guard-camp-workers/${workerId}`);
+          state.gcWorkers = state.gcWorkers.filter(x => x.id !== workerId);
+          closeBoatDetail();
+          renderGuardCamp();
+          toast('Guard deleted');
+        } catch (e) { toast('Error: ' + e.message, 'error'); }
       });
     };
     const asgns = state.gcAssignments.filter(a => a.helper_id === workerId);

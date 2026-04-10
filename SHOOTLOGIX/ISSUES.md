@@ -1,11 +1,15 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM — RESOLVED
 - **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Resolved**: 2026-03-23 (commit 2a93828, PR #32)
+- **Fix**: Fixed panel stacking and sub-nav injection. Layout height now compensates for sub-nav via `--subnav-bar-h` CSS variable.
+
+## [P1] Unhandled promise rejections in delete operations — RESOLVED
+- **Discovered**: 2026-04-10
+- **Resolved**: 2026-04-10
+- **Symptoms**: 4 delete operations (transport vehicle, fuel machinery, labour worker, guard camp worker) inside showConfirm callbacks had no try/catch. Failed deletes silently removed items from UI but data persisted in DB.
+- **Fix**: Added try/catch to all 4 callbacks + made `_confirmOk()` catch async errors globally.
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
@@ -14,12 +18,13 @@
 - **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
 - **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
 
-## [P1] Transport and Helpers lists are empty
+## [P1] Helpers list is empty (Transport now has 14 vehicles)
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
-- **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+- **Updated**: 2026-04-10 — Transport now has 14 vehicles. Helpers still need user-created data.
+- **Symptoms**: `/api/productions/1/helpers` returns `[]`. No helpers have been created.
+- **Likely cause**: Data needs to be created manually by users through the UI. CRUD endpoints work correctly.
+- **Files involved**: N/A — not a code bug, just no seed data
+- **Estimated effort**: N/A — user action needed
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22

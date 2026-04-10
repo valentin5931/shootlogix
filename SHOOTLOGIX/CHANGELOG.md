@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P1] Fix unhandled promise rejections in delete operations
+
+**Problem**: 4 delete operations (transport vehicle, fuel machinery, labour worker, guard camp worker) inside `showConfirm()` callbacks had no try/catch. Additionally, `_confirmOk()` called async callbacks without handling the returned Promise. When any delete API call failed (network error, 500, etc.), the error was silently swallowed — the UI updated as if the delete succeeded, but the data persisted in the database and reappeared on refresh.
+
+**Root cause**: The `_confirmOk()` function (line 7178) called `state.confirmCallback()` without awaiting or catching the Promise. Plus 4 out of 22 `showConfirm` async callbacks were missing try/catch blocks (transport detail delete, fuel machinery delete, labour detail delete, guard detail delete).
+
+**Fix**:
+- `static/app-monolith.js`: Modified `_confirmOk()` to wrap the callback invocation in `Promise.resolve(cb()).catch(...)` so unhandled rejections from ANY async confirmCallback are caught and displayed as toast errors.
+- Added try/catch blocks to the 4 showConfirm callbacks that were missing them (lines ~6266, ~6943, ~7579, ~10516).
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- All 45 pytest tests pass (no regressions)
+- App starts and responds correctly (health, boats, dashboard all OK)
+- All 22 showConfirm callbacks now have try/catch
+- `_confirmOk()` now catches async errors and shows user-facing toast
+
+**Branch**: fix/2026-04-10-unhandled-promise-delete-callbacks
+**Side effects**: None
+**Next priority**: P1 — Remaining UX issues: missing loading states, form validation gaps, or mobile responsiveness issues
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
