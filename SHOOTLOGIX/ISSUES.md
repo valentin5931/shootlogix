@@ -1,5 +1,19 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~Daily report PDF endpoint crashes with 500~~ FIXED 2026-04-10
+- **Discovered**: 2026-04-10
+- **Fixed**: 2026-04-10 (branch: fix/2026-04-10-daily-report-crash)
+- **Symptoms**: `GET /api/productions/<id>/reports/daily?date=<any>` returned 500 with `AttributeError: 'str' object has no attribute 'get'`
+- **Root cause**: `api_alerts()` returns `{"alerts": [...], "count": N}` but the daily report code iterated over the dict keys instead of the alerts list
+- **Fix**: Extract `alerts_data.get("alerts", [])` before iterating
+
+## [P1] json.loads() calls in alerts endpoint lack error handling
+- **Discovered**: 2026-04-10
+- **Symptoms**: If any assignment has malformed JSON in `day_overrides`, the `/api/productions/<id>/alerts` endpoint will crash with 500
+- **Likely cause**: `json.loads(asgn.get("day_overrides") or "{}")` at lines ~6740 and ~6819 in `app.py` have no try/except
+- **Files involved**: `app.py` (api_alerts function), also `_assignment_active_on_date` helper
+- **Estimated effort**: Quick fix — wrap in try/except with fallback `overrides = {}`
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
