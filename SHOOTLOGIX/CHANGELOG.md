@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P0] Fix completely broken Checklist tab
+
+**Problem**: The Checklist tab was entirely non-functional. Loading, generating, and toggling checklist items all silently failed. No data was ever displayed.
+
+**Root cause**: Two bugs in `static/app-monolith.js`:
+1. The checklist module referenced `state.production` (never defined) instead of `state.prodId`. All three functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) had `if (!state.production) return;` guards that always returned early, preventing any API calls.
+2. The `_renderChecklist` function used `_esc()` (undefined in this scope) instead of `esc()` to escape item text. Even if the API calls had succeeded, rendering would have crashed with a `ReferenceError`.
+
+**Fix**:
+- `static/app-monolith.js` (lines 13032-13055): Replaced all 6 occurrences of `state.production` / `state.production.id` with `state.prodId`
+- `static/app-monolith.js` (line 13097): Changed `_esc(item.item_text)` to `esc(item.item_text)`
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- All 45 backend tests pass
+- Checklist API endpoints return correct data (94 items for today)
+- No remaining references to `state.production` or `_esc()` in app-monolith.js
+
+**Branch**: fix/2026-04-10-checklist-tab-broken
+**Side effects**: None
+**Next priority**: P1 items — Picture Boats/Security Boats empty lists, form validation gaps, missing loading states
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
