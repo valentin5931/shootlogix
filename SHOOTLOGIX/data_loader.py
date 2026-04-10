@@ -221,10 +221,14 @@ def _compute_shootlogix_total(prod_id):
 # ─── Bootstrap ────────────────────────────────────────────────────────────────
 
 PICTURE_BOAT_DATA = [
-    {'name': 'PB-01 YELLOW CAM',  'boat_nr': 1, 'vendor': 'BONGO YACHT CLUB', 'rate': 350, 'group': 'Camera'},
-    {'name': 'PB-02 RED CAM',     'boat_nr': 2, 'vendor': 'BONGO YACHT CLUB', 'rate': 350, 'group': 'Camera'},
-    {'name': 'PB-03 NEUTRAL CAM', 'boat_nr': 3, 'vendor': 'BONGO YACHT CLUB', 'rate': 350, 'group': 'Camera'},
-    {'name': 'PB-04 EXILE CAM',   'boat_nr': 4, 'vendor': 'BONGO YACHT CLUB', 'rate': 350, 'group': 'Camera'},
+    {'name': 'PB CAM 1 - YELLOW',  'boat_nr': 1, 'vendor': 'LOCAL FLEET', 'rate': 180, 'group': 'YELLOW'},
+    {'name': 'PB CAM 2 - YELLOW',  'boat_nr': 2, 'vendor': 'LOCAL FLEET', 'rate': 180, 'group': 'YELLOW'},
+    {'name': 'PB CAM 3 - RED',     'boat_nr': 3, 'vendor': 'LOCAL FLEET', 'rate': 180, 'group': 'RED'},
+    {'name': 'PB CAM 4 - RED',     'boat_nr': 4, 'vendor': 'LOCAL FLEET', 'rate': 180, 'group': 'RED'},
+    {'name': 'PB CAM 5 - NEUTRAL', 'boat_nr': 5, 'vendor': 'LOCAL FLEET', 'rate': 180, 'group': 'NEUTRAL'},
+    {'name': 'PB CAM 6 - NEUTRAL', 'boat_nr': 6, 'vendor': 'LOCAL FLEET', 'rate': 180, 'group': 'NEUTRAL'},
+    {'name': 'PB CAM 7 - EXILE',   'boat_nr': 7, 'vendor': 'LOCAL FLEET', 'rate': 180, 'group': 'EXILE'},
+    {'name': 'PB CAM 8 - EXILE',   'boat_nr': 8, 'vendor': 'LOCAL FLEET', 'rate': 180, 'group': 'EXILE'},
 ]
 
 
@@ -236,7 +240,8 @@ def _seed_picture_boats(prod_id):
             (prod_id,)
         ).fetchall()
         existing_boats = conn.execute(
-            "SELECT id FROM picture_boats WHERE production_id=?", (prod_id,)
+            "SELECT id FROM picture_boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
         ).fetchall()
 
     if not existing_funcs:
@@ -474,12 +479,13 @@ SECURITY_BOAT_FUNCS = [
 ]
 
 SECURITY_BOAT_DATA = [
-    {'name': 'SB-01 SAFETY GAMES',   'boat_nr': 1, 'vendor': 'MIRTA DE URRUTIA', 'rate': 400, 'group': 'Safety'},
-    {'name': 'SB-02 SAFETY COUNCIL', 'boat_nr': 2, 'vendor': 'MIRTA DE URRUTIA', 'rate': 400, 'group': 'Safety'},
-    {'name': 'SB-03 SAFETY ARENA',   'boat_nr': 3, 'vendor': 'MIRTA DE URRUTIA', 'rate': 400, 'group': 'Safety'},
-    {'name': 'SB-04 EVAC',           'boat_nr': 4, 'vendor': 'MIRTA DE URRUTIA', 'rate': 500, 'group': 'Evac'},
-    {'name': 'SB-05 MEDICAL',        'boat_nr': 5, 'vendor': 'MIRTA DE URRUTIA', 'rate': 500, 'group': 'Medical'},
-    {'name': 'SB-06 STANDBY',        'boat_nr': 6, 'vendor': 'MIRTA DE URRUTIA', 'rate': 350, 'group': 'Standby'},
+    {'name': 'SB GAMES 1',    'boat_nr': 1, 'vendor': 'LOCAL FLEET', 'rate': 200, 'group': 'SAFETY'},
+    {'name': 'SB GAMES 2',    'boat_nr': 2, 'vendor': 'LOCAL FLEET', 'rate': 200, 'group': 'SAFETY'},
+    {'name': 'SB COUNCIL',    'boat_nr': 3, 'vendor': 'LOCAL FLEET', 'rate': 200, 'group': 'SAFETY'},
+    {'name': 'SB ARENA',      'boat_nr': 4, 'vendor': 'LOCAL FLEET', 'rate': 200, 'group': 'SAFETY'},
+    {'name': 'SB EVAC',       'boat_nr': 5, 'vendor': 'LOCAL FLEET', 'rate': 250, 'group': 'EVAC'},
+    {'name': 'SB MEDICAL',    'boat_nr': 6, 'vendor': 'LOCAL FLEET', 'rate': 250, 'group': 'MEDICAL'},
+    {'name': 'SB STANDBY',    'boat_nr': 7, 'vendor': 'LOCAL FLEET', 'rate': 180, 'group': 'STANDBY'},
 ]
 
 
@@ -491,7 +497,8 @@ def _seed_security_boats(prod_id):
             (prod_id,)
         ).fetchall()
         existing_boats = conn.execute(
-            "SELECT id FROM security_boats WHERE production_id=?", (prod_id,)
+            "SELECT id FROM security_boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
         ).fetchall()
 
     if not existing_funcs:
