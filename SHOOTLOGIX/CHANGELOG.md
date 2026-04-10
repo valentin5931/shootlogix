@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P1] Add confirmation dialogs before assignment deletions
+
+**Problem**: Clicking the red "✕" (Remove) button on any assignment in Boats, Picture Boats, Transport, or Security Boats tabs immediately deleted the assignment without any confirmation prompt. Users could accidentally lose assignment data (date ranges, pricing overrides, day overrides) with a single misclick.
+
+**Root cause**: The 4 `removeAssignmentById` functions (`removeAssignmentById`, `pbRemoveAssignmentById`, `tbRemoveAssignmentById`, `sbRemoveAssignmentById`) all called `api('DELETE', ...)` directly without first asking the user to confirm.
+
+**Fix**: Wrapped each function's delete logic in `showConfirm()` with a descriptive message that includes the function/role name and the assigned boat/vehicle name when available. This matches the pattern already used by other destructive operations in the codebase (e.g., `deleteBoat`, `deleteFunction`, `lbRemoveAssignmentById`).
+
+**Files changed**: `static/app-monolith.js` — 4 functions modified (lines ~2935, ~2954, ~6340, ~8840)
+
+**Verification**:
+- JS syntax check passes (`node -c`)
+- All 45 tests pass
+- Confirmation dialogs now appear for: boat assignments, picture boat assignments, transport assignments, security boat assignments
+- Dialog shows role name and entity name for context (e.g., `Remove assignment "TAXI" (PCC4)?`)
+- Cancel dismisses without deleting; OK proceeds with deletion as before
+
+**Branch**: fix/2026-04-10-missing-assignment-delete-confirmations
+**Side effects**: None
+**Next priority**: P1 — Silent API error handling in Locations/Guards tab data loading (errors swallowed without user feedback)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

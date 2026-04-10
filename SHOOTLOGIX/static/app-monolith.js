@@ -2933,26 +2933,40 @@ const App = (() => {
   }
 
   async function removeAssignmentById(assignmentId) {
-    try {
-      await api('DELETE', `/api/assignments/${assignmentId}`);
-      state.assignments = state.assignments.filter(a => a.id !== assignmentId);
-      closeSchedulePopover();
-      renderBoats();
-      toast('Assignment removed');
-    } catch (e) {
-      toast('Error: ' + e.message, 'error');
-    }
+    const asgn = state.assignments.find(a => a.id === assignmentId);
+    const func = asgn ? state.functions.find(f => f.id === asgn.boat_function_id) : null;
+    const boat = asgn ? state.boats.find(b => b.id === asgn.boat_id) : null;
+    const label = func ? `"${func.name}"` : `#${assignmentId}`;
+    const detail = boat ? ` (${boat.name})` : '';
+    showConfirm(`Remove assignment ${label}${detail}?`, async () => {
+      try {
+        await api('DELETE', `/api/assignments/${assignmentId}`);
+        state.assignments = state.assignments.filter(a => a.id !== assignmentId);
+        closeSchedulePopover();
+        renderBoats();
+        toast('Assignment removed');
+      } catch (e) {
+        toast('Error: ' + e.message, 'error');
+      }
+    });
   }
 
   async function pbRemoveAssignmentById(assignmentId) {
-    try {
-      await api('DELETE', `/api/picture-boat-assignments/${assignmentId}`);
-      state.pictureAssignments = state.pictureAssignments.filter(a => a.id !== assignmentId);
-      renderPictureBoats();
-      toast('Assignment removed');
-    } catch (e) {
-      toast('Error: ' + e.message, 'error');
-    }
+    const asgn = state.pictureAssignments.find(a => a.id === assignmentId);
+    const func = asgn ? (state.pictureFunctions || state.pbFunctions || []).find(f => f.id === asgn.boat_function_id) : null;
+    const boat = asgn ? (state.pictureBoats || []).find(b => b.id === asgn.picture_boat_id) : null;
+    const label = func ? `"${func.name}"` : `#${assignmentId}`;
+    const detail = boat ? ` (${boat.name})` : '';
+    showConfirm(`Remove assignment ${label}${detail}?`, async () => {
+      try {
+        await api('DELETE', `/api/picture-boat-assignments/${assignmentId}`);
+        state.pictureAssignments = state.pictureAssignments.filter(a => a.id !== assignmentId);
+        renderPictureBoats();
+        toast('Assignment removed');
+      } catch (e) {
+        toast('Error: ' + e.message, 'error');
+      }
+    });
   }
 
   // ── Add boat ───────────────────────────────────────────────
@@ -6323,14 +6337,21 @@ const App = (() => {
   }
 
   async function tbRemoveAssignmentById(assignmentId) {
-    try {
-      await api('DELETE', `/api/transport-assignments/${assignmentId}`);
-      state.transportAssignments = state.transportAssignments.filter(a => a.id !== assignmentId);
-      renderTransport();
-      toast('Assignment removed');
-    } catch (e) {
-      toast('Error: ' + e.message, 'error');
-    }
+    const asgn = state.transportAssignments.find(a => a.id === assignmentId);
+    const func = asgn ? (state.transportFunctions || []).find(f => f.id === asgn.boat_function_id) : null;
+    const vehicle = asgn ? (state.transportVehicles || []).find(v => v.id === asgn.vehicle_id) : null;
+    const label = func ? `"${func.name}"` : `#${assignmentId}`;
+    const detail = vehicle ? ` (${vehicle.name})` : '';
+    showConfirm(`Remove assignment ${label}${detail}?`, async () => {
+      try {
+        await api('DELETE', `/api/transport-assignments/${assignmentId}`);
+        state.transportAssignments = state.transportAssignments.filter(a => a.id !== assignmentId);
+        renderTransport();
+        toast('Assignment removed');
+      } catch (e) {
+        toast('Error: ' + e.message, 'error');
+      }
+    });
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -8820,12 +8841,19 @@ const App = (() => {
   }
 
   async function sbRemoveAssignmentById(assignmentId) {
-    try {
-      await api('DELETE', `/api/security-boat-assignments/${assignmentId}`);
-      state.securityAssignments = state.securityAssignments.filter(a => a.id !== assignmentId);
-      renderSecurityBoats();
-      toast('Assignment removed');
-    } catch (e) { toast('Error: ' + e.message, 'error'); }
+    const asgn = state.securityAssignments.find(a => a.id === assignmentId);
+    const func = asgn ? (state.securityFunctions || []).find(f => f.id === asgn.boat_function_id) : null;
+    const boat = asgn ? (state.securityBoats || []).find(b => b.id === asgn.security_boat_id) : null;
+    const label = func ? `"${func.name}"` : `#${assignmentId}`;
+    const detail = boat ? ` (${boat.name})` : '';
+    showConfirm(`Remove assignment ${label}${detail}?`, async () => {
+      try {
+        await api('DELETE', `/api/security-boat-assignments/${assignmentId}`);
+        state.securityAssignments = state.securityAssignments.filter(a => a.id !== assignmentId);
+        renderSecurityBoats();
+        toast('Assignment removed');
+      } catch (e) { toast('Error: ' + e.message, 'error'); }
+    });
   }
 
   async function sbConfirmDeleteFunc(funcId) {
