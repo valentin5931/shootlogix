@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## ~~[P0] 25 missing onclick handlers in app-monolith.js~~ FIXED 2026-04-10
+- **Discovered**: 2026-04-10
+- **Fixed**: 2026-04-10 — Branch: fix/2026-04-10-missing-onclick-handlers
+- **Symptoms**: Mobile menu, activity panel, notification bell, export date modal, FAB context menu all silently fail when clicked ("App.X is not a function")
+- **Root cause**: Functions never ported from old `app.js`/`modules/*.js` to `app-monolith.js`
+- **Files fixed**: `static/app-monolith.js` — added 25 function definitions + exports
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

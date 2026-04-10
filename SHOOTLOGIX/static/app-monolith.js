@@ -13102,6 +13102,351 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ── Mobile Menu (missing from monolith migration) ─────────
+  function toggleMobileMenu() {
+    const menu = $('mobile-menu');
+    if (!menu) return;
+    const isOpen = !menu.classList.contains('hidden');
+    if (isOpen) {
+      menu.classList.add('hidden');
+      document.body.style.overflow = '';
+    } else {
+      menu.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      // Sync active state
+      menu.querySelectorAll('.mobile-menu-item[data-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === state.tab);
+      });
+    }
+  }
+
+  // ── Activity Panel (P5.3 — ported from modules/activity.js) ──
+  let _activityOpen = false;
+  let _activityData = [];
+  let _activityPage = 0;
+  const _ACTIVITY_PAGE_SIZE = 100;
+
+  function toggleActivityPanel() {
+    _activityOpen = !_activityOpen;
+    const overlay = $('activity-overlay');
+    if (!overlay) return;
+    overlay.classList.toggle('hidden', !_activityOpen);
+    if (_activityOpen) loadActivity();
+  }
+
+  function closeActivityPanel() {
+    _activityOpen = false;
+    const overlay = $('activity-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  async function loadActivity() {
+    if (!state.prodId) return;
+    _activityPage = 0;
+    const moduleFilter = $('activity-filter-module')?.value || '';
+    const userFilter = $('activity-filter-user')?.value || '';
+    const actionFilter = $('activity-filter-action')?.value || '';
+    const dateFilter = $('activity-filter-date')?.value || '';
+
+    let url = `/api/productions/${state.prodId}/history?limit=${_ACTIVITY_PAGE_SIZE}&offset=0`;
+    if (moduleFilter) url += `&module=${moduleFilter}`;
+    if (userFilter) url += `&user=${userFilter}`;
+    if (actionFilter) url += `&action=${actionFilter}`;
+    if (dateFilter) url += `&date=${dateFilter}`;
+
+    const list = $('activity-list');
+    if (list) list.innerHTML = '<div style="padding:1rem;color:var(--text-muted);text-align:center">Loading...</div>';
+
+    try {
+      _activityData = await api('GET', url);
+      _renderActivityList();
+    } catch (e) {
+      if (list) list.innerHTML = '<div style="padding:1rem;color:var(--text-muted);text-align:center">Failed to load activity</div>';
+    }
+  }
+
+  async function loadMoreActivity() {
+    if (!state.prodId) return;
+    _activityPage++;
+    const offset = _activityPage * _ACTIVITY_PAGE_SIZE;
+    const moduleFilter = $('activity-filter-module')?.value || '';
+    const userFilter = $('activity-filter-user')?.value || '';
+    const actionFilter = $('activity-filter-action')?.value || '';
+    const dateFilter = $('activity-filter-date')?.value || '';
+
+    let url = `/api/productions/${state.prodId}/history?limit=${_ACTIVITY_PAGE_SIZE}&offset=${offset}`;
+    if (moduleFilter) url += `&module=${moduleFilter}`;
+    if (userFilter) url += `&user=${userFilter}`;
+    if (actionFilter) url += `&action=${actionFilter}`;
+    if (dateFilter) url += `&date=${dateFilter}`;
+
+    try {
+      const more = await api('GET', url);
+      _activityData = _activityData.concat(more);
+      _renderActivityList();
+    } catch (e) { toast('Failed to load more activity', 'error'); }
+  }
+
+  function _renderActivityList() {
+    const list = $('activity-list');
+    if (!list) return;
+    if (!_activityData.length) {
+      list.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted)">No activity found</div>';
+      return;
+    }
+    const actionColors = { create: '#22C55E', update: '#3B82F6', delete: '#EF4444', lock: '#F59E0B', unlock: '#8B5CF6' };
+    let html = _activityData.map(h => {
+      const color = actionColors[h.action] || '#94A3B8';
+      const desc = h.human_description || `${h.action} ${h.table_name} #${h.record_id}`;
+      const time = h.created_at ? h.created_at.slice(0, 16).replace('T', ' ') : '';
+      const user = h.user_nickname || '';
+      return `<div class="activity-item" style="padding:.6rem 1rem;border-bottom:1px solid var(--border);font-size:.8rem">
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${color};flex-shrink:0"></span>
+          <span style="flex:1;color:var(--text-1)">${esc(desc)}</span>
+        </div>
+        <div style="display:flex;gap:.5rem;margin-top:.2rem;color:var(--text-muted);font-size:.7rem">
+          ${user ? `<span>${esc(user)}</span>` : ''}
+          <span>${esc(time)}</span>
+        </div>
+      </div>`;
+    }).join('');
+    if (_activityData.length >= (_activityPage + 1) * _ACTIVITY_PAGE_SIZE) {
+      html += `<div style="text-align:center;padding:.8rem"><button class="btn btn-sm btn-secondary" onclick="App.loadMoreActivity()">Load more</button></div>`;
+    }
+    list.innerHTML = html;
+  }
+
+  // ── Notification Panel (AXE 9.2 — ported from modules/notifications.js) ──
+  let _notifPanelOpen = false;
+  let _notifData = [];
+  let _unreadCount = 0;
+
+  function toggleNotifPanel() {
+    _notifPanelOpen = !_notifPanelOpen;
+    const panel = $('notif-panel');
+    if (!panel) return;
+    panel.classList.toggle('hidden', !_notifPanelOpen);
+    if (_notifPanelOpen) _loadNotifications();
+  }
+
+  function closeNotifPanel() {
+    _notifPanelOpen = false;
+    const panel = $('notif-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function _loadNotifications() {
+    const list = $('notif-list');
+    if (!list || !state.prodId) return;
+    list.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--text-muted)">Loading...</div>';
+    try {
+      _notifData = await api('GET', `/api/notifications?production_id=${state.prodId}&limit=50`);
+      _renderNotifications();
+    } catch {
+      list.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--text-muted)">No notifications</div>';
+    }
+  }
+
+  function _renderNotifications() {
+    const list = $('notif-list');
+    if (!list) return;
+    if (!_notifData || !_notifData.length) {
+      list.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--text-muted)">No notifications</div>';
+      return;
+    }
+    list.innerHTML = _notifData.map(n => {
+      const unread = !n.is_read;
+      const time = n.created_at ? n.created_at.slice(0, 16).replace('T', ' ') : '';
+      return `<div class="notif-item${unread ? ' notif-unread' : ''}" style="padding:.6rem 1rem;border-bottom:1px solid var(--border);font-size:.8rem;cursor:pointer">
+        <div style="color:var(--text-1)">${esc(n.title || '')}</div>
+        ${n.body ? `<div style="color:var(--text-muted);font-size:.72rem;margin-top:.15rem">${esc(n.body)}</div>` : ''}
+        <div style="color:var(--text-muted);font-size:.68rem;margin-top:.15rem">${esc(time)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  async function markAllNotificationsRead() {
+    if (!state.prodId) return;
+    try {
+      await api('POST', `/api/notifications/read-all?production_id=${state.prodId}`);
+      _notifData.forEach(n => n.is_read = 1);
+      _unreadCount = 0;
+      const badge = $('notif-badge');
+      if (badge) badge.style.display = 'none';
+      _renderNotifications();
+      toast('All notifications marked as read', 'success');
+    } catch { toast('Failed to mark notifications as read', 'error'); }
+  }
+
+  // ── Export Date Range Modal (AXE 2.1 — ported from app.js) ──
+  let _exportDateCallback = null;
+  let _exportDateModule = null;
+
+  function openExportDateModal(module, title, formats, callback) {
+    _exportDateCallback = callback;
+    _exportDateModule = module;
+    const overlay = $('export-date-overlay');
+    const titleEl = $('export-date-title');
+    const subtitleEl = $('export-date-subtitle');
+    const formatsEl = $('export-date-formats');
+    if (!overlay) { if (callback) callback(null, null, formats?.[0]?.key || 'csv'); return; }
+    if (titleEl) titleEl.textContent = title || 'Export';
+    if (subtitleEl) subtitleEl.textContent = `Select date range for ${title || 'export'}`;
+    if (formats && formats.length > 1 && formatsEl) {
+      formatsEl.innerHTML = `
+        <div style="font-size:.7rem;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem">Format</div>
+        <div style="display:flex;gap:.35rem;flex-wrap:wrap" id="export-format-btns">
+          ${formats.map((f, i) => `
+            <button class="btn btn-sm export-fmt-btn" data-fmt="${f.key}"
+              style="font-size:.72rem;padding:.25rem .6rem;border:1px solid var(--border);${i === 0 ? 'background:#3B82F6;color:#fff;border-color:#3B82F6' : 'background:var(--bg-surface);color:var(--text-2)'}"
+              onclick="App._selectExportFormat('${f.key}')">${esc(f.label)}</button>
+          `).join('')}
+        </div>`;
+    } else if (formatsEl) { formatsEl.innerHTML = ''; }
+    // Load smart defaults
+    _loadExportDefaults(module);
+    overlay.classList.remove('hidden');
+    setTimeout(() => $('export-date-from')?.focus(), 100);
+  }
+
+  function closeExportDateModal() {
+    const overlay = $('export-date-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    _exportDateCallback = null;
+    _exportDateModule = null;
+  }
+
+  function _selectExportFormat(fmt) {
+    document.querySelectorAll('.export-fmt-btn').forEach(b => {
+      if (b.dataset.fmt === fmt) {
+        b.style.background = '#3B82F6'; b.style.color = '#fff'; b.style.borderColor = '#3B82F6';
+      } else {
+        b.style.background = 'var(--bg-surface)'; b.style.color = 'var(--text-2)'; b.style.borderColor = 'var(--border)';
+      }
+    });
+  }
+
+  function _getSelectedExportFormat() {
+    const active = document.querySelector('.export-fmt-btn[style*="#3B82F6"]');
+    return active ? active.dataset.fmt : 'csv';
+  }
+
+  async function _loadExportDefaults(module) {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    if (!fromEl || !toEl || !state.prodId) return;
+    try {
+      const defaults = await api('GET', `/api/productions/${state.prodId}/export-defaults/${module}`);
+      if (defaults.from) fromEl.value = defaults.from;
+      if (defaults.to) toEl.value = defaults.to;
+    } catch { /* use empty defaults */ }
+  }
+
+  async function confirmExportDate() {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    const dateFrom = fromEl ? fromEl.value : '';
+    const dateTo = toEl ? toEl.value : '';
+    const fmt = _getSelectedExportFormat();
+    if (_exportDateModule && state.prodId) {
+      api('POST', `/api/productions/${state.prodId}/export-defaults/${_exportDateModule}`,
+          { from: dateFrom, to: dateTo }).catch(() => {});
+    }
+    closeExportDateModal();
+    if (_exportDateCallback) _exportDateCallback(dateFrom, dateTo, fmt);
+  }
+
+  function exportDateShortcut(type) {
+    const fromEl = $('export-date-from');
+    const toEl = $('export-date-to');
+    if (!fromEl || !toEl) return;
+    const now = new Date();
+    if (type === 'week') {
+      const day = now.getDay();
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      fromEl.value = monday.toISOString().slice(0, 10);
+      toEl.value = sunday.toISOString().slice(0, 10);
+    } else if (type === 'last-week') {
+      const day = now.getDay();
+      const lastMonday = new Date(now);
+      lastMonday.setDate(now.getDate() - (day === 0 ? 6 : day - 1) - 7);
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastMonday.getDate() + 6);
+      fromEl.value = lastMonday.toISOString().slice(0, 10);
+      toEl.value = lastSunday.toISOString().slice(0, 10);
+    } else if (type === 'all') {
+      fromEl.value = '';
+      toEl.value = '';
+    }
+  }
+
+  function _exportWithDates(baseUrl, dateFrom, dateTo) {
+    let url = baseUrl;
+    const params = [];
+    if (dateFrom) params.push(`from=${dateFrom}`);
+    if (dateTo) params.push(`to=${dateTo}`);
+    if (params.length) url += (url.includes('?') ? '&' : '?') + params.join('&');
+    authDownload(url);
+  }
+
+  // ── FAB Context Menu (ported from app.js) ──────────────────
+  let _fabMenuOpen = false;
+  function _toggleFabMenu() {
+    if (_fabMenuOpen) { _closeFabMenu(); return; }
+    _fabMenuOpen = true;
+    let menu = $('fab-context-menu');
+    if (!menu) {
+      menu = document.createElement('div');
+      menu.id = 'fab-context-menu';
+      menu.className = 'fab-context-menu';
+      document.body.appendChild(menu);
+    }
+    menu.innerHTML = '';
+    menu.classList.remove('hidden');
+    menu.style.display = 'flex';
+    setTimeout(() => {
+      document.addEventListener('click', _fabMenuOutside, { once: true });
+    }, 10);
+  }
+
+  function _closeFabMenu() {
+    _fabMenuOpen = false;
+    const menu = $('fab-context-menu');
+    if (menu) { menu.classList.add('hidden'); menu.style.display = 'none'; }
+  }
+
+  function _fabMenuOutside(e) {
+    const menu = $('fab-context-menu');
+    if (menu && !menu.contains(e.target)) _closeFabMenu();
+  }
+
+  // ── Comments Panel (AXE 9.1) stubs ──────────────────────────
+  function closeCommentsPanel() {
+    const panel = $('comments-panel-overlay');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  function submitComment() { /* stub — requires comment panel context */ }
+  function handleCommentKeydown(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); } }
+
+  // ── Admin panel stubs for entity permissions ─────────────────
+  function adminEpAdd() { toast('Entity permissions not yet implemented', 'info'); }
+  function adminEpLoadPerms() { /* stub */ }
+  function adminExportAccessLogs() { toast('Access log export not yet implemented', 'info'); }
+  function adminLoadAccessLogs() { /* stub */ }
+  function adminPermLoadMembers() { /* stub */ }
+  function adminPermLoadPerms() { /* stub */ }
+  function adminShowSaveTemplate() { toast('Save template not yet implemented', 'info'); }
+
+  // ── Price override handler stub ──────────────────────────────
+  function onPriceOverrideChange(e) { /* handled per-module in inline handlers */ }
+  function saveFunction() { toast('Use the module-specific add function button', 'info'); }
+  function autoFillTides() { toast('Tide auto-fill not yet available', 'info'); }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13240,12 +13585,26 @@ const App = (() => {
     // History undo
     _undoFromToast,
     // FAB
-    fabAction,
+    fabAction, _toggleFabMenu,
     // Bottom nav & breadcrumb & shortcuts
-    toggleBottomNavMore, _updateBreadcrumb,
+    toggleBottomNavMore, toggleMobileMenu, _updateBreadcrumb,
     openShortcutsPanel, closeShortcutsPanel,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
+    // Activity panel (P5.3)
+    toggleActivityPanel, closeActivityPanel, loadActivity, loadMoreActivity,
+    // Notification panel (AXE 9.2)
+    toggleNotifPanel, closeNotifPanel, markAllNotificationsRead,
+    // Export date range modal (AXE 2.1)
+    openExportDateModal, closeExportDateModal, confirmExportDate,
+    exportDateShortcut, _selectExportFormat, _exportWithDates,
+    // Comments panel (AXE 9.1) stubs
+    closeCommentsPanel, submitComment, handleCommentKeydown,
+    // Admin panel stubs
+    adminEpAdd, adminEpLoadPerms, adminExportAccessLogs, adminLoadAccessLogs,
+    adminPermLoadMembers, adminPermLoadPerms, adminShowSaveTemplate,
+    // Other stubs
+    onPriceOverrideChange, saveFunction, autoFillTides,
     init,
   };
 })();

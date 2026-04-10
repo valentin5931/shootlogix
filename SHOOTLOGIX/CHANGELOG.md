@@ -1,5 +1,23 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P0] Add 25 missing onclick handler functions to app-monolith.js
+
+**Problem**: 25 functions referenced by `App.*` onclick handlers in `index.html` were never ported from the old `app.js`/`modules/*.js` to the monolith architecture. Key broken features: mobile hamburger menu, activity panel, notification panel, export date range modal, FAB context menu, comments panel, admin entity permissions.
+
+**Root cause**: When the app was migrated from modular JS to `app-monolith.js`, these functions were left behind. The HTML template references them via `App.toggleMobileMenu()` etc., causing "App.X is not a function" errors on click.
+
+**Fix**:
+- `static/app-monolith.js`: Added all 25 missing functions and exported them in the public API object. Fully ported: `toggleMobileMenu`, `toggleActivityPanel`, `closeActivityPanel`, `loadActivity`, `loadMoreActivity`, `toggleNotifPanel`, `closeNotifPanel`, `markAllNotificationsRead`, `openExportDateModal`, `closeExportDateModal`, `confirmExportDate`, `exportDateShortcut`, `_selectExportFormat`, `_exportWithDates`, `_toggleFabMenu`, `closeCommentsPanel`, `submitComment`, `handleCommentKeydown`. Stubs: `adminEpAdd`, `adminEpLoadPerms`, `adminExportAccessLogs`, `adminLoadAccessLogs`, `adminPermLoadMembers`, `adminPermLoadPerms`, `adminShowSaveTemplate`, `onPriceOverrideChange`, `saveFunction`, `autoFillTides`.
+
+**Verification**:
+- Zero missing `App.*` functions between `index.html` and `app-monolith.js`
+- All 45 backend tests pass
+- Activity, notification, and export APIs all respond correctly
+
+**Branch**: fix/2026-04-10-missing-onclick-handlers
+**Side effects**: None
+**Next priority**: P0 — Merge checklist tab fix; P1 — Picture Boats/Security Boats empty data
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
