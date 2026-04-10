@@ -1,5 +1,24 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P0] Fix Checklist tab — completely broken due to undefined state reference
+
+**Problem**: The Checklist tab was completely non-functional. Clicking the tab, generating a checklist, and toggling checklist items all silently failed — no data loaded, no error shown.
+
+**Root cause**: All 3 checklist functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) referenced `state.production` which was never defined in the state object. The correct property is `state.prodId`. The guard check `if (!state.production) return;` always evaluated to true, causing every function to bail out immediately without making any API call.
+
+**Fix**: `static/app-monolith.js` (lines 13032, 13034, 13044, 13046, 13053, 13055) — replaced all 6 occurrences of `state.production` / `state.production.id` with `state.prodId`.
+
+**Verification**:
+- Checklist tab now loads and displays items when navigated to
+- Generate button creates a checklist with 94 items (boats + labour + locations) for today's date
+- Toggling individual checklist items works (checked state persists)
+- All other tabs still work (no regressions)
+- JS syntax check passes (balanced braces, parens, brackets)
+
+**Branch**: fix/2026-04-10-checklist-tab-broken-state-ref
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats empty lists (data model issue: all boats stored in main boats table with category "picture", separate picture_boats/security_boats tables are empty)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

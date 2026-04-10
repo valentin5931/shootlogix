@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] Checklist tab completely broken — FIXED 2026-04-10
+- **Discovered**: 2026-04-10
+- **Symptoms**: Checklist tab shows empty content. Generate button does nothing. Toggling items does nothing. No errors shown to user.
+- **Root cause**: `loadChecklist()`, `generateChecklist()`, and `toggleChecklistItem()` all used `state.production` (undefined) instead of `state.prodId`. The guard `if (!state.production) return` always bailed out.
+- **Fix**: Replaced `state.production` / `state.production.id` with `state.prodId` in all 3 functions (6 occurrences).
+- **Status**: FIXED in branch fix/2026-04-10-checklist-tab-broken-state-ref
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
