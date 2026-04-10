@@ -7693,7 +7693,8 @@ def api_daily_report(prod_id):
 
     # ── Alerts for this date ──
     alerts_resp = api_alerts(prod_id)
-    all_alerts = alerts_resp.get_json() if hasattr(alerts_resp, 'get_json') else []
+    alerts_data = alerts_resp.get_json() if hasattr(alerts_resp, 'get_json') else {}
+    all_alerts = alerts_data.get("alerts", []) if isinstance(alerts_data, dict) else []
     day_alerts = [a for a in all_alerts if a.get("date", "") == target_date]
 
     # ── Generate PDF ──

@@ -1,5 +1,31 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P0] Fix daily report PDF endpoint crash (500 error)
+
+**Problem**: The daily report endpoint (`/api/productions/<id>/reports/daily`) crashed with a 500 error (`AttributeError: 'str' object has no attribute 'get'`) for every date, making PDF generation completely broken.
+
+**Root cause**: The `api_daily_report` function at line 7695-7697 calls `api_alerts(prod_id)` internally to include scheduling alerts in the PDF. The `api_alerts` endpoint returns `{"alerts": [...], "count": N}` (a dict), but the code assigned the full dict to `all_alerts` and then iterated over it with `for a in all_alerts`. Iterating over a dict yields its keys (strings `"alerts"` and `"count"`), so `a.get("date", "")` on a string raised `AttributeError`.
+
+**Fix**: `app.py` line 7696 — extract the `"alerts"` list from the response dict before iterating:
+```python
+# Before (broken):
+all_alerts = alerts_resp.get_json() if hasattr(alerts_resp, 'get_json') else []
+
+# After (fixed):
+alerts_data = alerts_resp.get_json() if hasattr(alerts_resp, 'get_json') else {}
+all_alerts = alerts_data.get("alerts", []) if isinstance(alerts_data, dict) else []
+```
+
+**Verification**:
+- `GET /api/productions/1/reports/daily?date=2026-03-25` → 200 OK, returns valid PDF (was 500)
+- `GET /api/productions/1/reports/daily?date=2026-04-10` → 200 OK, returns valid PDF (was 500)
+- All 45 existing tests pass
+- All other endpoints (alerts, budget, boats, shooting-days) still return 200
+
+**Branch**: fix/2026-04-10-daily-report-crash
+**Side effects**: None
+**Next priority**: P1 — Picture Boats/Security Boats empty lists; or P1 — hardening json.loads() calls in alerts endpoint for malformed day_overrides
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
