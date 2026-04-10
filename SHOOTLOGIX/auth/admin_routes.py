@@ -571,7 +571,7 @@ def list_access_logs():
     sql = """SELECT al.id, al.user_id, u.nickname, al.endpoint, al.method,
                     al.status_code, al.ip_address, al.user_agent, al.timestamp
              FROM access_logs al
-             LEFT JOIN auth_users u ON u.id = al.user_id
+             LEFT JOIN users u ON u.id = al.user_id
              WHERE 1=1"""
     params = []
     if user_id:
@@ -608,7 +608,7 @@ def export_access_logs_csv():
     sql = """SELECT al.id, al.user_id, u.nickname, al.endpoint, al.method,
                     al.status_code, al.ip_address, al.user_agent, al.timestamp
              FROM access_logs al
-             LEFT JOIN auth_users u ON u.id = al.user_id
+             LEFT JOIN users u ON u.id = al.user_id
              WHERE 1=1"""
     params = []
     if user_id:

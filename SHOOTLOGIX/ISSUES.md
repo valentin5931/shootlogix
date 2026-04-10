@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~Admin panel: 4 tabs crash or show nothing~~ FIXED 2026-04-10
+- **Discovered**: 2026-04-10
+- **Fixed**: fix/2026-04-10-admin-panel-missing-tabs
+- **Symptoms**: Clicking Templates tab crashed with JS error. Clicking Permissions, Entity Access, or Access Logs showed blank content.
+- **Root cause**: Frontend JS functions `_adminLoadTemplates`, `adminPermLoadMembers`, `adminPermLoadPerms`, `adminEpLoadPerms`, `adminLoadAccessLogs` were never implemented despite backend routes and HTML being ready.
+- **Also fixed**: Access Logs query referenced `auth_users` instead of `users` table.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
