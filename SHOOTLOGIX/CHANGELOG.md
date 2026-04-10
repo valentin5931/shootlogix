@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-10 — [P1] Seed picture_boats and security_boats tables from real fleet data
+
+**Problem**: Picture Boats and Security Boats tabs showed empty lists (0 items). The API endpoints returned `[]` despite the fleet having 46 boats.
+
+**Root cause**: The data loader only created `boat_functions` (roles) but never populated the `picture_boats` and `security_boats` entity tables. All 46 physical vessels lived in the `boats` table with `category='picture'`, but the separate tables required by the frontend were empty.
+
+**Fix** (`data_loader.py`):
+- Added `_seed_picture_boat_entities(prod_id)` — copies all 46 boats with `category='picture'` from the `boats` table into `picture_boats`, preserving all fields (name, capacity, rates, captain, vendor, etc.)
+- Added `_seed_security_boat_entities(prod_id)` — identifies safety-related boats by name keywords (SAFETY, EVAC, MEDICAL, MISHKA) and copies them into `security_boats` with group_name='SAFETY'
+- Both migrations use setting flags (`picture_boat_entities_v1`, `security_boat_entities_v1`) for idempotency
+- Also added missing `_seed_security_boats()` call in the existing-production bootstrap path
+- Original `boats` table is unchanged (no data loss)
+
+**Verification**:
+- `/api/productions/1/picture-boats` → 46 boats (was 0)
+- `/api/productions/1/security-boats` → 4 boats (was 0)
+- `/api/productions/1/boats` → 46 boats (unchanged)
+- All 45 Python tests pass
+- Idempotent on restart
+
+**Branch**: fix/2026-04-10-seed-real-fleet-picture-security-boats
+**Side effects**: None
+**Next priority**: Test assignment workflows for Picture/Security Boats; remaining P1 items (guards empty, helpers empty)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

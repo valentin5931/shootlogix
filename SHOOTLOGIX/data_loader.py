@@ -20,6 +20,7 @@ from database import (
     get_db, get_setting, set_setting,
     create_production, seed_departments,
     create_boat, create_boat_function, create_boat_assignment,
+    create_picture_boat,
     create_helper, create_helper_assignment,
     create_security_boat, create_security_boat_assignment,
     create_transport_vehicle, create_transport_assignment,
@@ -301,6 +302,9 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _seed_picture_boat_entities(prod_id)
+        _seed_security_boats(prod_id)
+        _seed_security_boat_entities(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -340,8 +344,10 @@ def bootstrap():
               f"delta={bv.get('delta')}")
 
     _seed_picture_boats(prod_id)
+    _seed_picture_boat_entities(prod_id)
     _seed_helpers(prod_id)
     _seed_security_boats(prod_id)
+    _seed_security_boat_entities(prod_id)
     _seed_transport(prod_id)
     _seed_location_sites(prod_id)
     _seed_guard_posts(prod_id)
@@ -470,6 +476,130 @@ def _seed_security_boats(prod_id):
             'default_end': f['end'],
             'context': 'security',
         })
+
+
+# ─── Seed Picture/Security Boat Entities ──────────────────────────────────
+
+# Safety-related boat names (keywords that identify security/safety vessels)
+_SAFETY_BOAT_KEYWORDS = ['SAFETY', 'EVAC', 'MEDICAL', 'MISHKA']
+
+
+def _seed_picture_boat_entities(prod_id):
+    """
+    Populate the picture_boats table from the boats table.
+    All boats with category='picture' are copied to picture_boats.
+    Idempotent: skipped if already run (setting flag).
+    """
+    flag = "picture_boat_entities_v1"
+    if get_setting(flag):
+        return
+
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM picture_boats WHERE production_id=?", (prod_id,)
+        ).fetchone()[0]
+        if existing > 0:
+            set_setting(flag, "1")
+            return
+
+        source_boats = conn.execute(
+            """SELECT id, production_id, boat_nr, name, capacity, night_ok,
+                      wave_rating, captain, vendor, group_name, notes,
+                      daily_rate_estimate, daily_rate_actual, image_path,
+                      sort_order, currency
+               FROM boats
+               WHERE production_id=? AND category='picture' AND deleted_at IS NULL
+               ORDER BY sort_order, boat_nr, id""",
+            (prod_id,)
+        ).fetchall()
+
+        if not source_boats:
+            print("  No picture-category boats found to seed into picture_boats")
+            set_setting(flag, "1")
+            return
+
+        created = 0
+        for b in source_boats:
+            b = dict(b)
+            conn.execute(
+                """INSERT INTO picture_boats
+                   (production_id, boat_nr, name, capacity, night_ok, wave_rating,
+                    captain, vendor, group_name, notes, daily_rate_estimate,
+                    daily_rate_actual, image_path, sort_order, currency)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (b['production_id'], b['boat_nr'], b['name'], b['capacity'],
+                 b['night_ok'], b['wave_rating'], b['captain'], b['vendor'],
+                 b['group_name'], b['notes'], b['daily_rate_estimate'],
+                 b['daily_rate_actual'], b['image_path'], b['sort_order'],
+                 b['currency'])
+            )
+            created += 1
+        conn.commit()
+
+    print(f"  Seeded {created} picture boat entities from boats table")
+    set_setting(flag, "1")
+
+
+def _seed_security_boat_entities(prod_id):
+    """
+    Populate the security_boats table from safety-related boats in the boats table.
+    Boats whose names contain safety keywords (SAFETY, EVAC, MEDICAL, MISHKA)
+    are copied to security_boats.
+    Idempotent: skipped if already run (setting flag).
+    """
+    flag = "security_boat_entities_v1"
+    if get_setting(flag):
+        return
+
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM security_boats WHERE production_id=?", (prod_id,)
+        ).fetchone()[0]
+        if existing > 0:
+            set_setting(flag, "1")
+            return
+
+        all_boats = conn.execute(
+            """SELECT id, production_id, boat_nr, name, capacity, night_ok,
+                      wave_rating, captain, vendor, group_name, notes,
+                      daily_rate_estimate, daily_rate_actual, image_path,
+                      sort_order, currency
+               FROM boats
+               WHERE production_id=? AND deleted_at IS NULL
+               ORDER BY sort_order, boat_nr, id""",
+            (prod_id,)
+        ).fetchall()
+
+        safety_boats = []
+        for b in all_boats:
+            name_upper = b['name'].upper()
+            if any(kw in name_upper for kw in _SAFETY_BOAT_KEYWORDS):
+                safety_boats.append(dict(b))
+
+        if not safety_boats:
+            print("  No safety-related boats found to seed into security_boats")
+            set_setting(flag, "1")
+            return
+
+        created = 0
+        for b in safety_boats:
+            conn.execute(
+                """INSERT INTO security_boats
+                   (production_id, boat_nr, name, capacity, night_ok, wave_rating,
+                    captain, vendor, group_name, notes, daily_rate_estimate,
+                    daily_rate_actual, image_path, sort_order, currency)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (b['production_id'], b['boat_nr'], b['name'], b['capacity'],
+                 b['night_ok'], b['wave_rating'], b['captain'], b['vendor'],
+                 'SAFETY', b['notes'], b['daily_rate_estimate'],
+                 b['daily_rate_actual'], b['image_path'], b['sort_order'],
+                 b['currency'])
+            )
+            created += 1
+        conn.commit()
+
+    print(f"  Seeded {created} security boat entities from boats table")
+    set_setting(flag, "1")
 
 
 # ─── Seed Transport ─────────────────────────────────────────────────────────
