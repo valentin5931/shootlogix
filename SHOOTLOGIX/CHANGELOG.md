@@ -1,5 +1,32 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-11 — [P1] Helpful empty states for Picture Boats, Security Boats, Labour, Guards sidebars
+
+**Problem**: Fresh installs (or productions where users haven't populated those inventories yet) showed bare `No picture boats` / `No security boats` / `No workers` / `No guards` text in each sidebar. Users landing on those sub-tabs had no idea that these are separate inventories from the main Boats list, or how to add an item.
+
+**Root cause**: The render functions (`renderPbBoatList`, `renderSbBoatList`, `renderLbWorkerList`, `renderGcWorkerList`) output a single flat line of grey text when the filtered list is empty. No context, no call-to-action. Users had to hunt for the tiny `+ Add` button in the header.
+
+Also, `renderPbBoatList` was missing an `if (!container) return;` guard that its siblings already have — a latent null-reference bug if the function is ever called before the DOM element exists.
+
+**Fix**:
+- `static/app-monolith.js`:
+  - `renderPbBoatList` (Picture Boats sidebar): added null-container guard, plus a rich empty state with an emoji, title, explanatory text ("Picture boats are a separate inventory used for camera/filming roles..."), and a primary `+ Add picture boat` button. Also distinguishes filtered-empty (offers "Show all") from truly-empty.
+  - `renderSbBoatList` (Security Boats sidebar): same treatment. Explains "Security boats cover safety, evacuation, medical and standby operations."
+  - `renderLbWorkerList` (Crew > Labour sidebar): same treatment with a `+ Add worker` CTA.
+  - `renderGcWorkerList` (Crew > Guards sidebar): same treatment with a `+ Add guard` CTA.
+- `ISSUES.md`: removed the 2026-03-22 P0 entry about Fleet/Crew sub-tab event handlers (resolved by PR #32). Updated the two remaining P1 entries to reflect the current state.
+
+**Verification**:
+- `node --check static/app-monolith.js` passes.
+- Full pytest suite still green (45/45).
+- Served JS file contains all four new empty-state blocks (grep verified after Flask debug reload).
+- App still boots and `/static/app-monolith.js` returns 200.
+
+**Branch**: fix/2026-04-11-empty-state-guidance
+**PR**: TBD
+**Side effects**: None. Each CTA calls an existing public `App.*` function (`showAddPictureBoatModal`, `showAddSecurityBoatModal`, `showAddWorkerModal`, `gcShowAddWorkerModal`) that was already wired for the header `+ Add` buttons.
+**Next priority**: Apply the same empty-state treatment to the Fuel tab (`fuel-content`) and consider auto-seeding a couple of demo picture/security boats during first-time bootstrap.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
