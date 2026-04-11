@@ -7397,7 +7397,10 @@ const App = (() => {
 
   function renderLbRoleCard(func, color) {
     const asgns = _lbAssignmentsForFunc(func.id);
-    const assignedBodies = asgns.map(asgn => {
+    // Skip orphan placeholder assignments (no worker, no name override) so they don't render as "?".
+    // The seed creates one per function with dates/rate pre-filled; those stay visible in the schedule view via day cells.
+    const filledAsgns = asgns.filter(a => a.helper_id || a.helper_name_override || a.helper_name);
+    const assignedBodies = filledAsgns.map(asgn => {
       const workerName = asgn.helper_name_override || asgn.helper_name || '?';
       const wd   = computeWd(asgn);
       const rate = asgn.price_override || asgn.helper_daily_rate_estimate || 0;
@@ -7423,10 +7426,10 @@ const App = (() => {
       ondragleave="App.lbOnDragLeave(event,${func.id})"
       ondrop="App.lbOnDrop(event,${func.id})"
       onclick="App.lbOnDropZoneClick(${func.id})"
-      style="${asgns.length ? 'margin-top:.3rem;padding:.35rem;font-size:.7rem' : ''}">
+      style="${filledAsgns.length ? 'margin-top:.3rem;padding:.35rem;font-size:.7rem' : ''}">
       ${state.lbSelectedWorker
         ? `<span style="color:var(--accent)">Click to assign <strong>${esc(state.lbSelectedWorker.name)}</strong></span>`
-        : (asgns.length ? '<span>+ Add another assignment</span>' : '<span>Drop or click a worker to assign</span>')}
+        : (filledAsgns.length ? '<span>+ Add another assignment</span>' : '<span>Drop or click a worker to assign</span>')}
     </div>`;
     return `<div class="role-card" id="lb-role-card-${func.id}"
       style="border-top:3px solid ${color}"

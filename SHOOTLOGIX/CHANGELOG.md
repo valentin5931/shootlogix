@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-11 — [P1] Labour cards view: skip orphan placeholder assignments
+
+**Problem**: On the Crew > Labor tab, the "cards" view rendered 72 role cards each with a bogus `?` worker body. The Labor schedule view and Budget view were fine.
+
+**Root cause**: `_seed_helpers()` in `data_loader.py` pre-creates one `helper_assignment` row per labour `boat_function`, with `helper_id=NULL`, `helper_name_override=''`, but valid `start_date`/`end_date`/`price_override`. These placeholder slots are intentional — they let the schedule view visualise reserved date ranges via day cells — but `renderLbRoleCard()` in `static/app-monolith.js` mapped *all* assignments (including orphans) to `assigned-mini` bodies and fell back to `'?'` when the worker name was missing. Result: every function card showed a phantom "?" assignee, and the drop-zone printed "+ Add another assignment" instead of "Drop or click a worker to assign".
+
+For KLAS7 (production 1), the database currently contains 73 `helper_assignments` rows, 72 of which are orphans — so the labour cards view was completely confusing.
+
+`renderLbSchedule()` already filtered orphans correctly via `funcAsgns.find(a => a.helper_id || a.helper_name_override || a.helper_name)` (line 7737); the cards view was the only mismatch.
+
+**Fix**:
+- `static/app-monolith.js` (`renderLbRoleCard`, ~line 7398): filter `asgns` into `filledAsgns` using the same "real worker" predicate as the schedule view, map `assignedBodies` from `filledAsgns`, and use `filledAsgns.length` for the drop-zone style/label so an empty card renders only the drop zone.
+
+**Verification**:
+- `node -c static/app-monolith.js` passes (syntax OK).
+- `pytest -q` — 45/45 passing (Python API tests, unchanged by this frontend fix).
+- Manually queried DB: `helper_assignments` has 73 rows, 72 orphan (`helper_id IS NULL AND helper_name_override=''`). With the fix, those 72 rows no longer generate "?" mini bodies — the affected cards now show just the "Drop or click a worker to assign" drop zone, as they should.
+- Schedule view and budget view untouched: orphan day cells and budget totals still render so the pre-allocated dates/rates are not lost from the UI.
+
+**Branch**: fix/2026-04-11-labour-orphan-assignments
+**PR**: TBD
+**Side effects**: None. Schedule and budget views continue to show orphan slot dates/rates; only the cards view now hides the phantom rows.
+**Next priority**: Same filter pattern exists in `renderRoleCard`, `renderPbRoleCard`, `_renderSbRoleCard`, `renderTbRoleCard`, `renderGcRoleCard` — currently dormant because those assignment tables have no orphans, but should be hardened with the same filter if similar seeding is ever added. Logged as P2 in ISSUES.md.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
