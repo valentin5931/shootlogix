@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-11 — [P0] Fix Timeline API 500 crash — wrong column names on locations/location_schedules
+
+**Problem**: `GET /api/productions/<id>/timeline` returned HTTP 500 with `sqlite3.OperationalError: no such column: site`. After fixing the first column, a second crash surfaced: `no such column: prep`. The Timeline tab was unusable — any attempt to load it crashed the endpoint before any location data could be returned.
+
+**Root cause**: `api_timeline()` in `app.py` read two non-existent columns from the locations schema:
+1. `SELECT id, name, site FROM locations` — the `locations` table has `location_type`, not `site` (its columns are `id, production_id, name, lat, lng, type, location_type, access_note, price_p, price_f, price_w, global_deal, version, deleted_at`).
+2. `SELECT id, date, prep, filming, wrap FROM location_schedules` — that table stores a single-letter `status` column (`'P'`, `'F'`, or `'W'`), not three boolean columns. One row per (location, date) via `INSERT OR REPLACE`.
+
+The previous Timeline fix (commit `f2394ac`) repaired other crashes but never touched these queries, so the bug stayed live.
+
+**Fix** (`app.py` ~line 7893):
+- `locations` query now reads `SELECT id, name, location_type ... AND deleted_at IS NULL` (also skips soft-deleted rows).
+- `location_schedules` query now reads `SELECT id, date, status` and maps the single status letter to the `phases` field (`'P'`/`'F'`/`'W'`).
+- Subgroup label now reads `loc['location_type']` instead of the non-existent `loc['site']`.
+
+**Verification**:
+- `GET /api/productions/1/timeline` now returns 200 with 81 resources (46 boats, 14 vehicles, 21 locations) on a fresh bootstrap DB.
+- Full `pytest` suite: 45/45 passing, no regressions.
+- `python -c "import ast; ast.parse(open('app.py').read())"` passes.
+
+**Branch**: fix/2026-04-11-timeline-locations-site-column
+**Side effects**: Soft-deleted locations are now correctly excluded from the Timeline (previously would have crashed before reaching them, so this is a strict improvement).
+**Next priority**: Picture Boats and Security Boats lists remain empty (P1 in ISSUES.md). Need to decide whether this is a data seeding gap or a code bug before fixing.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
