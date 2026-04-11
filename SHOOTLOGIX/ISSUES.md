@@ -1,5 +1,18 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [RESOLVED 2026-04-11] [P0] `sqlite3.OperationalError: database is locked` on every concurrent request
+- **Discovered**: 2026-04-11
+- **Resolved**: 2026-04-11 in branch `fix/2026-04-11-sqlite-journal-mode-lock`
+- **Symptoms**: Every API call that overlapped another call returned HTTP 500.
+  The browser frontend, which fires many parallel fetches on project load, left entire
+  tabs blank or showing "Error: HTTP 500".
+- **Root cause**: `db_compat.py:get_db()` set `PRAGMA journal_mode=DELETE` while
+  `db_compat.py:get_auth_db()` set `PRAGMA journal_mode=WAL` on the same database file.
+  Switching modes requires an exclusive lock, which concurrent connections cannot
+  acquire.
+- **Fix**: Changed `get_db()` to also use `PRAGMA journal_mode=WAL` so both code paths
+  are consistent.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

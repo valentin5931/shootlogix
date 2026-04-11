@@ -1,5 +1,53 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-11 — [P0] Fix SQLite "database is locked" on every concurrent request
+
+**Problem**: Every API request that happens to overlap with any other request failed with
+`HTTP 500 — sqlite3.OperationalError: database is locked`. The browser app, which fires
+many API calls in parallel (e.g. on project load), was reliably hitting this: loading the
+Fleet/Boats/Transport/Budget/Fuel/Crew tabs left entire panels blank or showing
+"Error: HTTP 500". In the browser-side JSDOM smoke test, 43 out of 45 fetches returned 500.
+
+**Root cause**: `db_compat.py` used two contradictory journal modes on the **same**
+`shootlogix.db` file:
+- `get_db()` (main data routes) set `PRAGMA journal_mode=DELETE` on every connection.
+- `get_auth_db()` (auth middleware, runs on every authenticated request) set
+  `PRAGMA journal_mode=WAL` on every connection.
+
+Because every authenticated request touches both code paths (auth check → data query),
+SQLite was constantly asked to flip between WAL and DELETE. Switching journal modes
+requires an **exclusive lock** on the database file, which fails whenever any other
+connection is open, throwing `database is locked`. This was introduced in
+`a77e95a [AXE8.1] Migration PostgreSQL: dual-backend SQLite/PostgreSQL avec fallback auto`
+(2026-03-12) and had been silently breaking concurrent requests ever since.
+
+**Fix**:
+- `db_compat.py:337` — Changed `PRAGMA journal_mode=DELETE` to `PRAGMA journal_mode=WAL`
+  in `get_db()` so both code paths use the same journal mode. WAL is also the
+  recommended mode for concurrent reader/writer workloads like a Flask app.
+- Added a comment explaining the invariant so this doesn't regress.
+
+**Verification**:
+- Serial 10 requests to `/api/productions/1/boats`: **10/10 → 200** (was 10/10 → 500).
+- Parallel 20 requests to `/api/productions/1/boats`: **20/20 → 200**.
+- Parallel 80 requests across 8 different endpoints (boats, picture-boats,
+  security-boats, transport, helpers, guard-camp-workers, fnb, budget): **80/80 → 200**.
+- Python stress test with 8 threads × 60 requests (480 total) across 12 endpoints:
+  **480/480 → 200**, zero `database is locked` entries in the Flask log.
+- Full pytest suite: **45/45 passed**.
+- JSDOM smoke test loading the real `index.html` + all JS modules and clicking through
+  every top-level tab and every fleet/crew sub-tab: **0 JS errors, 0 failed fetches**.
+
+**Branch**: fix/2026-04-11-sqlite-journal-mode-lock
+**Side effects**: SQLite will now run the data DB in WAL mode (producing `.db-wal` and
+`.db-shm` sidecar files), matching what the auth DB already did. No schema changes. No
+data changes. Deployments running on PostgreSQL (Railway production) are unaffected —
+the Postgres branch of `get_db()` is untouched.
+**Next priority**: After deploying this, re-run the diagnostic checklist in a real
+browser: with the lock bug gone, the next highest-value items are likely the P1 empty
+lists for Picture Boats / Security Boats / Transport / Helpers that may have been
+masked by the 500s on initial load.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

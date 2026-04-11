@@ -334,7 +334,12 @@ def get_db():
     else:
         raw_conn = sqlite3.connect(DATABASE_PATH)
         raw_conn.row_factory = sqlite3.Row
-        raw_conn.execute("PRAGMA journal_mode=DELETE")
+        # NOTE: use WAL consistently across get_db() and get_auth_db() (both hit the
+        # same .db file). Previously get_db() forced journal_mode=DELETE while
+        # get_auth_db() set WAL, which caused "database is locked" on every
+        # concurrent request because switching modes requires an exclusive lock
+        # on the database file.
+        raw_conn.execute("PRAGMA journal_mode=WAL")
         raw_conn.execute("PRAGMA foreign_keys=ON")
         try:
             yield raw_conn
