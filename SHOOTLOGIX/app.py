@@ -7879,8 +7879,9 @@ def api_timeline(prod_id):
         # --- Guards (camp workers) ---
         guards = conn.execute("SELECT id, name, role FROM guard_camp_workers WHERE production_id=?", (prod_id,)).fetchall()
         for g in guards:
+            # guard_camp_assignments uses helper_id (FK to guard_camp_workers), not worker_id
             assignments = conn.execute(
-                "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM guard_camp_assignments WHERE worker_id=?",
+                "SELECT id, start_date, end_date, assignment_status, day_overrides, boat_function_id FROM guard_camp_assignments WHERE helper_id=?",
                 (g['id'],)
             ).fetchall()
             resources.append({
@@ -7890,26 +7891,35 @@ def api_timeline(prod_id):
             })
 
         # --- Locations ---
-        locations = conn.execute("SELECT id, name, site FROM locations WHERE production_id=?", (prod_id,)).fetchall()
+        # Note: locations has no `site` column; use `location_type` for subgroup.
+        # location_schedules stores one row per (location, date, status) with a
+        # single-char status column ('P' | 'F' | 'W'); we aggregate into phases per date.
+        locations = conn.execute("SELECT id, name, location_type FROM locations WHERE production_id=?", (prod_id,)).fetchall()
         for loc in locations:
             schedules = conn.execute(
-                "SELECT id, date, prep, filming, wrap FROM location_schedules WHERE location_id=?",
+                "SELECT id, date, status FROM location_schedules WHERE location_id=? ORDER BY date, status",
                 (loc['id'],)
             ).fetchall()
-            loc_assignments = []
+            by_date = {}
             for s in schedules:
-                phases = []
-                if s['prep']: phases.append('P')
-                if s['filming']: phases.append('F')
-                if s['wrap']: phases.append('W')
-                if phases:
+                d = s['date']
+                if not d:
+                    continue
+                entry = by_date.setdefault(d, {'id': s['id'], 'phases': []})
+                status_val = (s['status'] or '').upper()
+                if status_val and status_val not in entry['phases']:
+                    entry['phases'].append(status_val)
+            loc_assignments = []
+            for date in sorted(by_date.keys()):
+                info = by_date[date]
+                if info['phases']:
                     loc_assignments.append({
-                        'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
-                        'status': 'confirmed', 'phases': '/'.join(phases)
+                        'id': info['id'], 'start_date': date, 'end_date': date,
+                        'status': 'confirmed', 'phases': '/'.join(info['phases'])
                     })
             resources.append({
                 'id': f"loc-{loc['id']}", 'name': loc['name'], 'type': 'location', 'group': 'Locations',
-                'subgroup': loc['site'] or 'Location',
+                'subgroup': loc['location_type'] or 'Location',
                 'assignments': loc_assignments
             })
 

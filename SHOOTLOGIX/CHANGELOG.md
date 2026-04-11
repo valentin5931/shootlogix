@@ -1,5 +1,55 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-11 — [P0] Fix Timeline API 500 — schema drift in app.py::api_timeline
+
+**Problem**: GET `/api/productions/<id>/timeline` returned HTTP 500
+(`sqlite3.OperationalError: no such column: site`). The Timeline tab could not
+load any data for the production. The Documents API crash was already fixed on
+2026-03-22, but `api_timeline` still referenced columns that no longer exist
+(or never existed) in the current schema.
+
+**Root cause**: `app.py::api_timeline` (lines ~7880–7914) carried four schema
+drift bugs:
+1. `SELECT id, name, site FROM locations` — `locations` has no `site` column.
+   The intended subgroup field is `location_type`.
+2. `SELECT id, date, prep, filming, wrap FROM location_schedules` — these
+   columns do not exist. `location_schedules` stores one row per
+   `(location, date, status)` tuple where `status` is `'P' | 'F' | 'W'`.
+3. `loc['site']` — `KeyError` once the SELECT was corrected.
+4. `FROM guard_camp_assignments WHERE worker_id=?` — `guard_camp_assignments`
+   uses `helper_id` (FK → `guard_camp_workers.id`), not `worker_id`. Latent
+   bug: only fires when `guard_camp_workers` has rows (currently 0).
+
+**Fix**:
+- `app.py` (api_timeline, ~7880–7916):
+  - Locations SELECT now pulls `location_type`; `subgroup` uses it.
+  - Location schedules SELECT now pulls `(id, date, status)` and aggregates
+    statuses per date into a `phases` string (e.g. `"P/F"`).
+  - Guard-camp assignments query now joins on `helper_id`.
+- `tests/test_timeline.py` (new): 3 regression tests covering the timeline
+  endpoint — 200 status, resource shape validation, and P/F/W phase
+  aggregation invariants.
+
+**Verification**:
+- `curl /api/productions/1/timeline` → HTTP 200, 40628 bytes.
+- Payload contains 81 resources (46 boats, 14 vehicles, 21 locations) plus
+  32 shooting days and 121 boat functions.
+- Location phases correctly aggregated: e.g. `ARENA (SABOGA)` has two date
+  entries with `phases: "F"`.
+- `pytest` — 48/48 passing (was 45; +3 new timeline tests).
+- No regressions on `/boats`, `/picture-boats`, `/security-boats`,
+  `/transport-vehicles`, `/helpers`, `/helper-assignments`, `/guards`,
+  `/guard-posts`, `/fuel-entries`, `/fuel-machinery`, `/locations`,
+  `/shooting-days`, `/budget`, `/documents`.
+
+**Branch**: fix/2026-04-11-timeline-endpoint-schema-drift
+**Side effects**: None
+**Next priority**: The picture_boats / security_boats / helpers / guards
+seed tables remain empty on a fresh bootstrap (P1 items in ISSUES.md).
+`_seed_picture_boats` and `_seed_security_boats` only seed `boat_functions`,
+not the entity tables themselves. Decide whether to backfill with sample data
+or document as expected user-entered state.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
