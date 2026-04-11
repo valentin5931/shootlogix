@@ -4366,8 +4366,20 @@ const App = (() => {
     const boats = _pbFilteredBoats();
     const assignedIds = new Set(state.pictureAssignments.filter(a => a.picture_boat_id).map(a => a.picture_boat_id));
     const container = $('pb-boat-list');
+    if (!container) return;
     if (!boats.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No picture boats</div>';
+      const isFiltered = state.pbBoatFilter && state.pbBoatFilter !== 'all';
+      container.innerHTML = isFiltered
+        ? `<div style="color:var(--text-4);font-size:.75rem;text-align:center;padding:1.2rem 1rem">
+             <div style="opacity:.5;margin-bottom:.3rem">No boats match this filter</div>
+             <button class="btn btn-sm btn-secondary" onclick="App.pbFilterBoats('all')">Show all</button>
+           </div>`
+        : `<div style="color:var(--text-4);font-size:.75rem;text-align:center;padding:1.2rem .8rem">
+             <div style="font-size:1.6rem;margin-bottom:.4rem;opacity:.4">&#128444;&#65039;</div>
+             <div style="font-weight:600;color:var(--text-3);margin-bottom:.3rem">No picture boats yet</div>
+             <div style="font-size:.7rem;margin-bottom:.7rem;line-height:1.4">Picture boats are a separate inventory used for camera/filming roles (YELLOW, RED, NEUTRAL, EXILE).</div>
+             <button class="btn btn-sm btn-primary" onclick="App.showAddPictureBoatModal()">+ Add picture boat</button>
+           </div>`;
       return;
     }
     container.innerHTML = boats.map(b => {
@@ -7273,7 +7285,18 @@ const App = (() => {
     const container = $('lb-worker-list');
     if (!container) return;
     if (!workers.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No workers</div>';
+      const isFiltered = state.lbWorkerFilter && state.lbWorkerFilter !== 'all';
+      container.innerHTML = isFiltered
+        ? `<div style="color:var(--text-4);font-size:.75rem;text-align:center;padding:1.2rem 1rem">
+             <div style="opacity:.5;margin-bottom:.3rem">No workers match this filter</div>
+             <button class="btn btn-sm btn-secondary" onclick="App.lbFilterWorkers('all')">Show all</button>
+           </div>`
+        : `<div style="color:var(--text-4);font-size:.75rem;text-align:center;padding:1.2rem .8rem">
+             <div style="font-size:1.6rem;margin-bottom:.4rem;opacity:.4">&#128104;&#8205;&#127806;</div>
+             <div style="font-weight:600;color:var(--text-3);margin-bottom:.3rem">No workers yet</div>
+             <div style="font-size:.7rem;margin-bottom:.7rem;line-height:1.4">Workers perform labour roles across the production (art, catering, construction, etc.).</div>
+             <button class="btn btn-sm btn-primary" onclick="App.showAddWorkerModal()">+ Add worker</button>
+           </div>`;
       return;
     }
     container.innerHTML = workers.map(w => {
@@ -8159,7 +8182,18 @@ const App = (() => {
     const container = $('sb-boat-list');
     if (!container) return;
     if (!boats.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No security boats</div>';
+      const isFiltered = state.sbBoatFilter && state.sbBoatFilter !== 'all';
+      container.innerHTML = isFiltered
+        ? `<div style="color:var(--text-4);font-size:.75rem;text-align:center;padding:1.2rem 1rem">
+             <div style="opacity:.5;margin-bottom:.3rem">No boats match this filter</div>
+             <button class="btn btn-sm btn-secondary" onclick="App.sbFilterBoats('all')">Show all</button>
+           </div>`
+        : `<div style="color:var(--text-4);font-size:.75rem;text-align:center;padding:1.2rem .8rem">
+             <div style="font-size:1.6rem;margin-bottom:.4rem;opacity:.4">&#128737;&#65039;</div>
+             <div style="font-weight:600;color:var(--text-3);margin-bottom:.3rem">No security boats yet</div>
+             <div style="font-size:.7rem;margin-bottom:.7rem;line-height:1.4">Security boats cover safety, evacuation, medical and standby operations.</div>
+             <button class="btn btn-sm btn-primary" onclick="App.showAddSecurityBoatModal()">+ Add security boat</button>
+           </div>`;
       return;
     }
     container.innerHTML = boats.map(b => {
@@ -10253,7 +10287,18 @@ const App = (() => {
     const container = $('gc-worker-list');
     if (!container) return;
     if (!workers.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No guards</div>';
+      const isFiltered = state.gcWorkerFilter && state.gcWorkerFilter !== 'all';
+      container.innerHTML = isFiltered
+        ? `<div style="color:var(--text-4);font-size:.75rem;text-align:center;padding:1.2rem 1rem">
+             <div style="opacity:.5;margin-bottom:.3rem">No guards match this filter</div>
+             <button class="btn btn-sm btn-secondary" onclick="App.gcFilterWorkers('all')">Show all</button>
+           </div>`
+        : `<div style="color:var(--text-4);font-size:.75rem;text-align:center;padding:1.2rem .8rem">
+             <div style="font-size:1.6rem;margin-bottom:.4rem;opacity:.4">&#128737;</div>
+             <div style="font-weight:600;color:var(--text-3);margin-bottom:.3rem">No guards yet</div>
+             <div style="font-size:.7rem;margin-bottom:.7rem;line-height:1.4">Guards are security personnel assigned to camps, posts and night shifts.</div>
+             <button class="btn btn-sm btn-primary" onclick="App.gcShowAddWorkerModal()">+ Add guard</button>
+           </div>`;
       return;
     }
     container.innerHTML = workers.map(w => {
