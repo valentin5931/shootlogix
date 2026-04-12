@@ -5782,7 +5782,19 @@ def generate_daily_checklist(prod_id, date):
                 (checklist_id, text, cat)
             )
 
-        return get_daily_checklist(prod_id, date)
+        # Read back from the SAME connection (a separate get_db() call
+        # would open a new SQLite connection that can't see uncommitted data).
+        cl = conn.execute(
+            "SELECT * FROM daily_checklists WHERE production_id=? AND date=?",
+            (prod_id, date)
+        ).fetchone()
+        checklist = dict(cl)
+        rows = conn.execute(
+            "SELECT * FROM checklist_items WHERE checklist_id=? ORDER BY category, id",
+            (cl["id"],)
+        ).fetchall()
+        checklist["items"] = [dict(i) for i in rows]
+        return checklist
 
 
 def get_daily_checklist(prod_id, date):

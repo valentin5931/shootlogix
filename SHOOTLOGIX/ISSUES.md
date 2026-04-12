@@ -1,5 +1,19 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~Checklist generate returns null~~ — FIXED 2026-04-12
+- **Discovered**: 2026-04-12
+- **Symptoms**: Clicking "Generate" on the Checklist tab returns null; no checklist items are shown.
+- **Root cause**: `generate_daily_checklist()` opens a second SQLite connection (via `get_daily_checklist()`) inside an uncommitted transaction, so the new connection can't see the freshly inserted data.
+- **Fix**: Read back data from the same connection instead of opening a new one.
+- **Branch**: fix/2026-04-12-checklist-generate-null
+
+## [P0] ~~renderTab undefined after bulk helper create~~ — FIXED 2026-04-12
+- **Discovered**: 2026-04-12
+- **Symptoms**: After bulk-creating or CSV-importing helpers, a ReferenceError occurs and the helper list does not refresh.
+- **Root cause**: `renderTab('labour')` was called but never defined in app-monolith.js.
+- **Fix**: Replaced with proper `state.labourWorkers = await api(...)` + `renderLbWorkerList()`.
+- **Branch**: fix/2026-04-12-checklist-generate-null
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
