@@ -3908,6 +3908,14 @@ const App = (() => {
       : '<div style="color:var(--text-4);font-size:.78rem">No assignments yet</div>';
 
     $('boat-detail-overlay').classList.remove('hidden');
+
+    // RBAC: disable inputs for READER
+    if (!_canEdit()) {
+      $('boat-detail-overlay').querySelectorAll('input, select, textarea').forEach(el => {
+        el.setAttribute('readonly', '');
+        el.setAttribute('disabled', '');
+      });
+    }
   }
 
   async function saveBoatEdit() {
@@ -6724,7 +6732,7 @@ const App = (() => {
     const container = $('fuel-content');
     const machines = state.fuelMachinery || [];
     const addBtn = `<div style="padding:.75rem 1rem .5rem;display:flex;gap:.5rem;align-items:center">
-      <button class="btn btn-sm btn-primary" onclick="App.showFuelMachineryModal()">+ Add machinery</button>
+      ${_canEdit() ? '<button class="btn btn-sm btn-primary" onclick="App.showFuelMachineryModal()">+ Add machinery</button>' : ''}
       <span style="font-size:.7rem;color:var(--text-4)">${machines.length} item${machines.length!==1?'s':''}</span>
     </div>`;
     if (!machines.length) {
@@ -6796,8 +6804,8 @@ const App = (() => {
         <td class="role-name-cell" style="min-width:170px;max-width:210px">
           <div style="display:flex;align-items:center;gap:.35rem;margin-bottom:.15rem">
             <span style="font-weight:600;font-size:.73rem;color:var(--text-0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">${esc(machine.name)}</span>
-            <button class="btn btn-sm btn-secondary btn-icon" style="padding:0 .2rem;font-size:.65rem;line-height:1" onclick="App.showFuelMachineryModal(${machine.id})" title="Edit">&#9998;</button>
-            <button class="btn btn-sm btn-danger btn-icon" style="padding:0 .2rem;font-size:.65rem;line-height:1" onclick="App.deleteFuelMachinery(${machine.id})" title="Delete">&times;</button>
+            ${_canEdit() ? `<button class="btn btn-sm btn-secondary btn-icon" style="padding:0 .2rem;font-size:.65rem;line-height:1" onclick="App.showFuelMachineryModal(${machine.id})" title="Edit">&#9998;</button>` : ''}
+            ${_canEdit() ? `<button class="btn btn-sm btn-danger btn-icon" style="padding:0 .2rem;font-size:.65rem;line-height:1" onclick="App.deleteFuelMachinery(${machine.id})" title="Delete">&times;</button>` : ''}
           </div>
           <div style="display:flex;align-items:center;gap:.35rem">
             <span style="font-size:.62rem;font-weight:700;padding:.1rem .3rem;border-radius:3px;
@@ -9056,10 +9064,10 @@ const App = (() => {
           <button class="${state.locView === 'budget' ? 'active' : ''}" onclick="App.locSetView('budget')">Budget</button>
         </div>
         <div style="margin-left:auto;display:flex;gap:.3rem">
-          <button class="btn btn-sm btn-primary" onclick="App.showAddLocationModal()">+ Add Location</button>
-          <button class="btn btn-sm btn-secondary" onclick="App.locAutoFill()">Auto-fill from PDT</button>
-          <button class="btn btn-sm btn-secondary" onclick="App.locResyncPdt()" title="Resync all PDT locations (normalized matching)">Resync PDT</button>
-          <button class="btn btn-sm btn-secondary" onclick="App.openCsvImportModal('locations')">Import CSV</button>
+          ${_canEdit() ? '<button class="btn btn-sm btn-primary" onclick="App.showAddLocationModal()">+ Add Location</button>' : ''}
+          ${_canEdit() ? '<button class="btn btn-sm btn-secondary" onclick="App.locAutoFill()">Auto-fill from PDT</button>' : ''}
+          ${_canEdit() ? '<button class="btn btn-sm btn-secondary" onclick="App.locResyncPdt()" title="Resync all PDT locations (normalized matching)">Resync PDT</button>' : ''}
+          ${_canEdit() ? '<button class="btn btn-sm btn-secondary" onclick="App.openCsvImportModal(\'locations\')">Import CSV</button>' : ''}
           <button class="btn btn-sm btn-secondary" onclick="App.locExportCSV()">Export CSV</button>
         </div>
       </div>
@@ -9120,8 +9128,8 @@ const App = (() => {
               const sType = site.location_type || 'game';
               const typeColor = sType === 'tribal_camp' ? '#EAB308' : sType === 'game' ? '#22C55E' : '#3B82F6';
               return `<tr>
-                <td class="loc-td-name" style="position:sticky;left:0;z-index:2;background:var(--bg-card);border-right:1px solid var(--border);cursor:pointer"
-                    onclick="App.editLocationSite(${site.id})">
+                <td class="loc-td-name" style="position:sticky;left:0;z-index:2;background:var(--bg-card);border-right:1px solid var(--border);${_canEdit() ? 'cursor:pointer' : ''}"
+                    ${_canEdit() ? `onclick="App.editLocationSite(${site.id})"` : ''}>
                   <div style="display:flex;align-items:center;gap:.3rem">
                     <span style="width:8px;height:8px;border-radius:2px;background:${typeColor};flex-shrink:0"></span>
                     <span style="font-size:.72rem;font-weight:600;white-space:nowrap">${esc(site.name)}</span>
@@ -9246,8 +9254,8 @@ const App = (() => {
           <button class="${state.locView === 'budget' ? 'active' : ''}" onclick="App.locSetView('budget')">Budget</button>
         </div>
         <div style="margin-left:auto;display:flex;gap:.3rem">
-          <button class="btn btn-sm btn-primary" onclick="App.showAddLocationModal()">+ Add Location</button>
-          <button class="btn btn-sm btn-secondary" onclick="App.openCsvImportModal('locations')">Import CSV</button>
+          ${_canEdit() ? '<button class="btn btn-sm btn-primary" onclick="App.showAddLocationModal()">+ Add Location</button>' : ''}
+          ${_canEdit() ? '<button class="btn btn-sm btn-secondary" onclick="App.openCsvImportModal(\'locations\')">Import CSV</button>' : ''}
           <button class="btn btn-sm btn-secondary" onclick="App.locExportCSV()">Export CSV</button>
         </div>
       </div>
@@ -11238,8 +11246,8 @@ const App = (() => {
           <button class="filter-pill ${state.fnbSubTab === 'budget' ? 'active' : ''}" onclick="App.fnbSetSubTab('budget')">BUDGET</button>
         </div>
         <div style="flex:1"></div>
-        <button class="btn btn-sm btn-primary" onclick="App.showFnbCatModal()">+ Category</button>
-        <button class="btn btn-sm btn-secondary" onclick="App.showFnbItemModal()">+ Item</button>
+        ${_canEdit() ? '<button class="btn btn-sm btn-primary" onclick="App.showFnbCatModal()">+ Category</button>' : ''}
+        ${_canEdit() ? '<button class="btn btn-sm btn-secondary" onclick="App.showFnbItemModal()">+ Item</button>' : ''}
         <button class="btn btn-sm btn-secondary" onclick="App.fnbExportCSV()">Export CSV</button>
       </div>
       <div class="stat-grid" style="margin-bottom:.75rem">

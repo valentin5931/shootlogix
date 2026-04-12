@@ -5541,3 +5541,10 @@ body.schedule-dragging * { cursor: col-resize !important; }
   text-decoration: line-through;
   color: var(--text-muted);
 }
+
+/* ── RBAC: hide write controls for READER role ───────────── */
+body.role-reader .write-only,
+body.role-reader .card-delete-btn,
+body.role-reader .boat-edit-btn {
+  display: none !important;
+}

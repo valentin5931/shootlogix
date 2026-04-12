@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-12 — [P1] Hide write controls (Add/Edit/Delete) from READER role across all modules
+
+**Problem**: Users with READER role could see all Add, Edit, Delete, Import, Undo, and Groups buttons across every module (Boats, Picture Boats, Security Boats, Transport, Labour, Guards, FNB, Fuel, Locations, PDT). Clicking these buttons would open modals or trigger API calls that returned FORBIDDEN errors — confusing UX.
+
+**Root cause**: The `_canEdit()` function existed but was only used in the Documents tab and the floating action button (FAB). The existing CSS rules in `style.css` covered some buttons via `[onclick*="add"]` pattern matching, but missed: CSV Import buttons (`openCsvImportModal`), Groups buttons, Auto-fill/Resync buttons, boat edit pencil buttons (`.boat-edit-btn`), and dynamically rendered buttons in FNB, Fuel, and Locations.
+
+**Fix**:
+- `templates/index.html`: Added `write-only` CSS class to 39 static toolbar buttons across PDT, Boats, Picture Boats, Security Boats, Transport, Labour, Guard Camp modules (Add, CSV Import, Function, Groups, Undo, Photo upload, Edit, Save, Delete buttons)
+- `static/style.css`: Added CSS rule `body.role-reader .write-only, .card-delete-btn, .boat-edit-btn { display: none !important; }` to hide write controls
+- `static/app-monolith.js`: Added `_canEdit()` guards to 10 dynamically rendered buttons in FNB (+ Category, + Item), Fuel (+ Add machinery, Edit/Delete machinery), and Locations (+ Add Location, Auto-fill, Resync, Import CSV). Made boat detail modal inputs readonly/disabled for READER. Made location name cells non-clickable for READER.
+
+**Verification**:
+- All 45 existing tests pass
+- JS syntax validation passes (Node.js check)
+- Backend RBAC enforcement still works (READER gets FORBIDDEN on API mutations)
+- ADMIN/UNIT/TRANSPO roles see all controls (no `role-reader` class on body)
+- READER role: write controls hidden, read/export/filter/navigation still functional
+
+**Branch**: fix/2026-04-12-rbac-ui-hide-write-controls
+**Side effects**: None — existing CSS rules for `role-reader` still apply; new rules are additive
+**Next priority**: P1 — Form validation UX (show inline field errors, validate before submit) or P1 — FNB module items rendering with no data state
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

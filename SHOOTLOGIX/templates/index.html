@@ -168,9 +168,9 @@
       <div id="pdt-toolbar">
         <input type="file" id="pdt-file-input" accept=".pdf" style="display:none"
           onchange="App.handlePDTFileUpload(this)">
-        <button class="btn btn-primary btn-sm" onclick="App.triggerPDTUpload()" title="Upload a PDT PDF and merge with existing data">Upload <span data-tooltip="Plan De Travail (Shooting Schedule)">PDT</span> PDF</button>
-        <button class="btn btn-secondary btn-sm" onclick="App.addDay()">+ Add day</button>
-        <button class="btn btn-secondary btn-sm" onclick="App.autoFillTides()" title="Pre-fill tide data for all shooting days (Pearl Islands)">🌊 Auto-fill tides</button>
+        <button class="btn btn-primary btn-sm write-only" onclick="App.triggerPDTUpload()" title="Upload a PDT PDF and merge with existing data">Upload <span data-tooltip="Plan De Travail (Shooting Schedule)">PDT</span> PDF</button>
+        <button class="btn btn-secondary btn-sm write-only" onclick="App.addDay()">+ Add day</button>
+        <button class="btn btn-secondary btn-sm write-only" onclick="App.autoFillTides()" title="Pre-fill tide data for all shooting days (Pearl Islands)">🌊 Auto-fill tides</button>
         <span id="pdt-count" style="font-size:.78rem;color:var(--text-3);margin-left:.5rem"></span>
         <div style="margin-left:auto;display:flex;align-items:center;gap:.5rem">
           <span id="pdt-status" style="font-size:.75rem;color:var(--text-3)"></span>
@@ -235,8 +235,8 @@
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
             <span class="section-title" style="margin:0">Boats</span>
             <div style="display:flex;gap:.3rem">
-              <button class="btn btn-sm btn-secondary" onclick="App.openCsvImportModal('boats')" title="Import from CSV">CSV</button>
-              <button class="btn btn-sm btn-secondary" onclick="App.showAddBoatModal()">+ Add</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.openCsvImportModal('boats')" title="Import from CSV">CSV</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.showAddBoatModal()">+ Add</button>
             </div>
           </div>
           <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.4rem">
@@ -256,10 +256,10 @@
               <button id="btab-schedule"             onclick="App.setBoatView('schedule')">Schedule</button>
               <button id="btab-budget"               onclick="App.setBoatView('budget')">Budget</button>
             </div>
-            <button class="btn btn-sm btn-secondary" onclick="App.showAddFunctionModal()">+ Function</button>
-            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('boats')">Groups</button>
+            <button class="btn btn-sm btn-secondary write-only" onclick="App.showAddFunctionModal()">+ Function</button>
+            <button class="btn btn-sm btn-secondary write-only" onclick="App.openGroupsModal('boats')">Groups</button>
             <div style="margin-left:auto;display:flex;gap:.4rem">
-              <button class="btn btn-sm btn-secondary" onclick="App.undoBoat()" title="Ctrl+Z">↩ Undo</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.undoBoat()" title="Ctrl+Z">↩ Undo</button>
               <div id="export-wrap" style="position:relative">
                 <button class="btn btn-sm btn-secondary" onclick="App.toggleExport()">Export ▾</button>
                 <div id="export-menu" class="hidden" style="position:absolute;right:0;top:calc(100%+4px);background:var(--bg-card);border:1px solid var(--border-lt);border-radius:8px;overflow:hidden;z-index:50;min-width:120px">
@@ -291,8 +291,8 @@
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
             <span class="section-title" style="margin:0">Picture Boats</span>
             <div style="display:flex;gap:.3rem">
-              <button class="btn btn-sm btn-secondary" onclick="App.openCsvImportModal('picture_boats')" title="Import from CSV">CSV</button>
-              <button class="btn btn-sm btn-secondary" onclick="App.showAddPictureBoatModal()">+ Add</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.openCsvImportModal('picture_boats')" title="Import from CSV">CSV</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.showAddPictureBoatModal()">+ Add</button>
             </div>
           </div>
           <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.4rem">
@@ -311,10 +311,10 @@
               <button id="pb-btab-schedule"             onclick="App.pbSetBoatView('schedule')">Schedule</button>
               <button id="pb-btab-budget"               onclick="App.pbSetBoatView('budget')">Budget</button>
             </div>
-            <button class="btn btn-sm btn-secondary" onclick="App.pbShowAddFunctionModal()">+ Function</button>
-            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('picture')">Groups</button>
+            <button class="btn btn-sm btn-secondary write-only" onclick="App.pbShowAddFunctionModal()">+ Function</button>
+            <button class="btn btn-sm btn-secondary write-only" onclick="App.openGroupsModal('picture')">Groups</button>
             <div style="margin-left:auto;display:flex;gap:.4rem">
-              <button class="btn btn-sm btn-secondary" onclick="App.pbUndoBoat()" title="Ctrl+Z">↩ Undo</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.pbUndoBoat()" title="Ctrl+Z">↩ Undo</button>
               <div id="pb-export-wrap" style="position:relative">
                 <button class="btn btn-sm btn-secondary" onclick="App.pbToggleExport()">Export ▾</button>
                 <div id="pb-export-menu" class="hidden" style="position:absolute;right:0;top:calc(100%+4px);background:var(--bg-card);border:1px solid var(--border-lt);border-radius:8px;overflow:hidden;z-index:50;min-width:120px">
@@ -345,8 +345,8 @@
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
             <span class="section-title" style="margin:0">Security Boats</span>
             <div style="display:flex;gap:.3rem">
-              <button class="btn btn-sm btn-secondary" onclick="App.openCsvImportModal('security_boats')" title="Import from CSV">CSV</button>
-              <button class="btn btn-sm btn-secondary" onclick="App.showAddSecurityBoatModal()">+ Add</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.openCsvImportModal('security_boats')" title="Import from CSV">CSV</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.showAddSecurityBoatModal()">+ Add</button>
             </div>
           </div>
           <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.4rem">
@@ -364,10 +364,10 @@
               <button id="sb-btab-schedule"             onclick="App.sbSetView('schedule')">Schedule</button>
               <button id="sb-btab-budget"               onclick="App.sbSetView('budget')">Budget</button>
             </div>
-            <button class="btn btn-sm btn-secondary" onclick="App.sbShowAddFunctionModal()">+ Function</button>
-            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('security')">Groups</button>
+            <button class="btn btn-sm btn-secondary write-only" onclick="App.sbShowAddFunctionModal()">+ Function</button>
+            <button class="btn btn-sm btn-secondary write-only" onclick="App.openGroupsModal('security')">Groups</button>
             <div style="margin-left:auto;display:flex;gap:.4rem">
-              <button class="btn btn-sm btn-secondary" onclick="App.sbUndoBoat()" title="Ctrl+Z">&#8617; Undo</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.sbUndoBoat()" title="Ctrl+Z">&#8617; Undo</button>
               <div id="sb-export-wrap" style="position:relative">
                 <button class="btn btn-sm btn-secondary" onclick="App.sbToggleExport()">Export &#9662;</button>
                 <div id="sb-export-menu" class="hidden" style="position:absolute;right:0;top:calc(100%+4px);background:var(--bg-card);border:1px solid var(--border-lt);border-radius:8px;overflow:hidden;z-index:50;min-width:120px">
@@ -438,8 +438,8 @@
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
             <span class="section-title" style="margin:0">Vehicles</span>
             <div style="display:flex;gap:.3rem">
-              <button class="btn btn-sm btn-secondary" onclick="App.openCsvImportModal('transport')" title="Import from CSV">CSV</button>
-              <button class="btn btn-sm btn-secondary" onclick="App.showAddTransportVehicleModal()">+ Add</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.openCsvImportModal('transport')" title="Import from CSV">CSV</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.showAddTransportVehicleModal()">+ Add</button>
             </div>
           </div>
           <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.4rem">
@@ -457,10 +457,10 @@
               <button id="tb-btab-schedule"             onclick="App.tbSetBoatView('schedule')">Schedule</button>
               <button id="tb-btab-budget"               onclick="App.tbSetBoatView('budget')">Budget</button>
             </div>
-            <button class="btn btn-sm btn-secondary" onclick="App.tbShowAddFunctionModal()">+ Function</button>
-            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('transport')">Groups</button>
+            <button class="btn btn-sm btn-secondary write-only" onclick="App.tbShowAddFunctionModal()">+ Function</button>
+            <button class="btn btn-sm btn-secondary write-only" onclick="App.openGroupsModal('transport')">Groups</button>
             <div style="margin-left:auto;display:flex;gap:.4rem">
-              <button class="btn btn-sm btn-secondary" onclick="App.tbUndoVehicle()" title="Ctrl+Z">↩ Undo</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.tbUndoVehicle()" title="Ctrl+Z">↩ Undo</button>
               <div id="tb-export-wrap" style="position:relative">
                 <button class="btn btn-sm btn-secondary" onclick="App.tbToggleExport()">Export ▾</button>
                 <div id="tb-export-menu" class="hidden" style="position:absolute;right:0;top:calc(100%+4px);background:var(--bg-card);border:1px solid var(--border-lt);border-radius:8px;overflow:hidden;z-index:50;min-width:120px">
@@ -511,9 +511,9 @@
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
               <span class="section-title" style="margin:0">Guards</span>
               <div style="display:flex;gap:.3rem">
-                <button class="btn btn-sm btn-secondary" onclick="App.gcShowAddWorkerModal()">+ Add</button>
-                <button class="btn btn-sm btn-secondary" onclick="App.showBulkHelperModal('guard_camp')">Bulk</button>
-                <button class="btn btn-sm btn-secondary" onclick="App.openCsvImportModal('guard_camp')" title="Import from CSV">CSV</button>
+                <button class="btn btn-sm btn-secondary write-only" onclick="App.gcShowAddWorkerModal()">+ Add</button>
+                <button class="btn btn-sm btn-secondary write-only" onclick="App.showBulkHelperModal('guard_camp')">Bulk</button>
+                <button class="btn btn-sm btn-secondary write-only" onclick="App.openCsvImportModal('guard_camp')" title="Import from CSV">CSV</button>
               </div>
             </div>
             <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.4rem">
@@ -530,10 +530,10 @@
                 <button id="gc-btab-schedule"             onclick="App.gcSetView('schedule')">Schedule</button>
                 <button id="gc-btab-budget"               onclick="App.gcSetView('budget')">Budget</button>
               </div>
-              <button class="btn btn-sm btn-secondary" onclick="App.gcShowAddFunctionModal()">+ Function</button>
-              <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('guard_camp')">Groups</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.gcShowAddFunctionModal()">+ Function</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.openGroupsModal('guard_camp')">Groups</button>
               <div style="margin-left:auto;display:flex;gap:.4rem">
-                <button class="btn btn-sm btn-secondary" onclick="App.gcUndo()" title="Ctrl+Z">&#x21A9; Undo</button>
+                <button class="btn btn-sm btn-secondary write-only" onclick="App.gcUndo()" title="Ctrl+Z">&#x21A9; Undo</button>
                 <div id="gc-export-wrap" style="position:relative">
                   <button class="btn btn-sm btn-secondary" onclick="App.gcToggleExport()">Export &#x25BE;</button>
                   <div id="gc-export-menu" class="hidden" style="position:absolute;right:0;top:calc(100%+4px);background:var(--bg-card);border:1px solid var(--border-lt);border-radius:8px;overflow:hidden;z-index:50;min-width:120px">
@@ -564,9 +564,9 @@
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
             <span class="section-title" style="margin:0">Workers</span>
             <div style="display:flex;gap:.3rem">
-              <button class="btn btn-sm btn-secondary" onclick="App.showAddWorkerModal()">+ Add</button>
-              <button class="btn btn-sm btn-secondary" onclick="App.showBulkHelperModal('labour')">Bulk</button>
-              <button class="btn btn-sm btn-secondary" onclick="App.openCsvImportModal('helpers')" title="Import from CSV">CSV</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.showAddWorkerModal()">+ Add</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.showBulkHelperModal('labour')">Bulk</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.openCsvImportModal('helpers')" title="Import from CSV">CSV</button>
             </div>
           </div>
           <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.4rem">
@@ -584,10 +584,10 @@
               <button id="lb-btab-schedule"             onclick="App.lbSetView('schedule')">Schedule</button>
               <button id="lb-btab-budget"               onclick="App.lbSetView('budget')">Budget</button>
             </div>
-            <button class="btn btn-sm btn-secondary" onclick="App.lbShowAddFunctionModal()">+ Function</button>
-            <button class="btn btn-sm btn-secondary" onclick="App.openGroupsModal('labour')">Groups</button>
+            <button class="btn btn-sm btn-secondary write-only" onclick="App.lbShowAddFunctionModal()">+ Function</button>
+            <button class="btn btn-sm btn-secondary write-only" onclick="App.openGroupsModal('labour')">Groups</button>
             <div style="margin-left:auto;display:flex;gap:.4rem">
-              <button class="btn btn-sm btn-secondary" onclick="App.lbUndo()" title="Ctrl+Z">&#x21A9; Undo</button>
+              <button class="btn btn-sm btn-secondary write-only" onclick="App.lbUndo()" title="Ctrl+Z">&#x21A9; Undo</button>
               <div id="lb-export-wrap" style="position:relative">
                 <button class="btn btn-sm btn-secondary" onclick="App.lbToggleExport()">Export &#x25BE;</button>
                 <div id="lb-export-menu" class="hidden" style="position:absolute;right:0;top:calc(100%+4px);background:var(--bg-card);border:1px solid var(--border-lt);border-radius:8px;overflow:hidden;z-index:50;min-width:120px">
@@ -1802,7 +1802,7 @@
       </div>
       <div class="bv-footer">
         <button class="btn btn-secondary" onclick="App.closeBoatView()">Close</button>
-        <button class="btn btn-primary" id="bv-edit-btn" onclick="App.closeBoatView();App.openBoatDetail(0)">✎ Edit</button>
+        <button class="btn btn-primary write-only" id="bv-edit-btn" onclick="App.closeBoatView();App.openBoatDetail(0)">✎ Edit</button>
       </div>
     </div>
   </div>
@@ -1819,7 +1819,7 @@
         <div id="bd-photo-placeholder" class="boat-detail-photo-placeholder"></div>
         <input type="file" id="bd-photo-input" accept="image/*" style="display:none"
           onchange="App.uploadBoatPhoto(event)">
-        <button class="btn btn-sm btn-secondary" style="width:100%;margin-top:.4rem"
+        <button class="btn btn-sm btn-secondary write-only" style="width:100%;margin-top:.4rem"
           onclick="App.triggerPhotoUpload()">📷 Photo</button>
       </div>
       <!-- Editable fields -->
@@ -1905,9 +1905,9 @@
       <div class="entity-history-empty">Loading...</div>
     </div>
     <div class="modal-footer">
-      <button id="bd-delete-btn" class="btn btn-danger btn-sm hidden" onclick="App.deletePictureBoat(App._detailBoatIdForBtn())">Delete</button>
+      <button id="bd-delete-btn" class="btn btn-danger btn-sm hidden write-only" onclick="App.deletePictureBoat(App._detailBoatIdForBtn())">Delete</button>
       <button class="btn btn-secondary" onclick="App.closeBoatDetail()">Cancel</button>
-      <button class="btn btn-primary" onclick="App.saveBoatEdit()">Save</button>
+      <button class="btn btn-primary write-only" onclick="App.saveBoatEdit()">Save</button>
     </div>
   </div>
 </div>
