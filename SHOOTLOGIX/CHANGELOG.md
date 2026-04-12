@@ -1,5 +1,24 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-12 — [P0] Fix Checklist tab broken — state.production undefined
+
+**Problem**: The entire Checklist tab was non-functional. Clicking "Checklist" in the nav showed the panel but no data loaded, and clicking "Generate" did nothing. No error was shown to the user.
+
+**Root cause**: The three checklist functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) in `app-monolith.js` referenced `state.production` (an object with `.id` property) and `state.production.id`, but only `state.prodId` (a numeric ID) is ever set in the codebase. Since `state.production` was always `undefined`, the guard clause `if (!state.production) return;` caused all three functions to silently exit before making any API call.
+
+**Fix**: `static/app-monolith.js` (lines 13032-13055): Replaced all 6 occurrences of `state.production` and `state.production.id` with `state.prodId` in `loadChecklist()`, `generateChecklist()`, and `toggleChecklistItem()`.
+
+**Verification**:
+- Checklist tab now loads and displays "No items" prompt when no checklist exists for the date
+- "Generate" button creates a checklist (93 items for 2026-04-12, covering boat assignments, labour, guards)
+- Checking/unchecking items works and persists
+- JS syntax check passes
+- No regressions in other tabs
+
+**Branch**: fix/2026-04-12-checklist-tab-broken
+**Side effects**: None
+**Next priority**: P1 — Empty picture_boats / security_boats tables (data seeding or user guidance); P0 sub-tab issue in ISSUES.md can be marked resolved
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
