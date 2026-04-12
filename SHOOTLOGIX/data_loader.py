@@ -301,6 +301,9 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _seed_security_boats(prod_id)
+        _seed_helpers(prod_id)
+        _seed_transport(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -406,11 +409,11 @@ def _seed_helpers(prod_id):
     """Seed helpers + functions + assignments from budget data."""
     with get_db() as conn:
         existing = conn.execute(
-            "SELECT id FROM boat_functions WHERE production_id=? AND context='helpers'",
+            "SELECT id FROM boat_functions WHERE production_id=? AND context IN ('helpers', 'labour')",
             (prod_id,)
         ).fetchall()
     if existing:
-        return  # already seeded
+        return  # already seeded (context may be 'helpers' or 'labour' after migration)
 
     print(f"  Seeding {len(HELPER_DATA)} helper functions...")
     for h in HELPER_DATA:
