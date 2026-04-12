@@ -7,12 +7,11 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
-## [P1] Picture Boats and Security Boats lists are empty
+## [P1] ~~Picture Boats and Security Boats lists are empty~~ FIXED 2026-04-12
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`. All boats are in the main boats table with category "picture".
-- **Likely cause**: The data loader may not be seeding picture_boats and security_boats tables separately, or the boats were all created in the main `boats` table regardless of intended category.
-- **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
-- **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
+- **Fixed**: 2026-04-12 — Branch: fix/2026-04-12-populate-picture-security-boats
+- **Root cause**: `_seed_picture_boats()` and `_seed_security_boats()` in `data_loader.py` only created boat_functions (role definitions) but never populated the `picture_boats` and `security_boats` entity tables.
+- **Fix**: Added `_populate_picture_boats()` (copies 46 boats from main boats table) and `_populate_security_boats()` (seeds 6 known safety vessels). Both idempotent via settings flags.
 
 ## [P1] Transport and Helpers lists are empty
 - **Discovered**: 2026-03-22
@@ -34,6 +33,20 @@
 - **Likely cause**: Guards need to be created separately from guard posts
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
+
+## [P1] DELETE endpoints missing for picture_boats and security_boats
+- **Discovered**: 2026-04-12
+- **Symptoms**: `DELETE /api/productions/1/picture-boats/<id>` returns 404. Same for security boats. Users cannot delete picture or security boats from the UI.
+- **Likely cause**: DELETE routes were never implemented in app.py for these entity types.
+- **Files involved**: `app.py` (need to add DELETE routes for picture-boats and security-boats)
+- **Estimated effort**: Quick — copy pattern from existing boats DELETE route
+
+## [P1] Crew > Helpers list is empty (0 items)
+- **Discovered**: 2026-04-12 (re-confirmed from 2026-03-22)
+- **Symptoms**: `/api/productions/1/helpers` returns `[]`. Helper functions (73 boat_functions with context='labour') exist but no helper entities are in the `helpers` table.
+- **Likely cause**: `_seed_helpers()` in `data_loader.py` likely only creates helper_functions but not actual helper entities, same pattern as the picture/security boats issue.
+- **Files involved**: `data_loader.py`, `database.py`
+- **Estimated effort**: Medium — need to populate helpers table
 
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22
