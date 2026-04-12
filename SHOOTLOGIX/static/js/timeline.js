@@ -41,7 +41,9 @@ const Timeline = (() => {
 
   // ── Helpers ────────────────────────────────────────────────
   function _api(url) {
-    const token = localStorage.getItem('sl_token');
+    // Token is stored as `access_token` in the monolith architecture;
+    // fall back to the legacy `sl_token` key for backward compatibility.
+    const token = localStorage.getItem('access_token') || localStorage.getItem('sl_token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = 'Bearer ' + token;
     return fetch(url, { headers }).then(r => {
@@ -438,7 +440,11 @@ const Timeline = (() => {
 
   // ── Data loading ───────────────────────────────────────────
   async function _loadData() {
-    const prodId = window._SL ? window._SL.state.prodId : null;
+    // In the monolith architecture, `window._SL` does not exist. Fall back to
+    // the `currentProdId` key that app-monolith.js writes to localStorage when
+    // selecting a project.
+    const prodId = (window._SL && window._SL.state && window._SL.state.prodId)
+                || localStorage.getItem('currentProdId');
     if (!prodId) {
       _container.innerHTML = '<div style="padding:2rem;color:var(--text-3)">No production selected.</div>';
       return;

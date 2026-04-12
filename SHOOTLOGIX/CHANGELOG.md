@@ -1,5 +1,31 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-12 — [P0] Fix Timeline tab completely broken (SQL schema + monolith compat)
+
+**Problem**: Clicking the Timeline tab was a dead end:
+1. `GET /api/productions/<id>/timeline` returned **HTTP 500** — `sqlite3.OperationalError: no such column: site`, then (after that first fix) `no such column: prep`. The endpoint queried `SELECT id, name, site FROM locations` and `SELECT id, date, prep, filming, wrap FROM location_schedules`, but neither schema has those columns.
+2. Even if the backend had worked, `static/js/timeline.js` pulled `prodId` from `window._SL.state.prodId` (which only exists in the legacy module architecture, not the monolith) and read the JWT from `localStorage['sl_token']` (the monolith writes it as `access_token`). So the UI showed "No production selected." regardless.
+
+**Root cause**:
+- `api_timeline()` in `app.py` was written against a phantom/older schema. The real `locations` table has `location_type` (`'game'`/`'tribal_camp'`/`'reward'`), and `location_schedules` stores a single `status` TEXT column with values `'P'`/`'F'`/`'W'`, not three booleans.
+- `static/js/timeline.js` was authored for the `window._SL` module system referenced in `static/app.js`, but `templates/index.html` only loads `app-monolith.js` + `timeline.js`, so `window._SL` is always undefined at runtime.
+
+**Fix**:
+- `app.py` (`api_timeline`, lines ~7892–7915): `SELECT id, name, site …` → `SELECT id, name, location_type …`; `SELECT id, date, prep, filming, wrap …` → `SELECT id, date, status …`; build `phases` from `s['status']` directly (single phase letter per row, consistent with the unique `(production_id, location_name, date)` constraint). Subgroup now uses `loc['location_type']`.
+- `static/js/timeline.js` (`_loadData`): fall back to `localStorage.getItem('currentProdId')` when `window._SL` is absent (the monolith writes this key in `_selectProject`).
+- `static/js/timeline.js` (`_api`): read `access_token` first, fall back to legacy `sl_token`.
+
+**Verification**:
+- `curl /api/productions/1/timeline` with a valid JWT → **HTTP 200**, 40.6 KB JSON, 81 resources (39 boats/boat-family items, 3 vehicles, 21 locations), 32 shooting days, 2026-02-20 → 2026-05-04.
+- All 21 locations render with subgroup = `location_type`; e.g. `ARENA (SABOGA)` (`game`, 4 assignments), `CAMP YELLOW` (`tribal_camp`, 0).
+- `node -e new Function(readFileSync(...))` JS syntax check passes for `timeline.js` and `app-monolith.js`.
+- `python -m pytest tests/` → **45 passed** (no regressions).
+
+**Branch**: fix/2026-04-12-timeline-500-site-column
+**PR**: (filed via MCP below)
+**Side effects**: None. The monolith token fallback is additive — legacy `sl_token` still works if present.
+**Next priority**: P1 — Picture Boats / Security Boats / Guards / Transport lists are empty (data seeding, tracked in ISSUES.md).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
