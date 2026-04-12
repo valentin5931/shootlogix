@@ -7,19 +7,17 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
-## [P1] Picture Boats and Security Boats lists are empty
+## [P1] Picture Boats and Security Boats lists are empty — ✅ FIXED 2026-04-12
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`. All boats are in the main boats table with category "picture".
-- **Likely cause**: The data loader may not be seeding picture_boats and security_boats tables separately, or the boats were all created in the main `boats` table regardless of intended category.
-- **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
-- **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
+- **Fixed**: 2026-04-12 — Added entity seeding in `_seed_picture_boats()` (6 picture boats) and `_seed_security_boats()` (6 security boats). Also fixed bootstrap "existing production" path to call all seed functions.
+- **Branch**: fix/2026-04-12-seed-picture-security-boats
 
-## [P1] Transport and Helpers lists are empty
-- **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
-- **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+## [P1] Helpers list is empty (transport now working)
+- **Discovered**: 2026-03-22 | **Updated**: 2026-04-12
+- **Symptoms**: `/api/productions/1/helpers` returns `[]` but `helper-assignments` has 73 records (all with `helper_id=None`). Transport is now working (14 vehicles seeded, correct endpoint at `/api/productions/1/transport-vehicles`).
+- **Likely cause**: `_seed_helpers()` creates boat_functions + helper_assignments but does NOT create records in the `helpers` table. The assignments have `helper_id=None` (unassigned slots).
+- **Files involved**: `data_loader.py` (`_seed_helpers` function)
+- **Estimated effort**: Medium — need to create helper entity records and optionally link them to existing assignments
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22
