@@ -1,18 +1,16 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] ~~Checklist tab completely broken — state.production undefined~~ FIXED 2026-04-12
-- **Discovered**: 2026-04-12
-- **Symptoms**: Checklist tab shows empty page. Load, generate, and toggle all silently fail.
-- **Root cause**: `state.production` referenced in 3 checklist functions but never set; app uses `state.prodId`.
-- **Fix**: Replaced `state.production` / `state.production.id` with `state.prodId` in `static/app-monolith.js`.
-- **Branch**: fix/2026-04-12-checklist-tab-broken
-
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [RESOLVED] [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Resolved**: 2026-04-12
+- **Resolution**: The sub-nav injection approach works correctly. Layout overflow was fixed in 2026-03-23 (CSS var `--subnav-bar-h`). Event handlers fire properly because the original DOM panels are switched, not cloned. Sub-nav is moved between panels via `prepend()` which works as intended with `getElementById()`.
+
+## [RESOLVED] [P0] Checklist tab completely broken — state.production undefined
+- **Discovered**: 2026-04-12
+- **Resolved**: 2026-04-12 (fix/2026-04-12-checklist-tab-broken)
+- **Symptoms**: Clicking Checklist tab showed the panel but no data loaded. "Generate" button did nothing. No error displayed.
+- **Root cause**: `loadChecklist()`, `generateChecklist()`, and `toggleChecklistItem()` referenced `state.production` (never set) instead of `state.prodId`.
+- **Fix**: Replaced `state.production` / `state.production.id` with `state.prodId` in all 3 functions.
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
@@ -21,12 +19,17 @@
 - **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
 - **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
 
-## [P1] Transport and Helpers lists are empty
+## [RESOLVED] [P1] Transport list is empty
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
+- **Resolved**: 2026-04-12 (verified — transport-vehicles has 14 vehicles seeded by data_loader.py)
+
+## [P1] Helpers list is empty (but 73 helper-assignments exist)
+- **Discovered**: 2026-03-22
+- **Updated**: 2026-04-12
+- **Symptoms**: `/api/productions/1/helpers` returns `[]` but `/api/productions/1/helper-assignments` has 73 entries (all with `helper_id=NULL`). The Labour tab shows assignment cards via functions but no named workers.
+- **Likely cause**: Helper-assignments are function-based (linked via `boat_function_id`), not worker-based. No individual helpers have been created by users yet. This is expected behavior — users add helpers as needed.
 - **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+- **Estimated effort**: Not a bug — data entry by users
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22
