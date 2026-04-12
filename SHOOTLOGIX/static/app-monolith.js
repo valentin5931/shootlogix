@@ -2491,7 +2491,11 @@ const App = (() => {
     const container = $('boat-list');
 
     if (!boats.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No boats</div>';
+      container.innerHTML = `<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1.5rem .5rem">
+        <div style="font-size:1.5rem;margin-bottom:.5rem">&#9973;</div>
+        <div style="margin-bottom:.5rem">No boats yet</div>
+        <button class="btn btn-sm btn-primary" onclick="App.openAddBoatModal()">+ Add Boat</button>
+      </div>`;
       return;
     }
 
@@ -4367,7 +4371,11 @@ const App = (() => {
     const assignedIds = new Set(state.pictureAssignments.filter(a => a.picture_boat_id).map(a => a.picture_boat_id));
     const container = $('pb-boat-list');
     if (!boats.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No picture boats</div>';
+      container.innerHTML = `<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1.5rem .5rem">
+        <div style="font-size:1.5rem;margin-bottom:.5rem">&#9973;</div>
+        <div style="margin-bottom:.5rem">No picture boats yet</div>
+        <button class="btn btn-sm btn-primary" onclick="App.openAddPictureBoatModal()">+ Add Picture Boat</button>
+      </div>`;
       return;
     }
     container.innerHTML = boats.map(b => {
@@ -5616,7 +5624,11 @@ const App = (() => {
     const container = $('tb-vehicle-list');
     if (!container) return;
     if (!vehicles.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No vehicles</div>';
+      container.innerHTML = `<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1.5rem .5rem">
+        <div style="font-size:1.5rem;margin-bottom:.5rem">&#128666;</div>
+        <div style="margin-bottom:.5rem">No vehicles yet</div>
+        <button class="btn btn-sm btn-primary" onclick="App.openAddTransportVehicleModal()">+ Add Vehicle</button>
+      </div>`;
       return;
     }
     container.innerHTML = vehicles.map(v => {
@@ -7273,7 +7285,11 @@ const App = (() => {
     const container = $('lb-worker-list');
     if (!container) return;
     if (!workers.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No workers</div>';
+      container.innerHTML = `<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1.5rem .5rem">
+        <div style="font-size:1.5rem;margin-bottom:.5rem">&#128119;</div>
+        <div style="margin-bottom:.5rem">No workers yet</div>
+        <button class="btn btn-sm btn-primary" onclick="App.openAddWorkerModal()">+ Add Worker</button>
+      </div>`;
       return;
     }
     container.innerHTML = workers.map(w => {
@@ -8159,7 +8175,11 @@ const App = (() => {
     const container = $('sb-boat-list');
     if (!container) return;
     if (!boats.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No security boats</div>';
+      container.innerHTML = `<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1.5rem .5rem">
+        <div style="font-size:1.5rem;margin-bottom:.5rem">&#128737;&#65039;</div>
+        <div style="margin-bottom:.5rem">No security boats yet</div>
+        <button class="btn btn-sm btn-primary" onclick="App.openAddSecurityBoatModal()">+ Add Security Boat</button>
+      </div>`;
       return;
     }
     container.innerHTML = boats.map(b => {
@@ -10253,7 +10273,11 @@ const App = (() => {
     const container = $('gc-worker-list');
     if (!container) return;
     if (!workers.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No guards</div>';
+      container.innerHTML = `<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1.5rem .5rem">
+        <div style="font-size:1.5rem;margin-bottom:.5rem">&#128130;</div>
+        <div style="margin-bottom:.5rem">No camp guards yet</div>
+        <button class="btn btn-sm btn-primary" onclick="App.gcShowAddWorkerModal()">+ Add Guard</button>
+      </div>`;
       return;
     }
     container.innerHTML = workers.map(w => {

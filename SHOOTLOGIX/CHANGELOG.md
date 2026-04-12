@@ -1,5 +1,32 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-12 — [P1] Bootstrap completeness + empty-state onboarding UX
+
+**Problem**:
+1. The existing-production bootstrap path in `data_loader.py` was missing calls to `_seed_security_boats()`, `_seed_transport()`, and `_seed_helpers()`. If a database were reset or these tables cleared, functions/vehicles/assignments would not be re-seeded.
+2. The `_seed_helpers()` guard checked for `context='helpers'` but the data had been migrated to `context='labour'`, which would cause duplicate seeding on a fresh database.
+3. Empty-state messages across 6 list sidebars (Boats, Picture Boats, Security Boats, Transport, Labour, Guards camp) showed minimal "No X" text with no guidance, leaving new users unsure how to populate them.
+
+**Root cause**:
+- The existing-production path (line 288-312 of `data_loader.py`) was added before all seed functions existed, and was never updated to include the later-added seed calls.
+- The context rename migration (`helpers` -> `labour`) was done in `database.py` but the `_seed_helpers` guard was never updated to match.
+- Empty states were using simple text strings without any actionable CTA.
+
+**Fix**:
+- `data_loader.py`: Added `_seed_security_boats(prod_id)`, `_seed_helpers(prod_id)`, and `_seed_transport(prod_id)` to the existing-production bootstrap path. Updated `_seed_helpers()` guard to check for both `'helpers'` and `'labour'` contexts.
+- `static/app-monolith.js`: Updated 6 empty-state blocks (`renderBoatList`, `renderPbBoatList`, `renderSbBoatList`, `renderTbVehicleList`, `renderLbWorkerList`, `renderGcWorkerList`) with icon + descriptive text + "+ Add" button that opens the corresponding add modal.
+
+**Verification**:
+- App starts without errors; no duplicate seeding on existing data
+- JS syntax check passes
+- All API endpoints return correct data (boats: 46, transport: 14, shooting days: 32)
+- Empty sidebar lists now show icon + guidance + "Add" CTA button
+- Existing functionality (CRUD, exports, tab navigation) unchanged
+
+**Branch**: fix/2026-04-12-bootstrap-completeness-empty-states
+**Side effects**: None
+**Next priority**: P1 — Investigate why all 47 boats are in main `boats` table with `category='picture'` but `picture_boats` and `security_boats` tables are empty. Consider whether some boats should be migrated to specialized tables, or whether the data model needs clarification.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
