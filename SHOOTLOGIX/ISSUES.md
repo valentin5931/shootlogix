@@ -1,5 +1,11 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [FIXED 2026-04-12] [P0] Timeline tab 500 error (schema drift + monolith compat)
+- **Symptoms**: Clicking Timeline did nothing (UI showed "No production selected." and, before the token fix, the API returned 500: `no such column: site`, then `no such column: prep`).
+- **Root cause**: `api_timeline()` queried non-existent `site`/`prep`/`filming`/`wrap` columns; `timeline.js` referenced `window._SL` (not present in monolith) and read the token from the wrong localStorage key.
+- **Files**: `app.py` (`api_timeline`), `static/js/timeline.js`.
+- **Fix branch**: `fix/2026-04-12-timeline-500-site-column`.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
