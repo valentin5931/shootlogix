@@ -7,19 +7,19 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
-## [P1] Picture Boats and Security Boats lists are empty
+## [P1] ~~Picture Boats and Security Boats lists are empty~~ FIXED 2026-04-12
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`. All boats are in the main boats table with category "picture".
-- **Likely cause**: The data loader may not be seeding picture_boats and security_boats tables separately, or the boats were all created in the main `boats` table regardless of intended category.
-- **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
-- **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
+- **Fixed**: 2026-04-12 — Branch `fix/2026-04-12-seed-picture-security-boats`
+- **Root cause**: `_seed_picture_boats()` and `_seed_security_boats()` in `data_loader.py` only created function groups but never populated the `picture_boats` or `security_boats` entity tables.
+- **Fix**: Added 6 picture boats and 6 security boats with initial assignments. Also fixed `_seed_helpers()` context mismatch (`'helpers'` → `'labour'`). All seeders now run on subsequent startups too.
 
-## [P1] Transport and Helpers lists are empty
+## [P1] Helpers list is empty (transport is now seeded)
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
-- **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+- **Updated**: 2026-04-12 — Transport vehicles ARE seeded (14 vehicles work fine). Helpers issue remains.
+- **Symptoms**: `/api/productions/1/helpers` returns `[]`. The `helpers` table is empty — 73 helper _assignments_ exist with `helper_name_override` but no actual helper entities.
+- **Likely cause**: The seeder creates function groups and assignments with name overrides, but never populates the `helpers` entity table. Users can still see assignment cards but the sidebar worker list is empty.
+- **Files involved**: `data_loader.py` (`_seed_helpers()`), `database.py`
+- **Estimated effort**: Medium — need to decide whether to seed named helper entities or keep the override-based approach
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22
