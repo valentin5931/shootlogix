@@ -1,30 +1,26 @@
 # CHANGELOG — ShootLogix
 
-## 2026-04-12 — [P0] Fix Timeline API crash — 3 schema mismatches in /timeline endpoint
+## 2026-04-12 — [P0] Fix Timeline API crash — invalid column references in SQL queries
 
-**Problem**: The `/api/productions/<id>/timeline` endpoint returned a 500 error (`sqlite3.OperationalError: no such column: site`). The Timeline tab was completely broken and could not render any data.
+**Problem**: The Timeline tab (`/api/productions/<id>/timeline`) returned a 500 error every time it was accessed. Two SQL queries referenced columns that don't exist in the database schema.
 
-**Root cause**: The timeline endpoint (added earlier) was written against an assumed schema that never existed. Three SQL queries referenced non-existent columns:
-1. `SELECT id, name, site FROM locations` — `site` column doesn't exist (correct column: `location_type`)
-2. `SELECT id, date, prep, filming, wrap FROM location_schedules` — `prep`/`filming`/`wrap` don't exist (correct column: `status` with values like 'F', 'P', 'W')
-3. `WHERE worker_id=?` in `guard_camp_assignments` — `worker_id` doesn't exist (correct column: `helper_id`)
+**Root cause**:
+1. The locations query on line 7893 used `SELECT id, name, site FROM locations` but the `locations` table has no `site` column — the correct column is `location_type`.
+2. The location_schedules query used `SELECT id, date, prep, filming, wrap FROM location_schedules` but the table stores phase data in a single `status` column (values: `'P'`, `'F'`, `'W'`) rather than separate boolean columns.
 
 **Fix**:
-- `app.py` line 7893: Changed `site` → `location_type` in locations SELECT
-- `app.py` line 7896: Changed `prep, filming, wrap` → `status` in location_schedules SELECT; rewrote phase extraction logic to use the single `status` character
-- `app.py` line 7912: Changed `loc['site']` → `loc['location_type']` in subgroup assignment
-- `app.py` line 7883: Changed `worker_id` → `helper_id` in guard_camp_assignments WHERE clause
-- Added `tests/test_timeline.py` with 2 tests to prevent regression
+- `app.py` (line 7893): Changed `site` to `location_type` in the locations SELECT query and updated the subgroup reference from `loc['site']` to `loc['location_type']`.
+- `app.py` (lines 7895-7909): Replaced the query from `SELECT id, date, prep, filming, wrap` to `SELECT id, date, status`, and simplified the phase extraction logic to read directly from the `status` column.
 
 **Verification**:
-- Timeline endpoint returns 200 with 81 resources (46 boats, 21 locations, 14 vehicles)
-- Location assignments correctly show phases (F, P, W)
-- All 47 tests pass (45 existing + 2 new timeline tests)
-- No regressions on any other endpoint
+- Timeline API now returns 200 with 82 resources (47 boats, 14 vehicles, 21 locations), 32 shooting days, 121 functions.
+- Location subgroups render correctly: `game`, `reward`, `tribal_camp`.
+- Location assignments include phase data (e.g., `"phases": "F"`).
+- Full regression: all 17 tested API endpoints return 200 (no regressions).
 
 **Branch**: fix/2026-04-12-timeline-api-crash
 **Side effects**: None
-**Next priority**: P0 fleet/crew sub-tab event handlers (ISSUES.md #1); P1 empty data lists (picture boats, security boats, transport, helpers, fuel, guards)
+**Next priority**: P1 — Picture Boats and Security Boats lists are empty (data model mismatch)
 
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
