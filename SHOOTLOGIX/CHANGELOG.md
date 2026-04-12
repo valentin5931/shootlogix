@@ -1,5 +1,24 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-12 — [P0] Fix state variable naming mismatches breaking schedule day overrides and pull-to-refresh
+
+**Problem**: Day-override operations (marking days off/active in the schedule grid) silently failed for Picture Boats, Security Boats, and Labour assignments. Additionally, pull-to-refresh on the Picture Boats tab stored fetched data in orphaned variables, so the display never updated with fresh data.
+
+**Root cause**: `_findAssignment()` referenced `state.pbAssignments`, `state.sbAssignments`, and `state.helperAssignments` — none of which exist. The actual variable names are `state.pictureAssignments`, `state.securityAssignments`, and `state.labourAssignments`. Similarly, `_reloadCurrentTab()` stored picture boat data in `state.pbFunctions`/`state.pbAssignments` instead of `state.pictureFunctions`/`state.pictureAssignments`.
+
+**Fix**:
+- `static/app-monolith.js` line 3524: Changed `state.pbAssignments` → `state.pictureAssignments`, `state.sbAssignments` → `state.securityAssignments`, `state.helperAssignments` → `state.labourAssignments`
+- `static/app-monolith.js` line 13004: Changed `state.pbFunctions` → `state.pictureFunctions`, `state.pbAssignments` → `state.pictureAssignments`
+
+**Verification**:
+- JS syntax check passes
+- All 45 tests pass
+- Grep confirms no remaining `state.pb*`/`state.sb*`/`state.helper*` mismatches
+
+**Branch**: fix/2026-04-12-state-variable-naming-mismatch
+**Side effects**: None
+**Next priority**: P1 — Picture Boats/Security Boats entity tables empty (0 records, CRUD works but no data seeded); verify Transport tab renders its 14 vehicles correctly in UI
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

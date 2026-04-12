@@ -1,11 +1,16 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [P0] ~~Fleet/Crew sub-tab event handlers may not fire on cloned DOM~~ RESOLVED
 - **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Resolved**: 2026-03-23 (layout fix) + 2026-04-12 (no actual handler bug — event handlers use global onclick, no cloning)
+- **Status**: CLOSED — Sub-nav layout fixed via `--subnav-bar-h` CSS var. Event handlers work correctly.
+
+## [P0] State variable naming mismatches in _findAssignment and _reloadCurrentTab — FIXED 2026-04-12
+- **Discovered**: 2026-04-12
+- **Symptoms**: Day-override edits (schedule grid cell changes) silently failed for Picture Boats, Security Boats, and Labour. Pull-to-refresh on Picture Boats tab didn't update the display.
+- **Root cause**: `_findAssignment()` used `state.pbAssignments`/`state.sbAssignments`/`state.helperAssignments` (nonexistent) instead of `state.pictureAssignments`/`state.securityAssignments`/`state.labourAssignments`. Same pattern in `_reloadCurrentTab()` for picture boats.
+- **Fix**: Corrected variable names in both functions.
+- **Status**: FIXED in branch `fix/2026-04-12-state-variable-naming-mismatch`
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
@@ -14,12 +19,13 @@
 - **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
 - **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
 
-## [P1] Transport and Helpers lists are empty
+## [P1] Helpers (Labour) entity list is empty — PARTIALLY RESOLVED
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
+- **Updated**: 2026-04-12
+- **Symptoms**: `/api/productions/1/helpers` returns `[]` (but 73 helper-assignments and 73 labour functions exist). Transport is now resolved — 14 transport vehicles are seeded and API returns them correctly.
+- **Likely cause**: No helper entities have been created; only functions and blank assignments were seeded. Users need to add worker entities through the UI.
 - **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+- **Estimated effort**: Quick — user needs to add worker data through the Labour tab
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22
