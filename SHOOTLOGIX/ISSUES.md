@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~Fuel entry creation crashes with 500 IntegrityError~~ FIXED 2026-04-12
+- **Discovered**: 2026-04-12
+- **Symptoms**: `POST /api/productions/<id>/fuel-entries` returned `sqlite3.IntegrityError: NOT NULL constraint failed: fuel_entries.source_type` as an HTML 500 error page
+- **Root cause**: `validate_fuel_entry()` did not validate `source_type` or `assignment_id` (both NOT NULL in DB)
+- **Fix**: Added validation for both fields in `validation.py` + added `sqlite3.IntegrityError` error handler in `app.py`
+- **PR**: fix/2026-04-12-fuel-entry-creation-crash
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

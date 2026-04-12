@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-12 — [P0] Fix fuel entry creation crash (500 IntegrityError)
+
+**Problem**: Creating a fuel entry via `POST /api/productions/<id>/fuel-entries` crashed with `sqlite3.IntegrityError: NOT NULL constraint failed: fuel_entries.source_type`, returning an HTML error page instead of JSON.
+
+**Root cause**: `validate_fuel_entry()` in `validation.py` did not validate the `source_type` or `assignment_id` fields, which are both `NOT NULL` in the `fuel_entries` table schema. When the API received a request missing these fields, the values passed through as `None` and the INSERT statement hit the SQLite NOT NULL constraint, producing an unhandled 500 error.
+
+**Fix**:
+- `validation.py` (lines 127-137): Added validation for `source_type` (required, must be one of: boats, picture_boats, security_boats, transport, machinery) and `assignment_id` (required).
+- `app.py` (line 7): Added `import sqlite3`.
+- `app.py` (lines 273-275): Added `@app.errorhandler(sqlite3.IntegrityError)` to return a JSON 409 response instead of an HTML error page for any unhandled database constraint violations.
+
+**Verification**:
+- Missing `source_type`/`assignment_id` → proper 422 JSON with field-level errors (was 500 HTML crash)
+- Invalid `source_type` → 422 with enum validation message
+- Valid fuel entry (machinery + boat) → 200, entry created and persisted
+- Full test suite: 45/45 tests pass, no regressions
+
+**Branch**: fix/2026-04-12-fuel-entry-creation-crash
+**Side effects**: None — the IntegrityError handler is additive and only catches otherwise-unhandled DB errors
+**Next priority**: Fix remaining P1 issues — empty Picture Boats / Security Boats lists (data not seeded in separate tables)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
