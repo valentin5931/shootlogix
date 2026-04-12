@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-12 — [P1] Add missing confirmation dialogs for destructive delete actions
+
+**Problem**: Several modules allowed destructive delete operations (removing assignments, clearing FNB entries) with a single click and no confirmation prompt, while the Labour and Guard Camp modules correctly used `showConfirm()`. Users could accidentally delete data with no way to undo.
+
+**Root cause**: Inconsistent implementation — `lbRemoveAssignmentById` and `gcRemoveAssignmentById` were wrapped in `showConfirm()`, but the Boats, Picture Boats, Transport, and Security Boats equivalents were not. The `fnbCellClear` function (triggered by right-click) could delete an entire week of catering entries silently.
+
+**Fix**:
+- `static/app-monolith.js`: Wrapped 4 assignment-removal functions in `showConfirm('Remove this assignment?', ...)`:
+  - `removeAssignmentById` (Boats, line ~2935)
+  - `pbRemoveAssignmentById` (Picture Boats, line ~2949)
+  - `tbRemoveAssignmentById` (Transport, line ~6329)
+  - `sbRemoveAssignmentById` (Security Boats, line ~8828)
+- `static/app-monolith.js`: Wrapped `fnbCellClear` (line ~11582) in `showConfirm()` with context-aware message ("Clear all entries for this week?" / "Clear this entry?")
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- All 45 existing tests pass
+- All 6 `*RemoveAssignmentById` functions now consistently use `showConfirm()`
+- App starts and serves all API endpoints correctly
+
+**Branch**: fix/2026-04-12-missing-delete-confirmations
+**Side effects**: None — purely additive (confirmation step before existing delete logic)
+**Next priority**: P1 UX — silent error handling in fuel machinery updates (catch block with `/* silent */`), or investigate empty picture_boats/security_boats data tables
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

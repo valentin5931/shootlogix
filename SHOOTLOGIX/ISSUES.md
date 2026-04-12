@@ -1,5 +1,23 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## ~~[P1] Missing confirmation dialogs for destructive delete actions~~ FIXED 2026-04-12
+- **Fixed in**: fix/2026-04-12-missing-delete-confirmations
+- **Details**: 4 assignment-remove functions (boats, picture boats, transport, security boats) and `fnbCellClear` now use `showConfirm()` before deleting
+
+## [P1] Silent error handling in fuel machinery updates
+- **Discovered**: 2026-04-12
+- **Symptoms**: When updating fuel machinery type, if the PUT request fails, user gets no feedback — data appears updated in UI but silently fails on server
+- **Likely cause**: catch block at ~line 6885 has `/* silent */` comment
+- **Files involved**: `static/app-monolith.js`
+- **Estimated effort**: Quick fix — replace silent catch with `toast('Error: ' + e.message, 'error')`
+
+## [P1] Guard camp preload fails silently
+- **Discovered**: 2026-04-12
+- **Symptoms**: When guard camp data fails to load in background, user sees nothing — tab will be blank with no error message
+- **Likely cause**: `.catch(() => {})` at ~line 9646 swallows errors
+- **Files involved**: `static/app-monolith.js`
+- **Estimated effort**: Quick fix
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
