@@ -1359,7 +1359,7 @@ const App = (() => {
     if (tab === 'crew')            renderCrewUnified();
     if (tab === 'today')           renderToday();
     if (tab === 'documents')       renderDocuments();
-    if (tab === 'timeline')        { if (typeof App.renderTimeline === 'function') App.renderTimeline(); }
+    if (tab === 'timeline')        renderTimeline();
     if (tab === 'admin')           adminSetTab(_adminTab || 'users');
     _updateFab();
     // For fleet/crew, show the active sub-tab in the breadcrumb
@@ -13102,6 +13102,187 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ── Timeline (Activity Feed) ──────────────────────────────
+  const _TL_MODULE_ICONS = {
+    pdt: { icon: '\u{1F4C5}', color: '#94A3B8' },
+    fleet: { icon: '\u2693', color: '#3B82F6' },
+    'picture-boats': { icon: '\u{1F4F7}', color: '#8B5CF6' },
+    'security-boats': { icon: '\u{1F6E1}', color: '#EF4444' },
+    transport: { icon: '\u{1F69B}', color: '#22C55E' },
+    fuel: { icon: '\u26FD', color: '#F59E0B' },
+    labour: { icon: '\u{1F465}', color: '#F59E0B' },
+    guards: { icon: '\u{1F482}', color: '#06B6D4' },
+    locations: { icon: '\u{1F4CD}', color: '#22C55E' },
+    fnb: { icon: '\u{1F37D}', color: '#F97316' },
+  };
+  const _TL_ACTION_CFG = {
+    create: { label: 'Added',   badge: '+', color: '#22C55E', bg: '#22C55E18' },
+    update: { label: 'Updated', badge: '~', color: '#3B82F6', bg: '#3B82F618' },
+    delete: { label: 'Removed', badge: '\u00D7', color: '#EF4444', bg: '#EF444418' },
+    lock:   { label: 'Locked',  badge: '\u{1F512}', color: '#F59E0B', bg: '#F59E0B18' },
+    unlock: { label: 'Unlocked',badge: '\u{1F513}', color: '#8B5CF6', bg: '#8B5CF618' },
+  };
+  const _TL_MODULE_LABELS = {
+    pdt: 'PDT (Schedule)', fleet: 'Fleet (Boats)', 'picture-boats': 'Picture Boats',
+    'security-boats': 'Security Boats', transport: 'Transport', fuel: 'Fuel',
+    labour: 'Labour', guards: 'Guards', locations: 'Locations', fnb: 'FNB (Food & Beverage)',
+  };
+  let _tlData = [];
+
+  function _tlRelTime(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00Z'));
+    const diffMs = Date.now() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 7) return `${diffDay}d ago`;
+    return dateStr.slice(0, 10);
+  }
+
+  function _tlFmtDate(dateStr) {
+    if (!dateStr || dateStr === 'unknown') return 'Unknown date';
+    try {
+      const d = new Date(dateStr + 'T00:00:00');
+      const today = new Date().toISOString().slice(0, 10);
+      const yest = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      if (dateStr === today) return 'Today';
+      if (dateStr === yest) return 'Yesterday';
+      return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    } catch { return dateStr; }
+  }
+
+  function _tlRenderEntry(e) {
+    const mod = _TL_MODULE_ICONS[e.module] || { icon: '\u2699', color: '#6b7280' };
+    const act = _TL_ACTION_CFG[e.action] || _TL_ACTION_CFG.update;
+    const time = e.timestamp && e.timestamp.length >= 16 ? e.timestamp.slice(11, 16) : '';
+    const relTime = _tlRelTime(e.timestamp);
+    const undoneClass = e.undone ? ' activity-entry-undone' : '';
+
+    let changesHTML = '';
+    if (e.changes && e.changes.length > 0) {
+      changesHTML = `<div class="activity-changes">
+        ${e.changes.slice(0, 5).map(c => {
+          const oldV = c.old == null ? 'empty' : c.old;
+          const newV = c.new == null ? 'empty' : c.new;
+          return `<div class="activity-change-row">
+            <span class="activity-change-field">${esc(c.field)}</span>
+            <span class="activity-change-old">${esc(String(oldV))}</span>
+            <span class="activity-change-arrow">&rarr;</span>
+            <span class="activity-change-new">${esc(String(newV))}</span>
+          </div>`;
+        }).join('')}
+        ${e.changes.length > 5 ? `<div class="activity-change-more">+${e.changes.length - 5} more</div>` : ''}
+      </div>`;
+    }
+
+    return `<div class="activity-entry${undoneClass}" data-module="${e.module}">
+      <div class="activity-timeline-dot">
+        <div class="activity-timeline-line"></div>
+        <div class="activity-dot" style="background:${act.color}"></div>
+      </div>
+      <div class="activity-entry-content">
+        <div class="activity-entry-header">
+          <span class="activity-module-icon">${mod.icon}</span>
+          <span class="activity-action-tag" style="background:${act.bg};color:${act.color}">${esc(act.label)}</span>
+          <span class="activity-entry-time" title="${esc(e.timestamp || '')}">${esc(time)} - ${esc(relTime)}</span>
+        </div>
+        <div class="activity-entry-desc">${esc(e.description)}</div>
+        ${changesHTML}
+        <div class="activity-entry-user">${esc(e.user || 'System')}</div>
+      </div>
+    </div>`;
+  }
+
+  function _tlRenderGrouped(grouped) {
+    const dates = Object.keys(grouped).sort().reverse();
+    if (dates.length === 0) return '<div class="activity-empty">No activity found</div>';
+    let html = '';
+    for (const date of dates) {
+      const entries = grouped[date];
+      html += `<div class="activity-date-group">
+        <div class="activity-date-header">
+          <span class="activity-date-label">${esc(_tlFmtDate(date))}</span>
+          <span class="activity-date-count">${entries.length} action${entries.length > 1 ? 's' : ''}</span>
+        </div>
+        <div class="activity-date-entries">
+          ${entries.map(e => _tlRenderEntry(e)).join('')}
+        </div>
+      </div>`;
+    }
+    return html;
+  }
+
+  async function renderTimeline() {
+    const container = $('timeline-content');
+    if (!container || !state.prodId) return;
+
+    // Build controls + feed area if not already present
+    if (!$('tl-feed')) {
+      container.innerHTML = `
+        <div style="padding:.75rem 1rem;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;border-bottom:1px solid var(--border)">
+          <select id="tl-filter-module" onchange="App.renderTimeline()" style="padding:.35rem .5rem;border-radius:6px;background:var(--bg-2);color:var(--text);border:1px solid var(--border);font-size:.8rem">
+            <option value="">All modules</option>
+          </select>
+          <select id="tl-filter-action" onchange="App.renderTimeline()" style="padding:.35rem .5rem;border-radius:6px;background:var(--bg-2);color:var(--text);border:1px solid var(--border);font-size:.8rem">
+            <option value="">All actions</option>
+            <option value="create">Added</option>
+            <option value="update">Updated</option>
+            <option value="delete">Removed</option>
+          </select>
+          <input type="date" id="tl-filter-from" onchange="App.renderTimeline()" style="padding:.35rem .5rem;border-radius:6px;background:var(--bg-2);color:var(--text);border:1px solid var(--border);font-size:.8rem" placeholder="From">
+          <input type="date" id="tl-filter-to" onchange="App.renderTimeline()" style="padding:.35rem .5rem;border-radius:6px;background:var(--bg-2);color:var(--text);border:1px solid var(--border);font-size:.8rem" placeholder="To">
+        </div>
+        <div id="tl-feed" class="activity-feed" style="padding:.5rem 1rem;overflow-y:auto;max-height:calc(100vh - 48px - 2.5rem - 60px)">
+          <div class="activity-loading">Loading...</div>
+        </div>`;
+    }
+
+    const feed = $('tl-feed');
+    feed.innerHTML = '<div class="activity-loading">Loading...</div>';
+
+    const params = new URLSearchParams({ limit: '200' });
+    const modFilter = $('tl-filter-module')?.value || '';
+    const actFilter = $('tl-filter-action')?.value || '';
+    const dateFrom = $('tl-filter-from')?.value || '';
+    const dateTo = $('tl-filter-to')?.value || '';
+    if (modFilter) params.set('module', modFilter);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+
+    try {
+      const data = await api('GET', `/api/productions/${state.prodId}/activity?${params.toString()}`);
+      let entries = data.entries || [];
+      if (actFilter) entries = entries.filter(e => e.action === actFilter);
+      _tlData = entries;
+
+      // Regroup (since we may have filtered client-side)
+      const grouped = {};
+      for (const e of entries) {
+        const dk = e.date || 'unknown';
+        if (!grouped[dk]) grouped[dk] = [];
+        grouped[dk].push(e);
+      }
+      feed.innerHTML = _tlRenderGrouped(grouped);
+
+      // Populate module filter options from API data
+      if (data.modules) {
+        const sel = $('tl-filter-module');
+        const cur = sel.value;
+        sel.innerHTML = '<option value="">All modules</option>';
+        for (const m of data.modules) {
+          sel.innerHTML += `<option value="${m}">${esc(_TL_MODULE_LABELS[m] || m)}</option>`;
+        }
+        sel.value = cur;
+      }
+    } catch (e) {
+      feed.innerHTML = '<div class="activity-empty">Failed to load activity</div>';
+    }
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13233,6 +13414,8 @@ const App = (() => {
     // Documents
     renderDocuments, _docShowUpload, _docSubmitUpload, _docToggleVersions,
     _docSetStatus, _docDelete, _docUploadVersion, _docSubmitVersion,
+    // Timeline
+    renderTimeline,
     // Alerts (AXE 7.3)
     toggleAlertsPanel, filterAlerts, loadAlerts,
     // Search

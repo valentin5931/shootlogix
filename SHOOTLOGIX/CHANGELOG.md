@@ -1,5 +1,32 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-12 — [P0] Fix Timeline tab — missing renderTimeline function
+
+**Problem**: Clicking the Timeline tab showed a completely blank panel. No activity feed, no history entries, nothing rendered at all.
+
+**Root cause**: The `setTab('timeline')` handler checked `if (typeof App.renderTimeline === 'function')` — but `renderTimeline` was never defined in `app-monolith.js`. The function only existed in `static/modules/activity.js`, a dead module file that relies on `window._SL` which doesn't exist in the monolith architecture. The function was never ported to the monolith.
+
+**Fix**:
+- `static/app-monolith.js`: Added a complete `renderTimeline()` function (~160 lines) that:
+  - Fetches from `/api/productions/{id}/activity` (enriched activity feed API)
+  - Renders a full-page timeline with entries grouped by date
+  - Includes filter controls: module, action type, date range
+  - Reuses existing `.activity-*` CSS classes for consistent styling
+  - Shows module icons, action badges, timestamps, relative times, change details, and user attribution
+- Updated `setTab()` handler to call `renderTimeline()` directly instead of the conditional `App.renderTimeline` check
+- Added `renderTimeline` to the module's public API exports
+
+**Verification**:
+- Timeline tab now renders activity entries grouped by date with proper styling
+- Filters (module, action, date range) work and update the feed
+- All existing tabs still work (no regressions)
+- JS syntax check passes
+- All API endpoints return 200
+
+**Branch**: fix/2026-04-12-timeline-tab-broken
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats lists are empty (data model issue)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

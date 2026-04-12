@@ -1,5 +1,19 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] Timeline tab blank — FIXED 2026-04-12
+- **Discovered**: 2026-04-12
+- **Symptoms**: Clicking the Timeline tab rendered a blank panel
+- **Root cause**: `renderTimeline` function was never ported from `static/modules/activity.js` to `app-monolith.js`. The `setTab()` handler checked `typeof App.renderTimeline === 'function'` which was always false.
+- **Fix**: Added `renderTimeline()` to `app-monolith.js` using the `/api/productions/{id}/activity` enriched API. Added filters and date grouping. Exported in public API.
+- **Status**: FIXED in branch `fix/2026-04-12-timeline-tab-broken`
+
+## [P0] Activity panel button (top bar) does nothing
+- **Discovered**: 2026-04-12
+- **Symptoms**: The clock/history icon button in the top bar (`#activity-btn`) calls `App.toggleActivityPanel()` which is not defined in the monolith. It only exists in dead module code (`static/modules/activity.js`).
+- **Likely cause**: Same issue as Timeline — the activity panel overlay functions were never ported to the monolith.
+- **Files involved**: `static/app-monolith.js`, `templates/index.html` (line 91)
+- **Estimated effort**: Medium — need to implement a sliding overlay panel with the same activity feed
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
