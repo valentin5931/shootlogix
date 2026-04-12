@@ -10603,7 +10603,8 @@ const App = (() => {
         state.gcWorkers = await api('GET', `/api/productions/${state.prodId}/guard-camp-workers`);
         renderGcWorkerList();
       } else {
-        renderTab('labour');
+        state.labourWorkers = await api('GET', `/api/productions/${state.prodId}/helpers`);
+        renderLbWorkerList();
       }
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -10627,7 +10628,8 @@ const App = (() => {
         state.gcWorkers = await api('GET', `/api/productions/${state.prodId}/guard-camp-workers`);
         renderGcWorkerList();
       } else {
-        renderTab('labour');
+        state.labourWorkers = await api('GET', `/api/productions/${state.prodId}/helpers`);
+        renderLbWorkerList();
       }
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -10720,8 +10722,14 @@ const App = (() => {
 
       toast(`${res.created} ${_CSV_MODULE_LABELS[_csvImportModule] || _csvImportModule} imported`);
       if (!res.errors || res.errors.length === 0) closeCsvImportModal();
-      // Reload current tab
-      if (typeof App.renderTab === 'function') App.renderTab(state.activeTab);
+      // Reload current tab data
+      if (_csvImportModule === 'helpers') {
+        state.labourWorkers = await api('GET', `/api/productions/${state.prodId}/helpers`);
+        renderLbWorkerList();
+      } else if (_csvImportModule === 'guard_camp') {
+        state.gcWorkers = await api('GET', `/api/productions/${state.prodId}/guard-camp-workers`);
+        renderGcWorkerList();
+      }
     } catch (e) { toast('Import error: ' + e.message, 'error'); }
   }
 

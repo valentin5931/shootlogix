@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-12 — [P0] Fix checklist generate returning null + renderTab ReferenceError
+
+**Problem**:
+1. The Checklist "Generate" button produced no checklist — API returned `null` instead of a checklist with items.
+2. After bulk-creating or CSV-importing helpers, a `ReferenceError: renderTab is not defined` crashed the post-creation flow, preventing the helper list from refreshing.
+
+**Root cause**:
+1. `generate_daily_checklist()` in `database.py` inserts checklist items inside a `with get_db() as conn:` block, then calls `get_daily_checklist()` which opens a **separate** SQLite connection. Since the first connection hasn't committed yet (the `with` block hasn't exited), the second connection can't see the newly inserted data and returns `None`.
+2. `renderTab('labour')` was called in `app-monolith.js` at three locations (bulk create, CSV import, generic CSV import) but the function `renderTab` was never defined in the monolith. The generic CSV import had a guarded call (`typeof App.renderTab === 'function'`) that silently failed.
+
+**Fix**:
+- `database.py` (line 5785): Replaced the call to `get_daily_checklist()` with an inline read from the **same** connection, ensuring the uncommitted inserts are visible.
+- `app-monolith.js` (lines 10606, 10630, 10726): Replaced all three `renderTab('labour')` / `App.renderTab()` calls with proper data reload + render: `state.labourWorkers = await api(...)` then `renderLbWorkerList()` (or equivalent for guard_camp).
+
+**Verification**:
+- Checklist generate for 2026-03-25 now returns 96 items (was `null`)
+- Checklist GET retrieves saved data correctly
+- All 45 tests pass (no regressions)
+- No remaining `renderTab` references in codebase
+
+**Branch**: fix/2026-04-12-checklist-generate-null
+**Side effects**: None
+**Next priority**: P1 — Picture Boats / Security Boats data empty in database (data model issue)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
