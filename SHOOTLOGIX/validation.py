@@ -123,6 +123,22 @@ def validate_fuel_entry(data):
     """Validate a fuel entry."""
     errors = {}
 
+    # source_type required (NOT NULL in DB)
+    VALID_SOURCE_TYPES = ("boats", "picture_boats", "security_boats", "transport", "machinery")
+    source_type = data.get("source_type")
+    if not source_type:
+        errors["source_type"] = "source_type is required"
+    else:
+        try:
+            validate_enum(source_type, VALID_SOURCE_TYPES, "source_type")
+        except ValidationError as e:
+            errors.update(e.errors)
+
+    # assignment_id required (NOT NULL in DB)
+    assignment_id = data.get("assignment_id")
+    if assignment_id is None:
+        errors["assignment_id"] = "assignment_id is required"
+
     # Date required
     if not data.get("date"):
         errors["date"] = "date is required"
