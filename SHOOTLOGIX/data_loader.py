@@ -221,12 +221,12 @@ def _compute_shootlogix_total(prod_id):
 # ─── Bootstrap ────────────────────────────────────────────────────────────────
 
 PICTURE_BOAT_DATA = [
-    {'name': 'PANGA YELLOW 1',  'group': 'YELLOW',  'rate': 150, 'capacity': '8', 'wave_rating': 'small'},
-    {'name': 'PANGA YELLOW 2',  'group': 'YELLOW',  'rate': 150, 'capacity': '8', 'wave_rating': 'small'},
-    {'name': 'PANGA RED 1',     'group': 'RED',     'rate': 150, 'capacity': '8', 'wave_rating': 'small'},
-    {'name': 'PANGA RED 2',     'group': 'RED',     'rate': 150, 'capacity': '8', 'wave_rating': 'small'},
-    {'name': 'PANGA NEUTRAL',   'group': 'NEUTRAL', 'rate': 150, 'capacity': '8', 'wave_rating': 'small'},
-    {'name': 'PANGA EXILE',     'group': 'EXILE',   'rate': 150, 'capacity': '8', 'wave_rating': 'small'},
+    {'name': 'PB YELLOW 1',  'group': 'YELLOW',  'rate': 350, 'captain': 'TBD', 'start': '2026-03-20', 'end': '2026-04-25'},
+    {'name': 'PB YELLOW 2',  'group': 'YELLOW',  'rate': 350, 'captain': 'TBD', 'start': '2026-03-20', 'end': '2026-04-25'},
+    {'name': 'PB RED 1',     'group': 'RED',     'rate': 350, 'captain': 'TBD', 'start': '2026-03-20', 'end': '2026-04-25'},
+    {'name': 'PB RED 2',     'group': 'RED',     'rate': 350, 'captain': 'TBD', 'start': '2026-03-20', 'end': '2026-04-25'},
+    {'name': 'PB NEUTRAL 1', 'group': 'NEUTRAL', 'rate': 350, 'captain': 'TBD', 'start': '2026-03-20', 'end': '2026-04-25'},
+    {'name': 'PB EXILE 1',   'group': 'EXILE',   'rate': 350, 'captain': 'TBD', 'start': '2026-03-25', 'end': '2026-04-25'},
 ]
 
 
@@ -235,7 +235,7 @@ def _seed_picture_boats(prod_id):
     Safe to call multiple times (idempotent)."""
     with get_db() as conn:
         existing_funcs = conn.execute(
-            "SELECT id FROM boat_functions WHERE production_id=? AND context='picture'",
+            "SELECT id, name FROM boat_functions WHERE production_id=? AND context='picture'",
             (prod_id,)
         ).fetchall()
         existing_boats = conn.execute(
@@ -253,20 +253,36 @@ def _seed_picture_boats(prod_id):
         for f in pb_funcs:
             create_boat_function({**f, 'production_id': prod_id, 'context': 'picture'})
         print(f"  Seeded 4 Picture Boats functions (YELLOW/RED/NEUTRAL/EXILE)")
+        with get_db() as conn:
+            existing_funcs = conn.execute(
+                "SELECT id, name FROM boat_functions WHERE production_id=? AND context='picture'",
+                (prod_id,)
+            ).fetchall()
 
     if not existing_boats:
+        func_by_name = {r['name']: r['id'] for r in existing_funcs}
         print(f"  Seeding {len(PICTURE_BOAT_DATA)} picture boats...")
         for i, pb in enumerate(PICTURE_BOAT_DATA, 1):
-            create_picture_boat({
+            boat_id = create_picture_boat({
                 'production_id': prod_id,
                 'boat_nr': i,
                 'name': pb['name'],
-                'capacity': pb['capacity'],
-                'wave_rating': pb['wave_rating'],
+                'captain': pb['captain'],
                 'group_name': pb['group'],
                 'daily_rate_estimate': pb['rate'],
+                'vendor': 'LOCAL',
             })
-        print(f"  Seeded {len(PICTURE_BOAT_DATA)} picture boats")
+            func_id = func_by_name.get(pb['group'])
+            if func_id:
+                create_picture_boat_assignment({
+                    'boat_function_id': func_id,
+                    'picture_boat_id': boat_id,
+                    'start_date': pb['start'],
+                    'end_date': pb['end'],
+                    'price_override': pb['rate'],
+                    'assignment_status': 'confirmed',
+                })
+        print(f"  Seeded {len(PICTURE_BOAT_DATA)} picture boats with assignments")
 
 
 def _backup_db():
@@ -439,8 +455,9 @@ HELPER_DATA = [
 def _seed_helpers(prod_id):
     """Seed helpers + functions + assignments from budget data."""
     with get_db() as conn:
+        # Check for existing functions under both 'labour' (frontend context) and legacy 'helpers'
         existing = conn.execute(
-            "SELECT id FROM boat_functions WHERE production_id=? AND context='helpers'",
+            "SELECT id FROM boat_functions WHERE production_id=? AND context IN ('labour','helpers')",
             (prod_id,)
         ).fetchall()
     if existing:
@@ -458,7 +475,7 @@ def _seed_helpers(prod_id):
             'sort_order': gi['sort'],
             'default_start': h['start'],
             'default_end': h['end'],
-            'context': 'helpers',
+            'context': 'labour',
         })
         # Create the assignment with dates and rate
         create_helper_assignment({
@@ -482,12 +499,12 @@ SECURITY_BOAT_FUNCS = [
 ]
 
 SECURITY_BOAT_DATA = [
-    {'name': 'SAFETY BOAT 1 - GAMES',   'group': 'SAFETY',  'rate': 350, 'capacity': '6', 'wave_rating': 'medium'},
-    {'name': 'SAFETY BOAT 2 - COUNCIL', 'group': 'SAFETY',  'rate': 350, 'capacity': '6', 'wave_rating': 'medium'},
-    {'name': 'SAFETY BOAT 3 - ARENA',   'group': 'SAFETY',  'rate': 350, 'capacity': '6', 'wave_rating': 'medium'},
-    {'name': 'SAFETY EVAC BOAT',         'group': 'EVAC',    'rate': 880, 'capacity': '12','wave_rating': 'large'},
-    {'name': 'SAFETY MEDICAL BOAT',      'group': 'MEDICAL', 'rate': 500, 'capacity': '8', 'wave_rating': 'medium'},
-    {'name': 'SAFETY STANDBY BOAT',      'group': 'STANDBY', 'rate': 300, 'capacity': '6', 'wave_rating': 'medium'},
+    {'name': 'SB GAMES',     'func': 'SAFETY GAMES',   'rate': 321, 'captain': 'TBD', 'start': '2026-03-20', 'end': '2026-04-25'},
+    {'name': 'SB COUNCIL',   'func': 'SAFETY COUNCIL', 'rate': 321, 'captain': 'TBD', 'start': '2026-03-25', 'end': '2026-04-25'},
+    {'name': 'SB ARENA',     'func': 'SAFETY ARENA',   'rate': 321, 'captain': 'TBD', 'start': '2026-03-20', 'end': '2026-04-25'},
+    {'name': 'SB EVAC',      'func': 'SAFETY EVAC',    'rate': 880, 'captain': 'TBD', 'start': '2026-02-23', 'end': '2026-04-30'},
+    {'name': 'SB MEDICAL',   'func': 'SAFETY MEDICAL', 'rate': 642, 'captain': 'TBD', 'start': '2026-02-23', 'end': '2026-05-04'},
+    {'name': 'SB STANDBY',   'func': 'SAFETY STANDBY', 'rate': 321, 'captain': 'TBD', 'start': '2026-03-20', 'end': '2026-04-25'},
 ]
 
 
@@ -496,7 +513,7 @@ def _seed_security_boats(prod_id):
     Safe to call multiple times (idempotent)."""
     with get_db() as conn:
         existing_funcs = conn.execute(
-            "SELECT id FROM boat_functions WHERE production_id=? AND context='security'",
+            "SELECT id, name FROM boat_functions WHERE production_id=? AND context='security'",
             (prod_id,)
         ).fetchall()
         existing_boats = conn.execute(
@@ -517,20 +534,36 @@ def _seed_security_boats(prod_id):
                 'default_end': f['end'],
                 'context': 'security',
             })
+        with get_db() as conn:
+            existing_funcs = conn.execute(
+                "SELECT id, name FROM boat_functions WHERE production_id=? AND context='security'",
+                (prod_id,)
+            ).fetchall()
 
     if not existing_boats:
+        func_by_name = {r['name']: r['id'] for r in existing_funcs}
         print(f"  Seeding {len(SECURITY_BOAT_DATA)} security boats...")
         for i, sb in enumerate(SECURITY_BOAT_DATA, 1):
-            create_security_boat({
+            boat_id = create_security_boat({
                 'production_id': prod_id,
                 'boat_nr': i,
                 'name': sb['name'],
-                'capacity': sb['capacity'],
-                'wave_rating': sb['wave_rating'],
-                'group_name': sb['group'],
+                'captain': sb['captain'],
+                'group_name': 'SAFETY',
                 'daily_rate_estimate': sb['rate'],
+                'vendor': 'LOCAL',
             })
-        print(f"  Seeded {len(SECURITY_BOAT_DATA)} security boats")
+            func_id = func_by_name.get(sb['func'])
+            if func_id:
+                create_security_boat_assignment({
+                    'boat_function_id': func_id,
+                    'security_boat_id': boat_id,
+                    'start_date': sb['start'],
+                    'end_date': sb['end'],
+                    'price_override': sb['rate'],
+                    'assignment_status': 'confirmed',
+                })
+        print(f"  Seeded {len(SECURITY_BOAT_DATA)} security boats with assignments")
 
 
 # ─── Seed Transport ─────────────────────────────────────────────────────────

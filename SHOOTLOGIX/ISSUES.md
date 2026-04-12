@@ -7,17 +7,19 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
-## [P1] Picture Boats and Security Boats lists are empty — ✅ FIXED 2026-04-12
+## [P1] ~~Picture Boats and Security Boats lists are empty~~ FIXED 2026-04-12
 - **Discovered**: 2026-03-22
-- **Fixed**: 2026-04-12 — Added entity seeding in `_seed_picture_boats()` (6 picture boats) and `_seed_security_boats()` (6 security boats). Also fixed bootstrap "existing production" path to call all seed functions.
-- **Branch**: fix/2026-04-12-seed-picture-security-boats
+- **Fixed**: 2026-04-12 — Branch `fix/2026-04-12-seed-picture-security-boats`
+- **Root cause**: `_seed_picture_boats()` and `_seed_security_boats()` in `data_loader.py` only created function groups but never populated the `picture_boats` or `security_boats` entity tables.
+- **Fix**: Added 6 picture boats and 6 security boats with initial assignments. Also fixed `_seed_helpers()` context mismatch (`'helpers'` → `'labour'`). All seeders now run on subsequent startups too.
 
-## [P1] Helpers list is empty (transport now working)
-- **Discovered**: 2026-03-22 | **Updated**: 2026-04-12
-- **Symptoms**: `/api/productions/1/helpers` returns `[]` but `helper-assignments` has 73 records (all with `helper_id=None`). Transport is now working (14 vehicles seeded, correct endpoint at `/api/productions/1/transport-vehicles`).
-- **Likely cause**: `_seed_helpers()` creates boat_functions + helper_assignments but does NOT create records in the `helpers` table. The assignments have `helper_id=None` (unassigned slots).
-- **Files involved**: `data_loader.py` (`_seed_helpers` function)
-- **Estimated effort**: Medium — need to create helper entity records and optionally link them to existing assignments
+## [P1] Helpers list is empty (transport is now seeded)
+- **Discovered**: 2026-03-22
+- **Updated**: 2026-04-12 — Transport vehicles ARE seeded (14 vehicles work fine). Helpers issue remains.
+- **Symptoms**: `/api/productions/1/helpers` returns `[]`. The `helpers` table is empty — 73 helper _assignments_ exist with `helper_name_override` but no actual helper entities.
+- **Likely cause**: The seeder creates function groups and assignments with name overrides, but never populates the `helpers` entity table. Users can still see assignment cards but the sidebar worker list is empty.
+- **Files involved**: `data_loader.py` (`_seed_helpers()`), `database.py`
+- **Estimated effort**: Medium — need to decide whether to seed named helper entities or keep the override-based approach
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22

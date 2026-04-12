@@ -11,23 +11,23 @@
 
 **Fix**:
 - `data_loader.py`:
-  - Added `PICTURE_BOAT_DATA` (6 boats: 2 YELLOW, 2 RED, 1 NEUTRAL, 1 EXILE) and seed logic in `_seed_picture_boats()` to create actual `picture_boats` records
-  - Added `SECURITY_BOAT_DATA` (6 boats matching safety functions) and seed logic in `_seed_security_boats()` to create actual `security_boats` records
+  - Added `PICTURE_BOAT_DATA` (6 boats: 2 YELLOW, 2 RED, 1 NEUTRAL, 1 EXILE) and seed logic in `_seed_picture_boats()` to create actual `picture_boats` records with assignments linking them to functions
+  - Added `SECURITY_BOAT_DATA` (6 boats matching safety functions) and seed logic in `_seed_security_boats()` to create actual `security_boats` records with assignments
   - Added `_seed_security_boats`, `_seed_helpers`, `_seed_transport` calls to the "existing production" bootstrap path
-  - Added `create_picture_boat` to imports
+  - Added `create_picture_boat`, `create_picture_boat_assignment` to imports
+  - Fixed `_seed_helpers()` context mismatch: changed `context='helpers'` to `context='labour'` (matching frontend) and updated idempotency check to match both contexts
   - All seed functions are idempotent (check for existing data before inserting)
 
 **Verification**:
-- Picture Boats API returns 6 boats (was 0)
-- Security Boats API returns 6 boats (was 0)
-- CRUD operations (edit, create assignment) work for both picture and security boats
+- Picture Boats: 6 boats, 4 functions, 6 assignments — all returned via API (was 0)
+- Security Boats: 6 boats, 6 functions, 6 assignments — all returned via API (was 0)
 - Bootstrap idempotency verified: second run doesn't duplicate data
 - All 45 tests pass
 - No regressions in any other tab (boats 46, transport 14, locations 21, PDT 32 days, etc.)
 
 **Branch**: fix/2026-04-12-seed-picture-security-boats
 **Side effects**: None — only additive changes (new seed data + missing bootstrap calls)
-**Next priority**: Seed helper entity records in `_seed_helpers()` (currently creates functions/assignments but no `helpers` table records); Guards entity seeding; check frontend UX for empty state handling
+**Next priority**: P1 — Helpers/Guard Camp empty entity tables; P0 sub-nav DOM event handler issue
 
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
