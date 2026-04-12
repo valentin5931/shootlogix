@@ -1,5 +1,35 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-12 — [P0] Fix broken topbar buttons (mobile menu, notifications, activity) + checklist crash
+
+**Problem**:
+1. Clicking the burger menu button (mobile navigation) threw `App.toggleMobileMenu is not a function` — mobile users had no way to navigate between tabs.
+2. Clicking the notification bell threw `App.toggleNotifPanel is not a function` — notification panel was completely inaccessible.
+3. Clicking the activity history button threw `App.toggleActivityPanel is not a function` — activity panel was inaccessible.
+4. Checklist tab was non-functional: all three checklist functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) referenced `state.production.id` which was never initialized — only `state.prodId` exists.
+
+**Root cause**:
+- When the codebase was migrated from `app.js` to `app-monolith.js`, three functions (`toggleMobileMenu`, `toggleNotifPanel`, `toggleActivityPanel`) were never ported over. The old `app.js` had them (or stubs), but `app-monolith.js` did not.
+- The checklist module was written referencing `state.production` (an object) instead of the actual `state.prodId` (an integer), likely a copy-paste error from a different project pattern.
+
+**Fix**:
+- `static/app-monolith.js`: Added full implementations for `toggleMobileMenu()`, `toggleNotifPanel()`, `closeNotifPanel()`, `markAllNotificationsRead()`, `toggleActivityPanel()`, `closeActivityPanel()` with proper API integration.
+- `static/app-monolith.js`: Replaced all `state.production` references with `state.prodId` (4 occurrences in checklist functions).
+- Fixed notification API calls to use correct endpoint paths (`/api/notifications?production_id=X` instead of non-existent `/api/productions/X/notifications`).
+- All new functions exported in the App public API object.
+
+**Verification**:
+- JS syntax check passes (`node -c` clean).
+- Mobile menu opens/closes, syncs active tab state.
+- Notification bell opens panel, loads from correct API endpoint (HTTP 200).
+- Activity panel opens, loads from `/api/productions/{id}/activity` (HTTP 200).
+- Checklist tab: `loadChecklist` returns items (93 items generated for test date), `generateChecklist` creates new checklist (HTTP 201), `toggleChecklistItem` calls correct API path.
+- No regressions on existing tabs (all previous endpoints still return 200).
+
+**Branch**: fix/2026-04-12-missing-topbar-functions
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data model mismatch: boats exist in main `boats` table but not in `picture_boats`/`security_boats` tables)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

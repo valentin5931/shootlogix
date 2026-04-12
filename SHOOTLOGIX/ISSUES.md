@@ -1,5 +1,17 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [FIXED] Topbar buttons crash (toggleMobileMenu, toggleNotifPanel, toggleActivityPanel)
+- **Discovered**: 2026-04-12
+- **Fixed**: 2026-04-12 (branch: fix/2026-04-12-missing-topbar-functions)
+- **Symptoms**: Clicking burger menu, notification bell, or activity button threw JS errors
+- **Root cause**: Functions never ported from app.js to app-monolith.js
+
+## [FIXED] Checklist tab completely broken (state.production undefined)
+- **Discovered**: 2026-04-12
+- **Fixed**: 2026-04-12 (branch: fix/2026-04-12-missing-topbar-functions)
+- **Symptoms**: Checklist tab silently failed to load, generate, or toggle items
+- **Root cause**: Used `state.production.id` instead of `state.prodId`
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

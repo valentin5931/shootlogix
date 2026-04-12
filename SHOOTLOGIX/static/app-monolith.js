@@ -13029,9 +13029,9 @@ const App = (() => {
       dateEl.value = today;
     }
     const date = dateEl.value;
-    if (!state.production) return;
+    if (!state.prodId) return;
     try {
-      const data = await api('GET', `/api/productions/${state.production.id}/checklists?date=${date}`);
+      const data = await api('GET', `/api/productions/${state.prodId}/checklists?date=${date}`);
       _renderChecklist(data);
     } catch (e) {
       $('checklist-content').innerHTML = `<p style="color:var(--text-muted)">No checklist for this date.</p>`;
@@ -13041,18 +13041,18 @@ const App = (() => {
 
   async function generateChecklist() {
     const dateEl = $('checklist-date');
-    if (!dateEl.value || !state.production) return;
+    if (!dateEl.value || !state.prodId) return;
     try {
-      const data = await api('POST', `/api/productions/${state.production.id}/checklists/generate?date=${dateEl.value}`);
+      const data = await api('POST', `/api/productions/${state.prodId}/checklists/generate?date=${dateEl.value}`);
       _renderChecklist(data);
       toast(`Checklist generated: ${(data.items || []).length} items`);
     } catch (e) { toast(e.message, 'error'); }
   }
 
   async function toggleChecklistItem(itemId, checkbox) {
-    if (!state.production) return;
+    if (!state.prodId) return;
     try {
-      await api('PUT', `/api/productions/${state.production.id}/checklists/items/${itemId}/check`, {
+      await api('PUT', `/api/productions/${state.prodId}/checklists/items/${itemId}/check`, {
         checked: checkbox.checked
       });
       const container = $('checklist-content');
@@ -13100,6 +13100,142 @@ const App = (() => {
       html += '</div>';
     }
     container.innerHTML = html;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  MOBILE MENU
+  // ═══════════════════════════════════════════════════════════
+
+  function toggleMobileMenu() {
+    const menu = $('mobile-menu');
+    if (!menu) return;
+    const isOpen = !menu.classList.contains('hidden');
+    if (isOpen) {
+      menu.classList.add('hidden');
+      document.body.style.overflow = '';
+    } else {
+      menu.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      // Sync active state with current tab
+      menu.querySelectorAll('.mobile-menu-item[data-tab]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === state.tab);
+      });
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  NOTIFICATIONS PANEL
+  // ═══════════════════════════════════════════════════════════
+
+  let _notifPanelOpen = false;
+
+  function toggleNotifPanel() {
+    const panel = $('notif-panel');
+    if (!panel) return;
+    _notifPanelOpen = !_notifPanelOpen;
+    panel.classList.toggle('hidden', !_notifPanelOpen);
+    if (_notifPanelOpen) _loadNotifications();
+  }
+
+  function closeNotifPanel() {
+    const panel = $('notif-panel');
+    if (!panel) return;
+    _notifPanelOpen = false;
+    panel.classList.add('hidden');
+  }
+
+  async function _loadNotifications() {
+    const list = $('notif-list');
+    if (!list || !state.prodId) return;
+    try {
+      const data = await api('GET', `/api/notifications?production_id=${state.prodId}`);
+      if (!data || data.length === 0) {
+        list.innerHTML = '<div class="notif-empty">No notifications</div>';
+        _updateNotifBadge(0);
+        return;
+      }
+      const unreadCount = data.filter(n => !n.is_read).length;
+      _updateNotifBadge(unreadCount);
+      list.innerHTML = data.map(n => `
+        <div class="notif-item${n.is_read ? '' : ' notif-unread'}">
+          <div class="notif-content">
+            <div class="notif-title">${esc(n.title || '')}</div>
+            <div class="notif-body">${esc(n.body || '')}</div>
+            <div class="notif-time">${esc(n.created_at || '')}</div>
+          </div>
+        </div>`).join('');
+    } catch (e) {
+      list.innerHTML = '<div class="notif-empty">No notifications</div>';
+      _updateNotifBadge(0);
+    }
+  }
+
+  function _updateNotifBadge(count) {
+    const badge = $('notif-badge');
+    if (!badge) return;
+    if (count > 0) {
+      badge.textContent = count > 99 ? '99+' : count;
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  function markAllNotificationsRead() {
+    if (!state.prodId) return;
+    api('POST', `/api/notifications/read-all?production_id=${state.prodId}`, {}).catch(() => {});
+    _updateNotifBadge(0);
+    const items = document.querySelectorAll('.notif-unread');
+    items.forEach(el => el.classList.remove('notif-unread'));
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  ACTIVITY PANEL
+  // ═══════════════════════════════════════════════════════════
+
+  let _activityPanelOpen = false;
+
+  function toggleActivityPanel() {
+    const panel = document.querySelector('.activity-panel');
+    if (!panel) return;
+    _activityPanelOpen = !_activityPanelOpen;
+    panel.classList.toggle('hidden', !_activityPanelOpen);
+    if (_activityPanelOpen) _loadActivityPanel();
+  }
+
+  function closeActivityPanel() {
+    const panel = document.querySelector('.activity-panel');
+    if (!panel) return;
+    _activityPanelOpen = false;
+    panel.classList.add('hidden');
+  }
+
+  async function _loadActivityPanel() {
+    const panel = document.querySelector('.activity-panel');
+    if (!panel || !state.prodId) return;
+    try {
+      const data = await api('GET', `/api/productions/${state.prodId}/activity?limit=50`);
+      const entries = data.entries || data || [];
+      if (!entries.length) {
+        panel.innerHTML = '<div style="padding:1rem;color:var(--text-3)">No recent activity</div>';
+        return;
+      }
+      let html = '<div style="padding:.5rem 1rem;display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;font-size:.9rem">Activity</h3><button onclick="App.closeActivityPanel()" style="background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--text-2)">&times;</button></div>';
+      html += '<div style="overflow-y:auto;max-height:calc(100vh - 100px);padding:0 1rem">';
+      for (const entry of entries) {
+        const desc = entry.human_description || entry.description || entry.action || '';
+        const time = entry.created_at || '';
+        const user = entry.user_nickname || '';
+        html += `<div style="padding:.5rem 0;border-bottom:1px solid var(--border);font-size:.8rem">
+          <div style="color:var(--text-1)">${esc(desc)}</div>
+          <div style="color:var(--text-3);margin-top:.15rem">${esc(user)} · ${esc(time)}</div>
+        </div>`;
+      }
+      html += '</div>';
+      panel.innerHTML = html;
+    } catch (e) {
+      panel.innerHTML = '<div style="padding:1rem;color:var(--text-3)">Failed to load activity</div>';
+    }
   }
 
   // ── Public API ─────────────────────────────────────────────
@@ -13241,6 +13377,12 @@ const App = (() => {
     _undoFromToast,
     // FAB
     fabAction,
+    // Mobile menu
+    toggleMobileMenu,
+    // Notifications panel
+    toggleNotifPanel, closeNotifPanel, markAllNotificationsRead,
+    // Activity panel
+    toggleActivityPanel, closeActivityPanel,
     // Bottom nav & breadcrumb & shortcuts
     toggleBottomNavMore, _updateBreadcrumb,
     openShortcutsPanel, closeShortcutsPanel,
