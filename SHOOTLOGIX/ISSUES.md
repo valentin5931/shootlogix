@@ -1,5 +1,15 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] Guard Camp functions use invalid context parameter — UNFIXED
+- **Discovered**: 2026-04-12
+- **Symptoms**: Guard Camp tab loads with 0 functions. Users cannot assign guard camp workers to roles. The guard camp function cards area is empty.
+- **Likely cause**: `app-monolith.js` line 10200 requests `context=guard_camp` but no `boat_functions` rows exist with that context. Available contexts are: boats, picture, transport, labour, security. Either guard_camp functions need to be created in the database, or the JS should use a different context.
+- **Files involved**: `static/app-monolith.js` (line 10200), `database.py` (boat_functions table)
+- **Estimated effort**: Medium — need to decide if guard_camp should be its own context (requires creating functions) or reuse an existing context
+
+## ~~[P0] Timeline API crash — invalid column references~~ FIXED 2026-04-12
+- Fixed in branch fix/2026-04-12-timeline-api-500-crash
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
