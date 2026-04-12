@@ -21,6 +21,7 @@ from database import (
     create_production, seed_departments,
     create_boat, create_boat_function, create_boat_assignment,
     create_helper, create_helper_assignment,
+    create_picture_boat,
     create_security_boat, create_security_boat_assignment,
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
@@ -309,6 +310,8 @@ def bootstrap():
         _migrate_boat_meeting_feb25(prod_id)
         _migrate_boat_update_feb27(prod_id)
         _migrate_boat_update_mar(prod_id)
+        _populate_picture_boats(prod_id)
+        _populate_security_boats(prod_id)
         return prod_id
 
     # First-time setup — backup before destructive migrations
@@ -351,6 +354,8 @@ def bootstrap():
     _migrate_boat_meeting_feb25(prod_id)
     _migrate_boat_update_feb27(prod_id)
     _migrate_boat_update_mar(prod_id)
+    _populate_picture_boats(prod_id)
+    _populate_security_boats(prod_id)
 
     # Verify settings were persisted
     verify = get_setting("klas7_production_id")
@@ -470,6 +475,108 @@ def _seed_security_boats(prod_id):
             'default_end': f['end'],
             'context': 'security',
         })
+
+
+# ─── Populate picture_boats / security_boats from main boats table ──────────
+
+# Security boats — vessels used for safety roles on KLAS7.
+# Identified from the fleet list: EVAC, MISHKA, ESMELDA are assigned to safety functions.
+SECURITY_BOAT_DATA = [
+    {'name': 'EVAC',       'capacity': '12', 'vendor': '',                'rate': 880.0, 'group': 'EVAC',    'wave': 'Waves', 'night': 1},
+    {'name': 'EVAC BOAT',  'capacity': '10', 'vendor': '',                'rate': 800.0, 'group': 'EVAC',    'wave': 'Waves', 'night': 1},
+    {'name': 'MISHKA',     'capacity': '6',  'vendor': '',                'rate': 321.0, 'group': 'MEDICAL', 'wave': 'Calm',  'night': 0},
+    {'name': 'MISHKA 24/7','capacity': '6',  'vendor': '',                'rate': 642.0, 'group': 'MEDICAL', 'wave': 'Calm',  'night': 1},
+    {'name': 'ESMELDA',    'capacity': '8',  'vendor': 'JUAN AROSEMENA', 'rate': 321.0, 'group': 'SAFETY',  'wave': 'Waves', 'night': 0},
+    {'name': 'RD',         'capacity': '8',  'vendor': '',                'rate': 375.0, 'group': 'STANDBY', 'wave': 'Waves', 'night': 0},
+]
+
+
+def _populate_picture_boats(prod_id):
+    """One-time migration: copy boats with category='picture' into picture_boats table.
+    Protected by settings flag — safe to call multiple times."""
+    if get_setting("picture_boats_populated_v1"):
+        return
+
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM picture_boats WHERE production_id=?", (prod_id,)
+        ).fetchone()[0]
+        if existing > 0:
+            set_setting("picture_boats_populated_v1", "1")
+            return
+
+        # Copy all picture-category boats from the main boats table
+        boats = conn.execute(
+            """SELECT boat_nr, name, capacity, night_ok, wave_rating, captain,
+                      vendor, group_name, notes, daily_rate_estimate, daily_rate_actual,
+                      image_path, sort_order, currency
+               FROM boats
+               WHERE production_id=? AND category='picture' AND deleted_at IS NULL
+               ORDER BY sort_order, boat_nr, name""",
+            (prod_id,)
+        ).fetchall()
+
+    if not boats:
+        print("  No picture-category boats found to populate picture_boats table")
+        set_setting("picture_boats_populated_v1", "1")
+        return
+
+    count = 0
+    for b in boats:
+        create_picture_boat({
+            'production_id': prod_id,
+            'boat_nr': b['boat_nr'],
+            'name': b['name'],
+            'capacity': b['capacity'],
+            'night_ok': b['night_ok'],
+            'wave_rating': b['wave_rating'],
+            'captain': b['captain'],
+            'vendor': b['vendor'],
+            'group_name': b['group_name'] or 'Custom',
+            'notes': b['notes'],
+            'daily_rate_estimate': b['daily_rate_estimate'],
+            'daily_rate_actual': b['daily_rate_actual'],
+            'image_path': b['image_path'],
+            'currency': b['currency'],
+        })
+        count += 1
+
+    set_setting("picture_boats_populated_v1", "1")
+    print(f"  Populated {count} picture boats from main boats table")
+
+
+def _populate_security_boats(prod_id):
+    """One-time migration: seed security_boats table with known safety vessels.
+    Protected by settings flag — safe to call multiple times."""
+    if get_setting("security_boats_populated_v1"):
+        return
+
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM security_boats WHERE production_id=?", (prod_id,)
+        ).fetchone()[0]
+        if existing > 0:
+            set_setting("security_boats_populated_v1", "1")
+            return
+
+    count = 0
+    for i, sb in enumerate(SECURITY_BOAT_DATA, 1):
+        create_security_boat({
+            'production_id': prod_id,
+            'boat_nr': i,
+            'name': sb['name'],
+            'capacity': sb['capacity'],
+            'night_ok': sb['night'],
+            'wave_rating': sb['wave'],
+            'vendor': sb['vendor'],
+            'group_name': sb['group'],
+            'daily_rate_estimate': sb['rate'],
+            'currency': 'USD',
+        })
+        count += 1
+
+    set_setting("security_boats_populated_v1", "1")
+    print(f"  Populated {count} security boats")
 
 
 # ─── Seed Transport ─────────────────────────────────────────────────────────

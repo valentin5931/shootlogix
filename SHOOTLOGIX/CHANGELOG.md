@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-12 — [P1] Populate picture_boats and security_boats tables (empty list fix)
+
+**Problem**: The Picture Boats and Security Boats tabs showed empty lists. `/api/productions/1/picture-boats` returned `[]` and `/api/productions/1/security-boats` returned `[]`, despite 46 boats existing in the main `boats` table.
+
+**Root cause**: The `_seed_picture_boats()` and `_seed_security_boats()` functions in `data_loader.py` only created `boat_functions` (role/team definitions like YELLOW, RED, SAFETY GAMES, etc.) but never populated the `picture_boats` and `security_boats` entity tables themselves. The API routes correctly query these tables — they were simply empty.
+
+**Fix**:
+- `data_loader.py`: Added `_populate_picture_boats(prod_id)` — one-time migration that copies all `category='picture'` boats from the `boats` table into `picture_boats` (46 entries).
+- `data_loader.py`: Added `_populate_security_boats(prod_id)` — seeds 6 known safety vessels (EVAC, EVAC BOAT, MISHKA, MISHKA 24/7, ESMELDA, RD) into `security_boats`.
+- Both functions are protected by settings flags (`picture_boats_populated_v1`, `security_boats_populated_v1`) for idempotency.
+- Added `create_picture_boat` to imports.
+- Both functions called from both bootstrap paths (existing production + first-time setup).
+
+**Verification**:
+- `/api/productions/1/picture-boats` → 46 picture boats (was 0)
+- `/api/productions/1/security-boats` → 6 security boats (was 0)
+- All 45 pytest tests pass
+- CRUD create works for both picture boats and security boats
+- No regressions on any other endpoint (boats, transport, locations, FNB, budget, etc.)
+- Migration is idempotent (restarting the app does not re-add boats)
+
+**Branch**: fix/2026-04-12-populate-picture-security-boats
+**Side effects**: None
+**Next priority**: Crew > Helpers (0 items) and Crew > Guards (0 items) — similar empty-table issue. Also, DELETE endpoints for picture_boats/security_boats return 404 (missing routes).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
