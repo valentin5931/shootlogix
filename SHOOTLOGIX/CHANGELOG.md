@@ -1,5 +1,24 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-12 — [P1] Add missing seeders to existing-DB bootstrap path
+
+**Problem**: The `bootstrap()` function in `data_loader.py` has two code paths: one for first-time setup (new DB) and one for existing databases. The existing-DB path was missing 3 seeder calls: `_seed_security_boats()`, `_seed_helpers()`, and `_seed_transport()`. This meant that if the production database was created before these seeders were added, Security Boats function groups (6), Labour function groups + assignments (73), and Transport vehicles (14) + function groups (13) would never be populated — causing empty modules on the assignment boards.
+
+**Root cause**: When the seeders were originally added, they were included in the first-time bootstrap path (lines 342-345) but not in the existing-DB path (lines 303-311). All three seeders are idempotent (they check for existing data before creating), so omitting them from the existing-DB path was purely an oversight.
+
+**Fix**: Added `_seed_security_boats(prod_id)`, `_seed_helpers(prod_id)`, and `_seed_transport(prod_id)` to the existing-DB bootstrap path in `data_loader.py`, right after `_seed_picture_boats(prod_id)` and before `_seed_location_sites(prod_id)`. This matches the order used in the first-time setup path.
+
+**Verification**:
+- Existing DB bootstrap: all 3 seeders detect existing data and skip silently (no duplicates)
+- Fresh DB bootstrap: all seeders run and populate data correctly
+- 45/45 tests pass
+- All API endpoints verified: boats (46), boat functions (boats: 25, picture: 4, security: 6, transport: 13, helpers: 73), transport vehicles (14), helper assignments (219), guard posts (8), dashboard OK
+- JS syntax check passes
+
+**Branch**: fix/2026-04-12-bootstrap-missing-seeders
+**Side effects**: None — all seeders are idempotent
+**Next priority**: Update ISSUES.md status; P1 search→sub-tab navigation UX (Fleet/Crew tab not highlighted when navigating via search results)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
