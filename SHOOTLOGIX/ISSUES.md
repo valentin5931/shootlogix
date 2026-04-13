@@ -1,5 +1,26 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] Timeline API crash — wrong column names (FIXED 2026-04-13)
+- **Discovered**: 2026-04-13
+- **Symptoms**: Timeline tab shows 500 error; `sqlite3.OperationalError: no such column: site`
+- **Root cause**: `api_timeline` used `locations.site` (doesn't exist, should be `location_type`) and `location_schedules.prep/filming/wrap` (don't exist, should be `status`). Also `timeline.js` relied on `window._SL` which doesn't exist in the monolith.
+- **Fix**: PR fix/2026-04-13-timeline-api-crash — corrected column names + added localStorage fallback for prodId
+- **Status**: FIXED
+
+## [P0] Multiple state variable mismatches in picture/security boat operations
+- **Discovered**: 2026-04-13 (from open PRs #80, #81, #87, #88, #94)
+- **Symptoms**: Picture Boats and Security Boats interactive operations (drag-drop, assignments, day overrides) may reference wrong state properties
+- **Likely cause**: The monolith uses different state property names (e.g. `state.pictureBoats` vs `state.pbBoats`) for picture/security boat data
+- **Files involved**: `static/app-monolith.js` — picture boat and security boat render/interaction functions
+- **Estimated effort**: Medium — need to audit all state property references for these modules
+
+## [P0] Checklist tab may crash on state.production undefined
+- **Discovered**: 2026-04-13 (from open PRs #85, #95)
+- **Symptoms**: Checklist tab crashes or renders incorrectly
+- **Likely cause**: `loadChecklist` references `state.production` which may not be set
+- **Files involved**: `static/app-monolith.js` — `loadChecklist`, `generateChecklist`
+- **Estimated effort**: Quick fix
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

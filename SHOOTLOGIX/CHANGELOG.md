@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P0] Fix Timeline API crash — wrong column names in SQL queries
+
+**Problem**: The Timeline tab crashed with a 500 error (`sqlite3.OperationalError: no such column: site`). Additionally, the Timeline JS could not load data because it relied on `window._SL` which doesn't exist in the monolith architecture.
+
+**Root cause**:
+1. The Timeline API endpoint (`api_timeline` in `app.py`) queried `locations.site` which doesn't exist — the correct column is `location_type`.
+2. The same endpoint queried `location_schedules.prep`, `.filming`, `.wrap` (boolean columns) which don't exist — the actual schema uses a single `status` column (values: "P", "F", "W").
+3. `timeline.js` used `window._SL.state.prodId` to find the production ID, but the monolith app doesn't define `window._SL`. The prodId is stored in `localStorage` by the monolith.
+
+**Fix**:
+- `app.py` (line ~7893): Changed `SELECT id, name, site FROM locations` to `SELECT id, name, location_type FROM locations`
+- `app.py` (line ~7896): Changed `SELECT id, date, prep, filming, wrap FROM location_schedules` to `SELECT id, date, status FROM location_schedules`
+- `app.py` (lines ~7901-7912): Simplified phase parsing to use the `status` column directly; changed `loc['site']` to `loc['location_type']`
+- `static/js/timeline.js` (line ~441): Added localStorage fallback for production ID lookup
+
+**Verification**:
+- Timeline API returns 200 with full data: 81 resources (46 boats, 14 vehicles, 21 locations), 32 shooting days, 121 functions
+- All 27 API endpoints pass (no regressions)
+- Python syntax check passes; JS bracket balance passes
+
+**Branch**: fix/2026-04-13-timeline-api-crash
+**Side effects**: None
+**Next priority**: P0 — Checklist tab may crash if `state.production` is undefined (see open PRs #85, #95); multiple state variable mismatches in picture/security boats (PRs #80, #81, #87, #88)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
