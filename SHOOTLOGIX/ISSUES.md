@@ -7,12 +7,10 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
-## [P1] Picture Boats and Security Boats lists are empty
+## [P1] ~~Picture Boats and Security Boats lists are empty~~ FIXED 2026-04-13
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`. All boats are in the main boats table with category "picture".
-- **Likely cause**: The data loader may not be seeding picture_boats and security_boats tables separately, or the boats were all created in the main `boats` table regardless of intended category.
-- **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
-- **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
+- **Fixed**: 2026-04-13 — Added `PICTURE_BOAT_DATA` (8 camera boats) and `SECURITY_BOAT_DATA` (6 safety boats) to `data_loader.py`, seeded alongside functions.
+- **Branch**: fix/2026-04-13-seed-picture-security-boats
 
 ## [P1] Transport and Helpers lists are empty
 - **Discovered**: 2026-03-22
@@ -34,6 +32,20 @@
 - **Likely cause**: Guards need to be created separately from guard posts
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
+
+## [P1] Picture/Security boat assignments not seeded
+- **Discovered**: 2026-04-13
+- **Symptoms**: Picture boats (8) and security boats (6) now exist as entities, but no assignments link them to their functions. The role cards show empty drop zones. Users must manually drag-drop boats to assign them.
+- **Likely cause**: Only boat entities and functions were seeded, not the assignments connecting them. Transport similarly has 14 vehicles and 13 functions but 0 assignments.
+- **Files involved**: `data_loader.py`
+- **Estimated effort**: Medium — need to create default assignments linking boats to functions with date ranges
+
+## [P1] Helpers (Labour) worker entities are empty
+- **Discovered**: 2026-04-13
+- **Symptoms**: `/api/productions/1/helpers` returns `[]`. The `helpers` table has 0 rows. However, 73 helper functions and 73 helper_assignments exist (with `helper_id: null`). The Labour sidebar shows "No workers".
+- **Likely cause**: `_seed_helpers()` only seeds `boat_functions` (context=labour) and `helper_assignments`, but never creates `helpers` rows. The assignment system uses `helper_name_override` field as a workaround.
+- **Files involved**: `data_loader.py`, `database.py`
+- **Estimated effort**: Medium — need to seed helper entities or ensure the UI works with assignments that have no linked helper_id
 
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22

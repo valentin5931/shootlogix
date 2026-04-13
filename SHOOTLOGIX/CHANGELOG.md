@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P1] Seed picture boats and security boats in data_loader
+
+**Problem**: The Picture Boats and Security Boats tabs showed "No picture boats" / "No security boats" with empty sidebars. The 4 picture boat functions (YELLOW, RED, NEUTRAL, EXILE) and 6 security boat functions existed but had no boat entities to assign to them. This was because `_seed_picture_boats()` and `_seed_security_boats()` only seeded function groups, not the actual boat entities — unlike `_seed_transport()` which correctly seeds both vehicles and functions.
+
+**Root cause**: The data_loader seeded `boat_functions` (with `context='picture'` and `context='security'`) but never created rows in the `picture_boats` and `security_boats` tables. The frontend loaded empty arrays from the API, rendering empty sidebars.
+
+**Fix**:
+- `data_loader.py`: Added `create_picture_boat` to imports. Added `PICTURE_BOAT_DATA` (8 camera boats: 2 per group — YELLOW, RED, NEUTRAL, EXILE at $350/day). Added `SECURITY_BOAT_DATA` (6 safety boats: one per function — GAMES, COUNCIL, ARENA, EVAC, MEDICAL, STANDBY at $300-500/day). Updated `_seed_picture_boats()` and `_seed_security_boats()` to seed boat entities alongside functions, following the same idempotent pattern used by `_seed_transport()`.
+
+**Verification**:
+- `/api/productions/1/picture-boats` returns 8 boats with capacity/vendor data (was `[]`)
+- `/api/productions/1/security-boats` returns 6 boats with capacity/vendor data (was `[]`)
+- CRUD operations (create/delete) work correctly on both tables
+- Idempotent: second startup does not re-seed
+- All 45 existing tests pass with no regressions
+- No regressions: all other endpoints (boats, transport, PDT, locations, budget, FNB) return same data
+
+**Branch**: fix/2026-04-13-seed-picture-security-boats
+**Side effects**: None — new database instances will have seeded picture/security boats. Existing databases that already have picture/security boats (e.g., from manual creation) will not be affected due to idempotent checks.
+**Next priority**: Remaining empty-list P1 issues — helpers table is empty (73 functions/assignments exist but no worker entities); guards table is empty; transport/picture/security assignments are empty (boats exist but need to be assigned to functions).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
