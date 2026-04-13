@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P1] Fix Checklist tab completely broken + pull-to-refresh missing handlers
+
+**Problem**: The Daily Checklist tab silently did nothing when clicked. Clicking "Generate" or loading the tab produced no visible result. Additionally, pull-to-refresh on mobile did nothing for 7 tabs (fleet, crew, today, documents, checklist, timeline).
+
+**Root cause**:
+1. The checklist module (loadChecklist, generateChecklist, toggleChecklistItem) referenced `state.production.id` — a property that doesn't exist. The rest of the app (198 references) uses `state.prodId`. The guard `if (!state.production) return` silently exited every time.
+2. The checklist renderer used `_esc(item.item_text)` but the HTML escape function is named `esc()`, not `_esc()`. Even if the data loaded, rendering would throw `ReferenceError: _esc is not defined`.
+3. `_reloadCurrentTab()` (used by pull-to-refresh) had no handlers for fleet, crew, today, documents, checklist, or timeline tabs.
+
+**Fix**:
+- `static/app-monolith.js`: Replaced `state.production.id` with `state.prodId` (3 API calls) and `!state.production` with `!state.prodId` (3 guards). Fixed `_esc()` to `esc()` in checklist renderer. Added 6 missing tab handlers to `_reloadCurrentTab()`.
+
+**Verification**:
+- Checklist API works: `/api/productions/1/checklists/generate?date=2026-04-13` generates 93 items
+- Checklist retrieval works: items have correct labels (e.g. "Boat BONGO 2 confirmed for UNIT GAMES 2")
+- JS syntax check passes (node --check)
+- All 45 Python tests pass
+- Pull-to-refresh now covers all tabs
+
+**Branch**: fix/2026-04-13-checklist-tab-broken-state-reference
+**Side effects**: None
+**Next priority**: Picture Boats and Security Boats empty lists (P1) — data exists in `boats` table but `picture_boats`/`security_boats` tables are empty
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
