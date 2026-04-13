@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P1] Seed picture boats and security boats entities + assignments
+
+**Problem**: Fleet > Picture Boats and Fleet > Security Boats tabs showed empty lists. The data_loader seeded boat functions (YELLOW/RED/NEUTRAL/EXILE for picture; 6 safety functions for security) but never created actual boat entities in the `picture_boats` and `security_boats` tables. Additionally, `_seed_security_boats()` was not called on subsequent app startups (only on first bootstrap).
+
+**Root cause**: `_seed_picture_boats()` only created `boat_functions` with `context='picture'` but no rows in the `picture_boats` table. Same for `_seed_security_boats()`. The bootstrap's "existing production" branch (subsequent startups) called `_seed_picture_boats()` but not `_seed_security_boats()`.
+
+**Fix**:
+- `data_loader.py`: Added `PICTURE_BOAT_DATA` (6 boats: 4 camera boats + 2 spares) and `SECURITY_BOAT_DATA` (6 safety boats). Modified `_seed_picture_boats()` and `_seed_security_boats()` to create boat entities and assignments after seeding functions. Added `_seed_security_boats()` to the existing-production startup path. Added `create_picture_boat` and `create_picture_boat_assignment` imports.
+
+**Verification**:
+- `/api/productions/1/picture-boats` returns 6 boats (was 0)
+- `/api/productions/1/picture-boat-assignments` returns 4 assignments (YELLOW, RED, NEUTRAL, EXILE)
+- `/api/productions/1/security-boats` returns 6 boats (was 0)
+- `/api/productions/1/security-boat-assignments` returns 6 assignments (all functions covered)
+- Budget now includes PICTURE BOATS ($37,000) and SECURITY BOATS ($115,500) departments
+- Idempotent: restart does not duplicate data
+- All 45 tests pass, JS syntax OK
+
+**Branch**: fix/2026-04-13-seed-picture-security-boats
+**Side effects**: None
+**Next priority**: Seed helpers/guard camp workers (P1), or address remaining P1 UX issues from CLAUDE.md checklist
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

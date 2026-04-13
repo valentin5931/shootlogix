@@ -21,6 +21,7 @@ from database import (
     create_production, seed_departments,
     create_boat, create_boat_function, create_boat_assignment,
     create_helper, create_helper_assignment,
+    create_picture_boat, create_picture_boat_assignment,
     create_security_boat, create_security_boat_assignment,
     create_transport_vehicle, create_transport_assignment,
     create_location_site, create_guard_post,
@@ -219,14 +220,26 @@ def _compute_shootlogix_total(prod_id):
 
 # ─── Bootstrap ────────────────────────────────────────────────────────────────
 
+PICTURE_BOAT_DATA = [
+    # function_name links to the boat_function to assign to (None = unassigned spare)
+    {'name': 'PELÍCANO',  'capacity': '6', 'vendor': 'ISLA TOURS',   'rate': 250, 'group': 'Camera', 'function_name': 'YELLOW'},
+    {'name': 'GAVIOTA',   'capacity': '6', 'vendor': 'ISLA TOURS',   'rate': 250, 'group': 'Camera', 'function_name': 'RED'},
+    {'name': 'DELFÍN',    'capacity': '6', 'vendor': 'PERLAS BOATS', 'rate': 250, 'group': 'Camera', 'function_name': 'NEUTRAL'},
+    {'name': 'ALBATROS',  'capacity': '6', 'vendor': 'PERLAS BOATS', 'rate': 250, 'group': 'Camera', 'function_name': 'EXILE'},
+    {'name': 'MARIPOSA',  'capacity': '6', 'vendor': 'ISLA TOURS',   'rate': 250, 'group': 'Spare',  'function_name': None},
+    {'name': 'COLIBRÍ',   'capacity': '4', 'vendor': 'PERLAS BOATS', 'rate': 200, 'group': 'Spare',  'function_name': None},
+]
+
+
 def _seed_picture_boats(prod_id):
-    """Ensure the 4 Picture Boats function groups exist. Safe to call multiple times."""
+    """Ensure picture boat functions AND boat entities exist. Safe to call multiple times."""
+    # --- Seed functions if missing ---
     with get_db() as conn:
-        existing_pb = conn.execute(
+        existing_funcs = conn.execute(
             "SELECT id FROM boat_functions WHERE production_id=? AND context='picture'",
             (prod_id,)
         ).fetchall()
-    if not existing_pb:
+    if not existing_funcs:
         pb_funcs = [
             {'name': 'YELLOW', 'function_group': 'YELLOW', 'color': '#EAB308', 'sort_order': 1},
             {'name': 'RED',    'function_group': 'RED',    'color': '#EF4444', 'sort_order': 2},
@@ -236,6 +249,45 @@ def _seed_picture_boats(prod_id):
         for f in pb_funcs:
             create_boat_function({**f, 'production_id': prod_id, 'context': 'picture'})
         print(f"  Seeded 4 Picture Boats functions (YELLOW/RED/NEUTRAL/EXILE)")
+
+    # --- Seed boat entities if missing ---
+    with get_db() as conn:
+        existing_boats = conn.execute(
+            "SELECT id FROM picture_boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchall()
+    if existing_boats:
+        return  # boats already exist
+
+    # Build a map of function name -> function id
+    with get_db() as conn:
+        func_rows = conn.execute(
+            "SELECT id, name FROM boat_functions WHERE production_id=? AND context='picture'",
+            (prod_id,)
+        ).fetchall()
+    func_map = {r['name']: r['id'] for r in func_rows}
+
+    print(f"  Seeding {len(PICTURE_BOAT_DATA)} picture boats...")
+    for i, pb in enumerate(PICTURE_BOAT_DATA, 1):
+        boat_id = create_picture_boat({
+            'production_id': prod_id,
+            'boat_nr': i,
+            'name': pb['name'],
+            'capacity': pb['capacity'],
+            'vendor': pb['vendor'],
+            'group_name': pb['group'],
+            'daily_rate_estimate': pb['rate'],
+        })
+        # Create assignment if this boat has a function
+        func_name = pb.get('function_name')
+        if func_name and func_name in func_map:
+            create_picture_boat_assignment({
+                'boat_function_id': func_map[func_name],
+                'picture_boat_id': boat_id,
+                'start_date': '2026-03-20',
+                'end_date': '2026-04-25',
+                'price_override': pb['rate'],
+            })
 
 
 def _backup_db():
@@ -269,7 +321,7 @@ def bootstrap():
     """
     Called on first launch.
     Creates the KLAS7 production and migrates data from BATEAUX if not already done.
-    Always ensures picture boats functions are seeded.
+    Always ensures picture/security boat functions and entities are seeded.
 
     MIGRATION SAFETY RULES:
     1. Every destructive migration MUST use a setting flag (get_setting/set_setting)
@@ -301,6 +353,7 @@ def bootstrap():
         if _needs_destructive_migration():
             _backup_db()
         _seed_picture_boats(prod_id)
+        _seed_security_boats(prod_id)
         _seed_location_sites(prod_id)
         _seed_guard_posts(prod_id)
         _seed_fnb_categories(prod_id)
@@ -447,29 +500,78 @@ SECURITY_BOAT_FUNCS = [
     {'name': 'SAFETY STANDBY', 'group': 'STANDBY','color': '#3B82F6', 'sort': 6, 'start': '2026-03-20', 'end': '2026-04-25'},
 ]
 
+SECURITY_BOAT_DATA = [
+    # function_name links to the boat_function to assign to
+    {'name': 'RESCATE 1',  'capacity': '8',  'vendor': 'PERLAS SAFETY', 'rate': 350, 'group': 'Safety',  'function_name': 'SAFETY GAMES'},
+    {'name': 'RESCATE 2',  'capacity': '8',  'vendor': 'PERLAS SAFETY', 'rate': 350, 'group': 'Safety',  'function_name': 'SAFETY COUNCIL'},
+    {'name': 'RESCATE 3',  'capacity': '8',  'vendor': 'PERLAS SAFETY', 'rate': 350, 'group': 'Safety',  'function_name': 'SAFETY ARENA'},
+    {'name': 'VIGÍA',      'capacity': '12', 'vendor': 'PERLAS SAFETY', 'rate': 500, 'group': 'Evac',    'function_name': 'SAFETY EVAC'},
+    {'name': 'SAN RAFAEL', 'capacity': '10', 'vendor': 'PERLAS SAFETY', 'rate': 450, 'group': 'Medical', 'function_name': 'SAFETY MEDICAL'},
+    {'name': 'CENTINELA',  'capacity': '8',  'vendor': 'PERLAS SAFETY', 'rate': 350, 'group': 'Standby', 'function_name': 'SAFETY STANDBY'},
+]
+
 
 def _seed_security_boats(prod_id):
-    """Seed security boat functions."""
+    """Seed security boat functions AND boat entities. Safe to call multiple times."""
+    # --- Seed functions if missing ---
     with get_db() as conn:
         existing = conn.execute(
             "SELECT id FROM boat_functions WHERE production_id=? AND context='security'",
             (prod_id,)
         ).fetchall()
-    if existing:
-        return
+    if not existing:
+        print(f"  Seeding {len(SECURITY_BOAT_FUNCS)} security boat functions...")
+        for f in SECURITY_BOAT_FUNCS:
+            create_boat_function({
+                'production_id': prod_id,
+                'name': f['name'],
+                'function_group': f['group'],
+                'color': f['color'],
+                'sort_order': f['sort'],
+                'default_start': f['start'],
+                'default_end': f['end'],
+                'context': 'security',
+            })
 
-    print(f"  Seeding {len(SECURITY_BOAT_FUNCS)} security boat functions...")
-    for f in SECURITY_BOAT_FUNCS:
-        create_boat_function({
+    # --- Seed boat entities if missing ---
+    with get_db() as conn:
+        existing_boats = conn.execute(
+            "SELECT id FROM security_boats WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchall()
+    if existing_boats:
+        return  # boats already exist
+
+    # Build a map of function name -> function id
+    with get_db() as conn:
+        func_rows = conn.execute(
+            "SELECT id, name, default_start, default_end FROM boat_functions WHERE production_id=? AND context='security'",
+            (prod_id,)
+        ).fetchall()
+    func_map = {r['name']: r for r in func_rows}
+
+    print(f"  Seeding {len(SECURITY_BOAT_DATA)} security boats...")
+    for i, sb in enumerate(SECURITY_BOAT_DATA, 1):
+        boat_id = create_security_boat({
             'production_id': prod_id,
-            'name': f['name'],
-            'function_group': f['group'],
-            'color': f['color'],
-            'sort_order': f['sort'],
-            'default_start': f['start'],
-            'default_end': f['end'],
-            'context': 'security',
+            'boat_nr': i,
+            'name': sb['name'],
+            'capacity': sb['capacity'],
+            'vendor': sb['vendor'],
+            'group_name': sb['group'],
+            'daily_rate_estimate': sb['rate'],
         })
+        # Create assignment if this boat has a function
+        func_name = sb.get('function_name')
+        if func_name and func_name in func_map:
+            func = func_map[func_name]
+            create_security_boat_assignment({
+                'boat_function_id': func['id'],
+                'security_boat_id': boat_id,
+                'start_date': func['default_start'] or '2026-03-20',
+                'end_date': func['default_end'] or '2026-04-25',
+                'price_override': sb['rate'],
+            })
 
 
 # ─── Seed Transport ─────────────────────────────────────────────────────────
