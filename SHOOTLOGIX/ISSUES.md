@@ -1,37 +1,34 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM — RESOLVED
 - **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Resolved**: 2026-03-23 (layout overflow fix) + 2026-04-13 (verified working)
+- **Resolution**: Event handlers work correctly — fleet/crew unified tabs switch the active view panel rather than cloning content. Layout overflow was fixed by adding `--subnav-bar-h` CSS variable.
 
-## [P1] Picture Boats and Security Boats lists are empty
+## [P1] Picture Boats and Security Boats lists are empty — RESOLVED
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`. All boats are in the main boats table with category "picture".
-- **Likely cause**: The data loader may not be seeding picture_boats and security_boats tables separately, or the boats were all created in the main `boats` table regardless of intended category.
-- **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
-- **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
+- **Resolved**: 2026-04-13
+- **Resolution**: Added `PICTURE_BOAT_DATA` (6 boats) and `SECURITY_BOAT_DATA` (6 boats) to `data_loader.py`. Modified `_seed_picture_boats()` and `_seed_security_boats()` to create boat entities and assignments. Also fixed `_seed_security_boats()` not being called on subsequent startups.
 
-## [P1] Transport and Helpers lists are empty
+## [P1] Helpers list is empty
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
-- **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+- **Updated**: 2026-04-13 — Transport issue resolved (14 vehicles exist, frontend uses correct endpoint `/api/productions/1/transport-vehicles`)
+- **Symptoms**: `/api/productions/1/helpers` returns `[]`. Helper functions exist (73) with helper_name_override assignments, but no actual `helpers` table entries.
+- **Likely cause**: Helper functions use `helper_name_override` instead of linking to `helpers` table entities. Users can create helpers through the UI.
+- **Files involved**: `data_loader.py`
+- **Estimated effort**: Quick — add helper entity seeding or let users add via UI
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22
 - **Symptoms**: `/api/productions/1/fuel-entries` returns `[]`, `/api/productions/1/fuel-machinery` returns `[]`
-- **Likely cause**: No data seeded for fuel module
+- **Likely cause**: No data seeded for fuel module — user-created data
 - **Files involved**: `database.py`
-- **Estimated effort**: Quick — user needs to add data
+- **Estimated effort**: Quick — user needs to add data through the UI
 
 ## [P1] Guards list is empty
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/guards` returns `[]` but guard-posts has data (1643 bytes)
-- **Likely cause**: Guards need to be created separately from guard posts
+- **Symptoms**: `/api/productions/1/guards` returns `[]`, guard-posts has 8 entries. Also, `guards` table lacks `deleted_at` column (not currently causing issues since no code filters guards by deleted_at).
+- **Likely cause**: Guards need to be created separately from guard posts — user-created data
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
 
