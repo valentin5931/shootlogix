@@ -1,5 +1,23 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P1] Fix boats tab refresh loading assignments from all departments
+
+**Problem**: After a pull-to-refresh (or any `_reloadCurrentTab` call) on the Boats tab, the assignments API was called without the `?context=boats` filter. This meant the boats schedule grid could load assignments from all departments (picture, security, transport, labour) instead of boats-only assignments.
+
+**Root cause**: In `_reloadCurrentTab()` (app-monolith.js line 13003), the boats tab refresh fetched `/api/productions/${state.prodId}/assignments` without the `?context=boats` query parameter. Every other code path in the codebase correctly includes this filter (initial load at line 899, post-edit reload at line 2878, etc.).
+
+**Fix**: Added `?context=boats` to the assignments fetch URL in `_reloadCurrentTab()` for the boats tab, matching the pattern used everywhere else.
+
+**Verification**:
+- The fix matches the initial load pattern in `loadBoatsData()` (line 899)
+- All 7 other references to `/assignments` in the codebase correctly include `?context=boats`
+- All API endpoints return 200 (no regressions)
+- App starts and runs without errors
+
+**Branch**: fix/2026-04-13-boats-refresh-wrong-assignments
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data migration needed); investigate `generate_daily_checklist` returning empty for dates with active assignments
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
