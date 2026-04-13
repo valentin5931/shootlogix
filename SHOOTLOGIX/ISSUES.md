@@ -1,11 +1,16 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [FIXED] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Fixed**: 2026-03-23 (panel stacking fix) + 2026-04-13 (_tabCtx + FAB + pull-to-refresh fix)
+- **Resolution**: Panel stacking fixed in PR #32. Context propagation (_tabCtx, FAB, pull-to-refresh) fixed in fix/2026-04-13-fleet-crew-subtab-context branch.
+
+## [P1] Missing confirmation dialogs for destructive delete operations
+- **Discovered**: 2026-04-13
+- **Symptoms**: Many delete operations (boats, assignments, functions, workers, vehicles) execute immediately without asking for user confirmation. Only some deletes have `confirm()` dialogs (documents, security boats, locations, guard posts, FNB categories/items).
+- **Likely cause**: Confirm dialogs were added incrementally and many operations were missed.
+- **Files involved**: `static/app-monolith.js` — removeAssignmentById (~line 2937), pbRemoveAssignmentById (~2949), deleteBoat (~2551), deleteFunction (~3176), tbRemoveAssignmentById (~6327), sbRemoveAssignmentById (~8824), guard camp assignment delete (~10773)
+- **Estimated effort**: Quick — add `if (!confirm(...)) return;` before each unprotected delete
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22

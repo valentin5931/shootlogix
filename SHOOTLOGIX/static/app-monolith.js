@@ -951,7 +951,10 @@ const App = (() => {
     // Trigger the sub-tab's render function
     if (target === 'boats')           { _tabCtx = 'boats';   renderBoats(); }
     if (target === 'picture-boats')   { _tabCtx = 'picture'; renderPictureBoats(); }
-    if (target === 'security-boats')  { _loadAndRenderSecurityBoats(); }
+    if (target === 'security-boats')  { _tabCtx = 'security'; _loadAndRenderSecurityBoats(); }
+
+    // Update FAB for current fleet sub-tab
+    _updateFab();
 
     // Keep Fleet tab visually active
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1007,7 +1010,10 @@ const App = (() => {
 
     // Trigger the sub-tab's render function
     if (target === 'labour') { _tabCtx = 'labour'; _loadAndRenderLabour(); }
-    if (target === 'guards') { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
+    if (target === 'guards') { _tabCtx = 'guard_camp'; state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
+
+    // Update FAB for current crew sub-tab
+    _updateFab();
 
     // Keep Crew tab visually active
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1350,9 +1356,9 @@ const App = (() => {
     if (tab === 'fuel')            _loadAndRenderFuel();
     if (tab === 'budget')          renderBudget();
     if (tab === 'labour')          { _tabCtx = 'labour'; _loadAndRenderLabour(); }
-    if (tab === 'security-boats')  _loadAndRenderSecurityBoats();
+    if (tab === 'security-boats')  { _tabCtx = 'security'; _loadAndRenderSecurityBoats(); }
     if (tab === 'locations')       { state.locationSchedules = null; renderLocations(); }
-    if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
+    if (tab === 'guards')          { _tabCtx = 'guard_camp'; state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
     if (tab === 'checklist')       loadChecklist();
     if (tab === 'fleet')           renderFleetUnified();
@@ -12895,10 +12901,17 @@ const App = (() => {
     fnb:              { get label() { return t('fab.category'); },  action: () => showFnbCatModal() },
   };
 
+  function _effectiveTab() {
+    // Resolve fleet/crew to their active sub-tab for FAB and shared components
+    if (state.tab === 'fleet') return _fleetSubTab || 'boats';
+    if (state.tab === 'crew')  return _crewSubTab === 'guards' ? 'guards' : 'labour';
+    return state.tab;
+  }
+
   function _updateFab() {
     const fab = $('fab-btn');
     if (!fab) return;
-    const cfg = FAB_CONFIG[state.tab];
+    const cfg = FAB_CONFIG[_effectiveTab()];
     if (!cfg || !_canEdit()) {
       fab.style.display = 'none';
       return;
@@ -12909,7 +12922,7 @@ const App = (() => {
   }
 
   function fabAction() {
-    const cfg = FAB_CONFIG[state.tab];
+    const cfg = FAB_CONFIG[_effectiveTab()];
     if (cfg) cfg.action();
   }
 
@@ -12997,7 +13010,8 @@ const App = (() => {
   }
 
   async function _reloadCurrentTab() {
-    const tab = state.tab;
+    // Resolve fleet/crew to the active sub-tab for reload
+    const tab = _effectiveTab();
     try {
       if (tab === 'pdt')             { state.shootingDays = await api('GET', `/api/productions/${state.prodId}/shooting-days`); renderPDT(); }
       else if (tab === 'boats')      { const [b,f,a] = await Promise.all([api('GET',`/api/productions/${state.prodId}/boats`), api('GET',`/api/productions/${state.prodId}/boat-functions?context=boats`), api('GET',`/api/productions/${state.prodId}/assignments`)]); state.boats=b; state.functions=f; state.assignments=a; renderBoats(); }
@@ -13011,6 +13025,8 @@ const App = (() => {
       else if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
       else if (tab === 'budget')          { renderBudget(); }
       else if (tab === 'dashboard')       { renderDashboard(); }
+      else if (tab === 'today')           { renderToday(); }
+      else if (tab === 'documents')       { renderDocuments(); }
     } catch(e) { toast('Refresh failed: ' + e.message, 'error'); }
   }
 
