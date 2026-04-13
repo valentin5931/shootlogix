@@ -5782,7 +5782,8 @@ def generate_daily_checklist(prod_id, date):
                 (checklist_id, text, cat)
             )
 
-        return get_daily_checklist(prod_id, date)
+    # Read back after the with-block commits, so the new connection sees the data
+    return get_daily_checklist(prod_id, date)
 
 
 def get_daily_checklist(prod_id, date):

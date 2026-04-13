@@ -1,5 +1,19 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~Checklist tab completely broken~~ — FIXED 2026-04-13
+- **Discovered**: 2026-04-13
+- **Symptoms**: Clicking the Checklist tab showed nothing. Generate button did nothing. Toggle items did nothing.
+- **Root cause**: JS code used `state.production` (never assigned) instead of `state.prodId`. Also, `generate_daily_checklist()` returned null on first call due to nested DB connection reading uncommitted data.
+- **Fix**: Changed `state.production` → `state.prodId` in 3 JS functions; moved `return` outside `with` block in `database.py`.
+- **Branch**: fix/2026-04-13-checklist-tab-broken-state-ref
+
+## [P1] Missing null checks in setBoatView() and filterBoats()
+- **Discovered**: 2026-04-13
+- **Symptoms**: Potential JS crash when switching boat view modes (cards/schedule/budget) or using filter buttons, if DOM elements are missing
+- **Likely cause**: `$('boats-view-${v}').classList.toggle()` and `$('boat-filter-${id}').classList.toggle()` called without null checks — will throw "Cannot read property 'classList' of null"
+- **Files involved**: `static/app-monolith.js` (~lines 2455-2467)
+- **Estimated effort**: Quick fix — add `?.` optional chaining
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
