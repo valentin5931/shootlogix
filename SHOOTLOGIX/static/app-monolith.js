@@ -3521,8 +3521,8 @@ const App = (() => {
 
   function _findAssignment(assignmentId) {
     // Search all state assignment arrays
-    for (const arr of [state.assignments, state.pbAssignments, state.sbAssignments,
-                        state.transportAssignments, state.helperAssignments, state.gcAssignments]) {
+    for (const arr of [state.assignments, state.pbAssignments, state.securityAssignments,
+                        state.transportAssignments, state.labourAssignments, state.gcAssignments]) {
       if (!arr) continue;
       const found = arr.find(a => a.id === assignmentId);
       if (found) return found;
@@ -10603,7 +10603,7 @@ const App = (() => {
         state.gcWorkers = await api('GET', `/api/productions/${state.prodId}/guard-camp-workers`);
         renderGcWorkerList();
       } else {
-        renderTab('labour');
+        _loadAndRenderLabour();
       }
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -10618,7 +10618,7 @@ const App = (() => {
       ? `/api/productions/${state.prodId}/guard-camp-workers/import-csv`
       : `/api/productions/${state.prodId}/helpers/import-csv`;
     try {
-      const resp = await fetch(endpoint, { method: 'POST', body: fd, headers: { 'Authorization': `Bearer ${state.token}` } });
+      const resp = await fetch(endpoint, { method: 'POST', body: fd, headers: { 'Authorization': `Bearer ${_getAccessToken()}` } });
       if (!resp.ok) throw new Error(await resp.text());
       const res = await resp.json();
       toast(`${res.created} imported from CSV`);
@@ -10627,7 +10627,7 @@ const App = (() => {
         state.gcWorkers = await api('GET', `/api/productions/${state.prodId}/guard-camp-workers`);
         renderGcWorkerList();
       } else {
-        renderTab('labour');
+        _loadAndRenderLabour();
       }
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -10677,7 +10677,7 @@ const App = (() => {
     a.download = `${_csvImportModule}_template.csv`;
     // Add auth header via fetch and download
     fetch(`/api/csv-template/${_csvImportModule}`, {
-      headers: { 'Authorization': `Bearer ${state.token}` }
+      headers: { 'Authorization': `Bearer ${_getAccessToken()}` }
     }).then(r => r.blob()).then(blob => {
       a.href = URL.createObjectURL(blob);
       a.click();
@@ -10705,7 +10705,7 @@ const App = (() => {
     try {
       const resp = await fetch(endpoint, {
         method: 'POST', body: fd,
-        headers: { 'Authorization': `Bearer ${state.token}` }
+        headers: { 'Authorization': `Bearer ${_getAccessToken()}` }
       });
       const res = await resp.json();
       if (!resp.ok) throw new Error(res.error || 'Import failed');
@@ -10721,7 +10721,7 @@ const App = (() => {
       toast(`${res.created} ${_CSV_MODULE_LABELS[_csvImportModule] || _csvImportModule} imported`);
       if (!res.errors || res.errors.length === 0) closeCsvImportModal();
       // Reload current tab
-      if (typeof App.renderTab === 'function') App.renderTab(state.activeTab);
+      setTab(state.tab);
     } catch (e) { toast('Import error: ' + e.message, 'error'); }
   }
 
@@ -12250,7 +12250,7 @@ const App = (() => {
     });
 
     // Search helpers/labour
-    (state.lbWorkers || []).forEach(h => {
+    (state.labourWorkers || []).forEach(h => {
       if ((h.name || '').toLowerCase().includes(q) || (h.role || '').toLowerCase().includes(q)) {
         results.push({ type: 'Worker', name: h.name, detail: h.role || '', tab: 'labour', id: h.id });
       }
@@ -13029,9 +13029,9 @@ const App = (() => {
       dateEl.value = today;
     }
     const date = dateEl.value;
-    if (!state.production) return;
+    if (!state.prodId) return;
     try {
-      const data = await api('GET', `/api/productions/${state.production.id}/checklists?date=${date}`);
+      const data = await api('GET', `/api/productions/${state.prodId}/checklists?date=${date}`);
       _renderChecklist(data);
     } catch (e) {
       $('checklist-content').innerHTML = `<p style="color:var(--text-muted)">No checklist for this date.</p>`;
@@ -13041,18 +13041,18 @@ const App = (() => {
 
   async function generateChecklist() {
     const dateEl = $('checklist-date');
-    if (!dateEl.value || !state.production) return;
+    if (!dateEl.value || !state.prodId) return;
     try {
-      const data = await api('POST', `/api/productions/${state.production.id}/checklists/generate?date=${dateEl.value}`);
+      const data = await api('POST', `/api/productions/${state.prodId}/checklists/generate?date=${dateEl.value}`);
       _renderChecklist(data);
       toast(`Checklist generated: ${(data.items || []).length} items`);
     } catch (e) { toast(e.message, 'error'); }
   }
 
   async function toggleChecklistItem(itemId, checkbox) {
-    if (!state.production) return;
+    if (!state.prodId) return;
     try {
-      await api('PUT', `/api/productions/${state.production.id}/checklists/items/${itemId}/check`, {
+      await api('PUT', `/api/productions/${state.prodId}/checklists/items/${itemId}/check`, {
         checked: checkbox.checked
       });
       const container = $('checklist-content');
