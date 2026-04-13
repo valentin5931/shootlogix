@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P0] Fix state variable naming — picture/security boat operations broken
+
+**Problem**: Day override operations (set status, set value) silently failed for Picture Boat and Security Boat assignments. Pull-to-refresh on the Picture Boats tab stored data in dead variables, causing the UI to display stale data.
+
+**Root cause**: Two state variable naming inconsistencies in `app-monolith.js`:
+1. `_findAssignment()` (line 3524) referenced `state.pbAssignments` and `state.sbAssignments` — but these variables are never populated. The correct names used everywhere else are `state.pictureAssignments` and `state.securityAssignments`.
+2. `_reloadCurrentTab()` (line 13004) stored picture boat data in `state.pbFunctions` and `state.pbAssignments` instead of the correct `state.pictureFunctions` and `state.pictureAssignments`.
+
+**Fix**:
+- `static/app-monolith.js` line 3524: Changed `state.pbAssignments, state.sbAssignments` to `state.pictureAssignments, state.securityAssignments`
+- `static/app-monolith.js` line 13004: Changed `state.pbFunctions=f; state.pbAssignments=a` to `state.pictureFunctions=f; state.pictureAssignments=a`
+
+**Verification**:
+- All 45 backend tests pass
+- No references to `state.pbAssignments`, `state.sbAssignments`, or `state.pbFunctions` remain in the codebase
+- JS file structure unchanged (2-line rename diff)
+- `_findAssignment()` now matches `_clearDayOverride()` which already used the correct variable names
+
+**Branch**: fix/2026-04-13-state-var-naming-picture-security-boats
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (no data seeded); test creating picture/security boats via UI
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
