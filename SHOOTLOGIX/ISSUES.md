@@ -1,11 +1,14 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM — RESOLVED
 - **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Resolved**: 2026-04-13 — Verified that sub-tab buttons use global `onclick="App.fleetSetSubTab(...)"` handlers which work correctly. The sub-nav element is moved (not cloned) between panels, and event handlers fire as expected. Layout overflow was fixed in 2026-03-23 session via CSS `--subnav-bar-h` variable.
+
+## ~~[P1] Missing confirmation dialogs for assignment deletion (4 modules)~~ — FIXED 2026-04-13
+- **Discovered**: 2026-04-13
+- **Symptoms**: Clicking "✕" on an assignment card in Boats, Picture Boats, Security Boats, or Transport immediately deleted the assignment without confirmation.
+- **Fix**: Added `showConfirm()` wrapper to `removeAssignmentById`, `pbRemoveAssignmentById`, `sbRemoveAssignmentById`, `tbRemoveAssignmentById`
+- **Branch**: fix/2026-04-13-confirm-assignment-delete
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
