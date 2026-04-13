@@ -951,7 +951,7 @@ const App = (() => {
     // Trigger the sub-tab's render function
     if (target === 'boats')           { _tabCtx = 'boats';   renderBoats(); }
     if (target === 'picture-boats')   { _tabCtx = 'picture'; renderPictureBoats(); }
-    if (target === 'security-boats')  { _loadAndRenderSecurityBoats(); }
+    if (target === 'security-boats')  { _tabCtx = 'security'; _loadAndRenderSecurityBoats(); }
 
     // Keep Fleet tab visually active
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1350,7 +1350,7 @@ const App = (() => {
     if (tab === 'fuel')            _loadAndRenderFuel();
     if (tab === 'budget')          renderBudget();
     if (tab === 'labour')          { _tabCtx = 'labour'; _loadAndRenderLabour(); }
-    if (tab === 'security-boats')  _loadAndRenderSecurityBoats();
+    if (tab === 'security-boats')  { _tabCtx = 'security'; _loadAndRenderSecurityBoats(); }
     if (tab === 'locations')       { state.locationSchedules = null; renderLocations(); }
     if (tab === 'guards')          { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderGuards(); }
     if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
