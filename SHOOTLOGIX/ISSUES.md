@@ -1,5 +1,32 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] FIXED — Checklist tab completely broken (state.production undefined)
+- **Discovered**: 2026-04-13
+- **Fixed**: 2026-04-13 (Branch: fix/2026-04-13-checklist-tab-broken-state-production)
+- **Symptoms**: Clicking the Checklist tab did nothing — no content, no errors
+- **Root cause**: Checklist functions used `state.production.id` but only `state.prodId` exists
+- **Fix**: Replaced all 6 references in `loadChecklist`, `generateChecklist`, `toggleChecklistItem`
+
+## [P1] Checklist items generated with empty text
+- **Discovered**: 2026-04-13
+- **Symptoms**: `POST /api/productions/1/checklists/generate` creates 93 items but item text fields are empty
+- **Likely cause**: The checklist generator may not be pulling entity names correctly when building items
+- **Files involved**: `app.py` (checklists/generate route), `database.py`
+- **Estimated effort**: Medium — need to investigate the generate logic
+
+## [P1] Missing null checks in modal form reset functions
+- **Discovered**: 2026-04-13
+- **Symptoms**: `showAddBoatModal()`, `showAddPictureBoatModal()`, `showAddFunctionModal()` crash if modal DOM elements don't exist, because `$(id).value = ''` is called without null guards
+- **Likely cause**: Modal HTML elements may not always be present in the DOM when these functions are called
+- **Files involved**: `static/app-monolith.js` (lines ~2960, ~2994, ~3094, ~3108)
+- **Estimated effort**: Quick fix — add `if(el)` guards like the transport modal already does
+
+## [P1] Inconsistent optional chaining in export menu functions
+- **Discovered**: 2026-04-13
+- **Symptoms**: Some export functions use `?.` for menu element access (security boats), others don't (picture boats, transport), which could crash if the export menu element doesn't exist
+- **Files involved**: `static/app-monolith.js` (lines ~4948, ~6193 vs ~8857)
+- **Estimated effort**: Quick fix — add `?.` to all export menu element accesses
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
