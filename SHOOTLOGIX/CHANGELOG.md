@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P1] Fix state variable name mismatches breaking day overrides and pull-to-refresh
+
+**Problem**: Day overrides (marking days as off, breakdown, etc.) silently failed for Picture Boats, Security Boats, and Labour assignments. Pull-to-refresh on the Picture Boats tab did not update the displayed data.
+
+**Root cause**: Two locations in `app-monolith.js` used incorrect state variable names:
+1. `_findAssignment()` (line 3524) used `state.pbAssignments`, `state.sbAssignments`, and `state.helperAssignments` — but the rest of the codebase uses `state.pictureAssignments`, `state.securityAssignments`, and `state.labourAssignments`. Since these abbreviated names were never populated, the function always returned `null` for those modules.
+2. `_reloadCurrentTab()` (line 13004) stored pull-to-refresh data into `state.pbFunctions` and `state.pbAssignments` instead of `state.pictureFunctions` and `state.pictureAssignments`, so the UI continued showing stale data after refresh.
+
+**Fix**:
+- `static/app-monolith.js` line 3524: Changed `state.pbAssignments` → `state.pictureAssignments`, `state.sbAssignments` → `state.securityAssignments`, `state.helperAssignments` → `state.labourAssignments`
+- `static/app-monolith.js` line 13004: Changed `state.pbFunctions` → `state.pictureFunctions`, `state.pbAssignments` → `state.pictureAssignments`
+
+**Verification**:
+- JS syntax check passes
+- 45/45 pytest tests pass
+- Corrected variable names now match `_clearDayOverride()` (line 3613-3618) which already used the correct names
+- All API endpoints tested and working
+
+**Branch**: fix/2026-04-13-state-var-name-mismatches
+**Side effects**: None
+**Next priority**: P1 UX issues — form validation gaps, missing loading states, error handling improvements
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
