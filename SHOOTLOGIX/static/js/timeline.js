@@ -438,7 +438,8 @@ const Timeline = (() => {
 
   // ── Data loading ───────────────────────────────────────────
   async function _loadData() {
-    const prodId = window._SL ? window._SL.state.prodId : null;
+    const prodId = (window._SL && window._SL.state ? window._SL.state.prodId : null)
+                   || localStorage.getItem('currentProdId');
     if (!prodId) {
       _container.innerHTML = '<div style="padding:2rem;color:var(--text-3)">No production selected.</div>';
       return;
