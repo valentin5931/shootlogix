@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P0] Fix Picture Boats state variable mismatch causing empty data on refresh
+
+**Problem**: Picture Boats tab could show stale or empty data after a production change or data refresh. The `_findAssignment()` utility also failed to locate picture boat and security boat assignments.
+
+**Root cause**: Two state variable naming mismatches in `app-monolith.js`:
+1. Line 13004: Tab refresh path stored fetched data into `state.pbFunctions` / `state.pbAssignments` instead of the correct `state.pictureFunctions` / `state.pictureAssignments`. All rendering functions read from the correct names, so refreshed data was invisible.
+2. Line 3524: `_findAssignment()` searched `state.pbAssignments` / `state.sbAssignments` (non-existent) instead of `state.pictureAssignments` / `state.securityAssignments`, silently missing picture and security boat assignments in cross-module lookups.
+
+**Fix**:
+- `static/app-monolith.js` line 13004: Changed `state.pbFunctions=f; state.pbAssignments=a` to `state.pictureFunctions=f; state.pictureAssignments=a`
+- `static/app-monolith.js` line 3524: Changed `state.pbAssignments, state.sbAssignments` to `state.pictureAssignments, state.securityAssignments`
+
+**Verification**:
+- JS bracket/paren balance check passes
+- All 45 pytest tests pass (no regressions)
+- All API endpoints return correct data
+- Data refresh path now uses consistent state variable names matching the rendering code
+
+**Branch**: fix/2026-04-13-picture-boats-state-mismatch
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (no data seeded); investigate whether the 46 boats in the main `boats` table (all category='picture') should be migrated
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
