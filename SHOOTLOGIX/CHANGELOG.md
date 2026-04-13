@@ -1,5 +1,31 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P1] Wire up notification bell in app-monolith.js
+
+**Problem**: The notification bell button in `index.html` calls `App.toggleNotifPanel()`, `App.markAllNotificationsRead()`, `App.closeNotifPanel()`, and `App.clickNotification()` — but none of these functions existed in `app-monolith.js`. Clicking the bell threw a JS error. The notification module code existed in `static/modules/notifications.js` but was never loaded (it relied on `window._SL` which doesn't exist in the monolith architecture).
+
+**Root cause**: The notification module was written for a module-loading system that was never implemented. The functions were never ported to the monolith JS.
+
+**Fix**: `static/app-monolith.js` — Added ~110 lines of notification code:
+- `toggleNotifPanel()` / `closeNotifPanel()` — open/close the notification panel
+- `_loadNotifList()` / `_renderNotifList()` — fetch and render notifications from API
+- `clickNotification(id)` — mark a single notification as read
+- `markAllNotificationsRead()` — mark all as read with toast feedback
+- `_pollNotificationCount()` / `_startNotifPolling()` — poll badge count every 30s
+- `_updateNotifBadge()` — update the bell badge with unread count
+- Escape key closes the panel; clicking outside closes it
+- Polling starts automatically after project selection in `_selectProject()`
+
+**Verification**:
+- Notification API endpoints return 200
+- JS file serves correctly with all function references present
+- All major endpoints return 200 — no regressions
+- Brace/paren/bracket counts balanced in JS
+
+**Branch**: fix/2026-04-13-notification-bell-not-wired
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats lists return empty (data model investigation)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
