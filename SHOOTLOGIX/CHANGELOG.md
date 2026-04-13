@@ -1,5 +1,33 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P1] Fix Fleet/Crew sub-tab context: FAB, _tabCtx, pull-to-refresh
+
+**Problem**: When navigating to Fleet or Crew tabs, three things were broken:
+1. The FAB (floating action button) disappeared on mobile — users couldn't add boats, picture boats, security boats, workers, or guards via the FAB
+2. `_tabCtx` was not set for Security Boats or Guards sub-tabs, causing the assign modal to use wrong context/function arrays
+3. Pull-to-refresh did nothing on Fleet/Crew sub-tabs because `_reloadCurrentTab()` checked `state.tab` which was 'fleet'/'crew' (not the sub-tab name)
+
+**Root cause**: `state.tab` is set to 'fleet' or 'crew' when those tabs are opened, but FAB_CONFIG, fabAction(), and _reloadCurrentTab() all expected the sub-tab name ('boats', 'picture-boats', 'security-boats', 'labour', 'guards'). Additionally, `renderFleetUnified()` and `renderCrewUnified()` didn't set `_tabCtx` for security boats and guards sub-tabs.
+
+**Fix** (`static/app-monolith.js`):
+- Added `_effectiveTab()` helper that resolves 'fleet' → active fleet sub-tab and 'crew' → active crew sub-tab
+- Updated `_updateFab()` and `fabAction()` to use `_effectiveTab()` instead of `state.tab`
+- Updated `_reloadCurrentTab()` to use `_effectiveTab()` for correct pull-to-refresh behavior
+- Set `_tabCtx = 'security'` in `renderFleetUnified()` and `setTab()` for security-boats
+- Set `_tabCtx = 'guard_camp'` in `renderCrewUnified()` and `setTab()` for guards
+- Added `_updateFab()` calls inside `renderFleetUnified()` and `renderCrewUnified()` so FAB updates on sub-tab switch
+- Added 'today' and 'documents' to `_reloadCurrentTab()` coverage
+
+**Verification**:
+- All 45 tests pass
+- JS bracket balance verified (0 difference)
+- App starts without errors
+- Updated JS is served correctly
+
+**Branch**: fix/2026-04-13-fleet-crew-subtab-context
+**Side effects**: None
+**Next priority**: Add confirmation dialogs for destructive delete operations (P1 — boats, assignments, functions, workers)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
