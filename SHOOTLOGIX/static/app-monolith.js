@@ -687,6 +687,8 @@ const App = (() => {
       renderPDT();
       // Load scheduling alerts in background (AXE 7.3)
       loadAlerts();
+      // Start notification badge polling (AXE 9.2)
+      _startNotifPolling();
     } catch (e) {
       console.error('Load error after project select:', e);
       toast('Failed to load project data: ' + e.message, 'error');
@@ -12382,12 +12384,22 @@ const App = (() => {
       if (pop && !pop.classList.contains('hidden') && !pop.contains(e.target)) {
         closeSchedulePopover();
       }
+      // Close notification panel if clicking outside (AXE 9.2)
+      if (_notifPanelOpen) {
+        const notifPanel = $('notif-panel');
+        const notifBell = $('notif-bell');
+        if (notifPanel && !notifPanel.contains(e.target) && notifBell && !notifBell.contains(e.target)) {
+          closeNotifPanel();
+        }
+      }
     });
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
         // Close alerts panel (AXE 7.3)
         if (_alertsPanelOpen) { toggleAlertsPanel(); }
+        // Close notifications panel (AXE 9.2)
+        if (_notifPanelOpen) { closeNotifPanel(); }
         closeShortcutsPanel();
         const moreSheet = $('bnav-more-sheet');
         if (moreSheet && !moreSheet.classList.contains('hidden')) { moreSheet.classList.add('hidden'); }
@@ -13102,6 +13114,126 @@ const App = (() => {
     container.innerHTML = html;
   }
 
+  // ── Notifications (AXE 9.2) ──────────────────────────────────
+  let _notifPanelOpen = false;
+  let _notifData = [];
+  let _unreadCount = 0;
+  let _notifPollTimer = null;
+
+  async function _pollNotificationCount() {
+    if (!state.prodId) return;
+    try {
+      const res = await authFetch(`/api/notifications/count?production_id=${state.prodId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      _unreadCount = data.count || 0;
+      _updateNotifBadge();
+    } catch { /* silent */ }
+  }
+
+  function _startNotifPolling() {
+    if (_notifPollTimer) clearInterval(_notifPollTimer);
+    _pollNotificationCount();
+    _notifPollTimer = setInterval(_pollNotificationCount, 30000);
+  }
+
+  function _updateNotifBadge() {
+    const badge = $('notif-badge');
+    if (!badge) return;
+    if (_unreadCount > 0) {
+      badge.textContent = _unreadCount > 99 ? '99+' : _unreadCount;
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  function toggleNotifPanel() {
+    _notifPanelOpen = !_notifPanelOpen;
+    const panel = $('notif-panel');
+    if (!panel) return;
+    panel.classList.toggle('hidden', !_notifPanelOpen);
+    if (_notifPanelOpen) _loadNotifList();
+  }
+
+  function closeNotifPanel() {
+    _notifPanelOpen = false;
+    const panel = $('notif-panel');
+    if (panel) panel.classList.add('hidden');
+  }
+
+  async function _loadNotifList() {
+    const list = $('notif-list');
+    if (!list) return;
+    list.innerHTML = '<div class="notif-loading">Loading...</div>';
+    try {
+      const res = await authFetch(`/api/notifications?production_id=${state.prodId}&limit=50`);
+      if (!res.ok) throw new Error('Failed');
+      _notifData = await res.json();
+      _renderNotifList();
+    } catch {
+      list.innerHTML = '<div class="notif-empty">Failed to load notifications</div>';
+    }
+  }
+
+  function _renderNotifList() {
+    const list = $('notif-list');
+    if (!list) return;
+    if (!_notifData.length) {
+      list.innerHTML = '<div class="notif-empty">No notifications</div>';
+      return;
+    }
+    list.innerHTML = _notifData.map(n => {
+      const time = _fmtNotifTime(n.created_at);
+      const unread = !n.is_read;
+      return `<div class="notif-item ${unread ? 'notif-unread' : ''}" data-id="${n.id}" onclick="App.clickNotification(${n.id})">
+        <div class="notif-content">
+          <div class="notif-title">${esc(n.title)}</div>
+          ${n.body ? `<div class="notif-body">${esc(n.body)}</div>` : ''}
+          <div class="notif-time">${esc(time)}</div>
+        </div>
+        ${unread ? '<div class="notif-dot"></div>' : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function _fmtNotifTime(iso) {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso + 'Z');
+      const now = new Date();
+      const diff = (now - d) / 1000;
+      if (diff < 60) return 'just now';
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch { return iso; }
+  }
+
+  async function clickNotification(notifId) {
+    try {
+      await authFetch(`/api/notifications/${notifId}/read`, { method: 'POST' });
+      const n = _notifData.find(x => x.id === notifId);
+      if (n) n.is_read = 1;
+      _unreadCount = Math.max(0, _unreadCount - 1);
+      _updateNotifBadge();
+      _renderNotifList();
+    } catch { /* silent */ }
+  }
+
+  async function markAllNotificationsRead() {
+    try {
+      await authFetch(`/api/notifications/read-all?production_id=${state.prodId}`, { method: 'POST' });
+      _notifData.forEach(n => n.is_read = 1);
+      _unreadCount = 0;
+      _updateNotifBadge();
+      _renderNotifList();
+      toast('All notifications marked as read', 'success');
+    } catch {
+      toast('Failed to mark all as read', 'error');
+    }
+  }
+
   // ── Public API ─────────────────────────────────────────────
   return {
     setTab,
@@ -13246,6 +13378,8 @@ const App = (() => {
     openShortcutsPanel, closeShortcutsPanel,
     // AXE 5.4 — Feedback
     _updateNetIndicator, _updateOfflineCounter,
+    // Notifications (AXE 9.2)
+    toggleNotifPanel, closeNotifPanel, clickNotification, markAllNotificationsRead,
     init,
   };
 })();

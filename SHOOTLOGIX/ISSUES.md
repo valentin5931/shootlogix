@@ -1,5 +1,10 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] ~~Notification bell not wired up in app-monolith.js~~ **FIXED 2026-04-13**
+- **Discovered**: 2026-04-13
+- **Fixed**: 2026-04-13 — Branch: fix/2026-04-13-notification-bell-not-wired
+- **Root cause**: Notification functions (`toggleNotifPanel`, `closeNotifPanel`, `clickNotification`, `markAllNotificationsRead`) were called from HTML but never defined in `app-monolith.js`. Ported from `static/modules/notifications.js`.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
