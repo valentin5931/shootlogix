@@ -1,11 +1,18 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM — PARTIALLY FIXED
 - **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
+- **Fixed**: 2026-04-13 — Missing `_tabCtx = 'security'` for Security Boats sub-tab (caused wrong function list in assignment modal). Layout overflow was fixed 2026-03-23.
+- **Remaining**: Sub-nav prepend layout shift risk still exists but is mitigated by the CSS variable `--subnav-bar-h` fix from 2026-03-23.
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+- **Estimated effort**: Remaining issue is cosmetic/edge-case
+
+## [P0] Timeline tab renders nothing
+- **Discovered**: 2026-04-13
+- **Symptoms**: Clicking the Timeline tab shows a blank panel. No error in console because of `typeof` guard.
+- **Likely cause**: `renderTimeline()` function is never defined in `app-monolith.js`. The `setTab` handler at line 1362 checks `typeof App.renderTimeline === 'function'` — it's always false, so nothing renders.
+- **Files involved**: `static/app-monolith.js` (line 1362), `templates/index.html` (view-timeline panel at line 644)
+- **Estimated effort**: Medium — need to implement a timeline view (likely a Gantt-style chart of shooting days/locations)
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22

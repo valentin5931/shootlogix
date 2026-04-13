@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P0] Fix missing _tabCtx for Security Boats — assignment modal uses wrong functions
+
+**Problem**: When navigating to Fleet > Security Boats (either via the fleet sub-nav or direct tab switch), the `_tabCtx` variable was never set to `'security'`. This caused the assignment modal to use the wrong function list when assigning security boats — it would show functions from whatever tab was previously active (e.g., picture boat functions instead of security functions).
+
+**Root cause**: Two code paths in `app-monolith.js` called `_loadAndRenderSecurityBoats()` without first setting `_tabCtx = 'security'`:
+1. Fleet unified sub-tab switch (line 954) — `boats` and `picture-boats` both set `_tabCtx`, but `security-boats` did not
+2. Direct `setTab('security-boats')` call (line 1353) — same omission
+
+**Fix**:
+- `static/app-monolith.js` line 954: Added `_tabCtx = 'security';` before `_loadAndRenderSecurityBoats()` in fleet sub-tab handler
+- `static/app-monolith.js` line 1353: Added `_tabCtx = 'security';` before `_loadAndRenderSecurityBoats()` in `setTab()` handler
+
+**Verification**:
+- All 45 existing tests pass (no regressions)
+- Pattern now matches all other tabs (boats→'boats', picture-boats→'picture', security-boats→'security')
+- JS bracket/paren balance confirmed
+
+**Branch**: fix/2026-04-13-security-boats-tabctx-missing
+**Side effects**: None
+**Next priority**: [P1] Picture Boats and Security Boats empty list issue — tables have no data; [P1] Timeline tab renders nothing (renderTimeline function is undefined)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
