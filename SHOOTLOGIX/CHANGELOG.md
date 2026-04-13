@@ -1,5 +1,35 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P0] Fix 7 broken state property references in app-monolith.js
+
+**Problem**: Multiple features were completely non-functional due to incorrect state property names in the JavaScript frontend:
+1. **Checklist tab**: silently did nothing (load, generate, toggle all returned early)
+2. **CSV import/export**: authentication failed with `Bearer undefined`
+3. **Bulk helper import**: crashed with ReferenceError on `renderTab`
+4. **Global search**: never found workers/labour entries
+5. **Assignment lookup**: couldn't find security boat or labour assignments
+
+**Root cause**: Several state property names were inconsistent with the rest of the codebase:
+- `state.production` used in checklist but never assigned (should be `state.prodId`)
+- `state.token` used in CSV operations but never assigned (should use `_getAccessToken()`)
+- `renderTab('labour')` called but never defined (should be `_loadAndRenderLabour()`)
+- `state.sbAssignments` should be `state.securityAssignments`
+- `state.helperAssignments` should be `state.labourAssignments`
+- `state.lbWorkers` should be `state.labourWorkers`
+- `state.activeTab` should be `state.tab`
+
+**Fix**: `static/app-monolith.js` — corrected all 7 property references to use the canonical names used elsewhere in the codebase.
+
+**Verification**:
+- Checklist tab now calls API and generates checklists successfully
+- All API endpoints return 200
+- JS brace/paren balance verified (no syntax errors)
+- Existing tab navigation and CRUD operations unaffected
+
+**Branch**: fix/2026-04-13-broken-state-refs
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats empty data (tables exist but no records seeded)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

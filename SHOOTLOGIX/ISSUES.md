@@ -1,5 +1,10 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [FIXED 2026-04-13] [P0] Checklist tab, CSV import/export, global search, and assignment lookup broken
+- **Discovered**: 2026-04-13
+- **Fixed in**: fix/2026-04-13-broken-state-refs
+- **Details**: 7 state property references in app-monolith.js used wrong names, causing silent failures across checklist, CSV import, bulk helper import, global search, and cross-module assignment lookup.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
