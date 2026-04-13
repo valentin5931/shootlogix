@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P1] Fix pull-to-refresh for Fleet, Crew, Today, Documents, Timeline, Checklist tabs
+
+**Problem**: Pull-to-refresh (swipe down to refresh) did nothing on 6 tabs: Fleet, Crew, Today, Documents, Timeline, and Checklist. Users expecting a data refresh after pulling down saw no update on these tabs.
+
+**Root cause**: The `_reloadCurrentTab()` function in `app-monolith.js` only handled 12 out of 18 tab states. The Fleet and Crew unified tabs (which use sub-tab delegation), Today, Documents, Timeline, and Checklist were missing from the if/else-if chain.
+
+**Fix**:
+- `static/app-monolith.js` (`_reloadCurrentTab`): Added handlers for all 6 missing tab states:
+  - `fleet`: Delegates to active sub-tab (boats/picture-boats/security-boats), reloads data from API, then re-renders the fleet unified view
+  - `crew`: Delegates to active sub-tab (labour/guards), reloads data from API, then re-renders the crew unified view
+  - `today`: Re-calls `renderToday()` which fetches fresh data
+  - `documents`: Re-calls `renderDocuments()` which fetches fresh data
+  - `timeline`: Re-calls `App.renderTimeline()` (from timeline.js) if available
+  - `checklist`: Re-calls `loadChecklist()` which fetches fresh data
+
+**Verification**:
+- JS syntax check passes
+- App starts and serves the updated JS file correctly
+- All 18 tab states now have reload handlers in `_reloadCurrentTab()`
+- No regressions: existing tab reload behavior unchanged
+
+**Branch**: fix/2026-04-13-pull-to-refresh-missing-tabs
+**Side effects**: None
+**Next priority**: P1 — Picture Boats/Security Boats empty data tables (entities need to be seeded or user-created)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
