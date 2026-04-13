@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P0] Fix Timeline API crash — wrong column names in SQL queries
+
+**Problem**: The Timeline tab (/api/productions/:id/timeline) crashed with a 500 error: `sqlite3.OperationalError: no such column: site`. The endpoint was completely unusable.
+
+**Root cause**: The `api_timeline()` function in `app.py` used column names that don't exist in the actual database schema:
+1. `SELECT id, name, site FROM locations` — the `locations` table has no `site` column (correct column: `location_type`)
+2. `SELECT id, date, prep, filming, wrap FROM location_schedules` — the `location_schedules` table has no `prep`/`filming`/`wrap` columns. It uses a single `status` column with values like `'P'`, `'F'`, `'W'`.
+
+**Fix**:
+- `app.py` (line 7893): Changed `site` to `location_type` in locations SELECT query
+- `app.py` (line 7896): Changed `prep, filming, wrap` to `status` in location_schedules SELECT query
+- `app.py` (lines 7900-7905): Simplified the phases logic to read from the single `status` column instead of three boolean columns
+- `app.py` (line 7909): Changed `loc['site']` to `loc['location_type']` for the subgroup label
+
+**Verification**:
+- Timeline API now returns 200 with 84 resources, 32 shooting days, 121 functions
+- Location subgroups correctly use `location_type` values (e.g., "tribal_camp", "game", "reward")
+- Location assignments correctly show phases from `status` column (e.g., "F" for filming)
+- All 17 other API endpoints verified working (no regressions)
+
+**Branch**: fix/2026-04-13-timeline-api-crash-no-site-column
+**Side effects**: None
+**Next priority**: Notification bell and Checklist tab are wired up in HTML but their module code is not in app-monolith.js (P1). Picture Boats and Security Boats tables remain empty (P1 data issue).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
