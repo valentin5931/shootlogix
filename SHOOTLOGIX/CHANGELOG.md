@@ -10,11 +10,12 @@
 - `data_loader.py`: Added `create_picture_boat` to imports. Added `PICTURE_BOAT_DATA` (8 camera boats: 2 per group — YELLOW, RED, NEUTRAL, EXILE at $350/day). Added `SECURITY_BOAT_DATA` (6 safety boats: one per function — GAMES, COUNCIL, ARENA, EVAC, MEDICAL, STANDBY at $300-500/day). Updated `_seed_picture_boats()` and `_seed_security_boats()` to seed boat entities alongside functions, following the same idempotent pattern used by `_seed_transport()`.
 
 **Verification**:
-- `/api/productions/1/picture-boats` returns 8 boats (was `[]`)
-- `/api/productions/1/security-boats` returns 6 boats (was `[]`)
+- `/api/productions/1/picture-boats` returns 8 boats with capacity/vendor data (was `[]`)
+- `/api/productions/1/security-boats` returns 6 boats with capacity/vendor data (was `[]`)
+- CRUD operations (create/delete) work correctly on both tables
 - Idempotent: second startup does not re-seed
+- All 45 existing tests pass with no regressions
 - No regressions: all other endpoints (boats, transport, PDT, locations, budget, FNB) return same data
-- Python syntax check passes
 
 **Branch**: fix/2026-04-13-seed-picture-security-boats
 **Side effects**: None — new database instances will have seeded picture/security boats. Existing databases that already have picture/security boats (e.g., from manual creation) will not be affected due to idempotent checks.

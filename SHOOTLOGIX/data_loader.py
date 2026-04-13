@@ -223,14 +223,14 @@ def _compute_shootlogix_total(prod_id):
 # Picture boat entities — camera boats used for filming each tribe/group.
 # Each group (YELLOW, RED, NEUTRAL, EXILE) typically has 1-2 camera boats.
 PICTURE_BOAT_DATA = [
-    {'name': 'CAM YELLOW 1',  'group': 'YELLOW',  'rate': 350, 'nr': 1},
-    {'name': 'CAM YELLOW 2',  'group': 'YELLOW',  'rate': 350, 'nr': 2},
-    {'name': 'CAM RED 1',     'group': 'RED',     'rate': 350, 'nr': 3},
-    {'name': 'CAM RED 2',     'group': 'RED',     'rate': 350, 'nr': 4},
-    {'name': 'CAM NEUTRAL 1', 'group': 'NEUTRAL', 'rate': 350, 'nr': 5},
-    {'name': 'CAM NEUTRAL 2', 'group': 'NEUTRAL', 'rate': 350, 'nr': 6},
-    {'name': 'CAM EXILE 1',   'group': 'EXILE',   'rate': 350, 'nr': 7},
-    {'name': 'CAM EXILE 2',   'group': 'EXILE',   'rate': 350, 'nr': 8},
+    {'name': 'CAM YELLOW 1',  'group': 'YELLOW',  'rate': 350, 'nr': 1, 'capacity': '8', 'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'CAM YELLOW 2',  'group': 'YELLOW',  'rate': 350, 'nr': 2, 'capacity': '8', 'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'CAM RED 1',     'group': 'RED',     'rate': 350, 'nr': 3, 'capacity': '8', 'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'CAM RED 2',     'group': 'RED',     'rate': 350, 'nr': 4, 'capacity': '8', 'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'CAM NEUTRAL 1', 'group': 'NEUTRAL', 'rate': 350, 'nr': 5, 'capacity': '6', 'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'CAM NEUTRAL 2', 'group': 'NEUTRAL', 'rate': 350, 'nr': 6, 'capacity': '6', 'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'CAM EXILE 1',   'group': 'EXILE',   'rate': 350, 'nr': 7, 'capacity': '6', 'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'CAM EXILE 2',   'group': 'EXILE',   'rate': 350, 'nr': 8, 'capacity': '6', 'vendor': 'BONGO YACHT CLUB'},
 ]
 
 
@@ -255,6 +255,8 @@ def _seed_picture_boats(prod_id):
                 'name': pb['name'],
                 'group_name': pb['group'],
                 'daily_rate_estimate': pb['rate'],
+                'capacity': pb.get('capacity'),
+                'vendor': pb.get('vendor'),
             })
 
     if not existing_funcs:
@@ -480,12 +482,12 @@ SECURITY_BOAT_FUNCS = [
 
 # Security boat entities — safety/rescue boats for each function.
 SECURITY_BOAT_DATA = [
-    {'name': 'SAFETY 1 - GAMES',   'group': 'SAFETY',  'rate': 300, 'nr': 1},
-    {'name': 'SAFETY 2 - COUNCIL', 'group': 'SAFETY',  'rate': 300, 'nr': 2},
-    {'name': 'SAFETY 3 - ARENA',   'group': 'SAFETY',  'rate': 300, 'nr': 3},
-    {'name': 'SAFETY 4 - EVAC',    'group': 'EVAC',    'rate': 500, 'nr': 4},
-    {'name': 'SAFETY 5 - MEDICAL', 'group': 'MEDICAL', 'rate': 400, 'nr': 5},
-    {'name': 'SAFETY 6 - STANDBY', 'group': 'STANDBY', 'rate': 300, 'nr': 6},
+    {'name': 'SAFETY 1 - GAMES',   'group': 'SAFETY',  'rate': 300, 'nr': 1, 'capacity': '6', 'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'SAFETY 2 - COUNCIL', 'group': 'SAFETY',  'rate': 300, 'nr': 2, 'capacity': '6', 'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'SAFETY 3 - ARENA',   'group': 'SAFETY',  'rate': 300, 'nr': 3, 'capacity': '6', 'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'SAFETY 4 - EVAC',    'group': 'EVAC',    'rate': 500, 'nr': 4, 'capacity': '12', 'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'SAFETY 5 - MEDICAL', 'group': 'MEDICAL', 'rate': 400, 'nr': 5, 'capacity': '8', 'vendor': 'BONGO YACHT CLUB'},
+    {'name': 'SAFETY 6 - STANDBY', 'group': 'STANDBY', 'rate': 300, 'nr': 6, 'capacity': '6', 'vendor': 'BONGO YACHT CLUB'},
 ]
 
 
@@ -510,6 +512,8 @@ def _seed_security_boats(prod_id):
                 'name': sb['name'],
                 'group_name': sb['group'],
                 'daily_rate_estimate': sb['rate'],
+                'capacity': sb.get('capacity'),
+                'vendor': sb.get('vendor'),
             })
 
     if not existing_funcs:
