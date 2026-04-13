@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P1] Add "Import from Fleet" for Picture Boats and Security Boats
+
+**Problem**: Picture Boats and Security Boats tabs showed empty lists. All 46 boats were in the main `boats` table (migrated from BATEAUX fleet.db), but the `picture_boats` and `security_boats` tables were never populated. Users had no way to leverage existing fleet data — they could only add boats one by one manually.
+
+**Root cause**: The data loader (`data_loader.py`) imported all boats from the source BATEAUX database into the main `boats` table with category "picture". The `picture_boats` and `security_boats` tables, which are queried by their respective tabs, were never populated. The app's data model uses 3 separate tables for 3 fleet sub-types.
+
+**Fix**:
+- `app.py`: Added 2 new API endpoints:
+  - `POST /api/productions/{id}/picture-boats/import-from-fleet` — copies selected boats from the main fleet into `picture_boats`
+  - `POST /api/productions/{id}/security-boats/import-from-fleet` — copies selected boats into `security_boats`
+  - Both are idempotent (skip boats already imported by name)
+- `static/app-monolith.js`: Added import modal logic (`showImportFleetModal`, `importFleetConfirm`, etc.) with select-all, duplicate detection, and post-import data refresh. Updated empty-state messages to show "Import from Fleet" CTA.
+- `templates/index.html`: Added import modal overlay with boat selection list. Added "Fleet" button to both Picture Boats and Security Boats sidebar toolbars.
+
+**Verification**:
+- API: import 46 boats -> 46 imported. Re-import same boats -> 0 imported (idempotent). Empty array -> 400 error.
+- All 45 existing tests pass, no regressions.
+- JS syntax check passes.
+- SPA renders import modal correctly.
+
+**Branch**: fix/2026-04-13-import-fleet-to-picture-security-boats
+**Side effects**: None
+**Next priority**: Test transport/helpers/guards empty list issues (P1); add similar import features if applicable
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

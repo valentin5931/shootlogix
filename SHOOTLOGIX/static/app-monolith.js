@@ -3000,6 +3000,107 @@ const App = (() => {
 
   function closeAddPictureBoatModal() { $('add-picture-boat-overlay').classList.add('hidden'); }
 
+  // ── Import from Fleet modal ───────────────────────────────────────────────
+  let _importFleetTarget = 'picture'; // 'picture' or 'security'
+
+  async function showImportFleetModal(target) {
+    _importFleetTarget = target;
+    const overlay = $('import-fleet-overlay');
+    if (!overlay) return;
+    overlay.classList.remove('hidden');
+    const title = $('import-fleet-title');
+    if (title) title.textContent = target === 'picture' ? 'Import to Picture Boats' : 'Import to Security Boats';
+    const listEl = $('import-fleet-list');
+    listEl.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--text-4)">Loading fleet...</div>';
+    try {
+      const boats = await api('GET', `/api/productions/${state.prodId}/boats`);
+      // Determine which boats are already imported
+      const existingNames = new Set();
+      if (target === 'picture') {
+        (state.pictureBoats || []).forEach(b => existingNames.add(b.name));
+      } else {
+        (state.securityBoats || []).forEach(b => existingNames.add(b.name));
+      }
+      if (!boats.length) {
+        listEl.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--text-4)">No boats in fleet</div>';
+        return;
+      }
+      const sorted = [...boats].sort((a, b) => (a.boat_nr || 999) - (b.boat_nr || 999));
+      listEl.innerHTML = `
+        <div style="margin-bottom:.5rem;display:flex;justify-content:space-between;align-items:center">
+          <label style="font-size:.75rem;color:var(--text-3);display:flex;align-items:center;gap:.3rem;cursor:pointer">
+            <input type="checkbox" id="import-fleet-select-all" onchange="App.importFleetToggleAll(this.checked)" style="width:15px;height:15px"> Select all
+          </label>
+          <span style="font-size:.7rem;color:var(--text-4)" id="import-fleet-count">0 selected</span>
+        </div>
+        ${sorted.map(b => {
+          const already = existingNames.has(b.name);
+          return `<label class="import-fleet-item${already ? ' already-imported' : ''}" style="display:flex;align-items:center;gap:.5rem;padding:.4rem .3rem;border-bottom:1px solid var(--border-lt);cursor:pointer;opacity:${already ? '.5' : '1'}">
+            <input type="checkbox" class="import-fleet-cb" value="${b.id}" ${already ? 'disabled' : ''} onchange="App.importFleetUpdateCount()" style="width:15px;height:15px;flex-shrink:0">
+            <span style="font-weight:600;font-size:.82rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.name)}</span>
+            ${b.boat_nr ? `<span style="font-size:.65rem;color:var(--text-4);font-family:monospace">#${esc(b.boat_nr)}</span>` : ''}
+            ${already ? '<span style="font-size:.6rem;color:var(--green)">imported</span>' : ''}
+          </label>`;
+        }).join('')}`;
+    } catch (e) {
+      listEl.innerHTML = `<div style="text-align:center;padding:1rem;color:var(--red)">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function closeImportFleetModal() {
+    const overlay = $('import-fleet-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  function importFleetToggleAll(checked) {
+    document.querySelectorAll('.import-fleet-cb:not(:disabled)').forEach(cb => { cb.checked = checked; });
+    importFleetUpdateCount();
+  }
+
+  function importFleetUpdateCount() {
+    const count = document.querySelectorAll('.import-fleet-cb:checked').length;
+    const el = $('import-fleet-count');
+    if (el) el.textContent = `${count} selected`;
+  }
+
+  async function importFleetConfirm() {
+    const checked = document.querySelectorAll('.import-fleet-cb:checked');
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+    if (!ids.length) { toast('Select at least one boat', 'error'); return; }
+    const endpoint = _importFleetTarget === 'picture'
+      ? `/api/productions/${state.prodId}/picture-boats/import-from-fleet`
+      : `/api/productions/${state.prodId}/security-boats/import-from-fleet`;
+    try {
+      const result = await api('POST', endpoint, { boat_ids: ids });
+      closeImportFleetModal();
+      toast(`${result.imported} boat(s) imported successfully`);
+      // Refresh the relevant tab data
+      if (_importFleetTarget === 'picture') {
+        const [boats, functions, assignments] = await Promise.all([
+          api('GET', `/api/productions/${state.prodId}/picture-boats`),
+          api('GET', `/api/productions/${state.prodId}/boat-functions?context=picture`),
+          api('GET', `/api/productions/${state.prodId}/picture-boat-assignments`),
+        ]);
+        state.pictureBoats = boats;
+        state.pictureFunctions = functions;
+        state.pictureAssignments = assignments;
+        renderPictureBoats();
+      } else {
+        const [boats, functions, assignments] = await Promise.all([
+          api('GET', `/api/productions/${state.prodId}/security-boats`),
+          api('GET', `/api/productions/${state.prodId}/boat-functions?context=security`),
+          api('GET', `/api/productions/${state.prodId}/security-boat-assignments`),
+        ]);
+        state.securityBoats = boats;
+        state.securityFunctions = functions;
+        state.securityAssignments = assignments;
+        renderSecurityBoats();
+      }
+    } catch (e) {
+      toast('Import error: ' + e.message, 'error');
+    }
+  }
+
   async function createPictureBoat() {
     const name = $('npb-name').value.trim();
     if (!name) { toast('Name is required', 'error'); return; }
@@ -4367,7 +4468,16 @@ const App = (() => {
     const assignedIds = new Set(state.pictureAssignments.filter(a => a.picture_boat_id).map(a => a.picture_boat_id));
     const container = $('pb-boat-list');
     if (!boats.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No picture boats</div>';
+      const hasAnyPb = state.pictureBoats && state.pictureBoats.length > 0;
+      if (hasAnyPb) {
+        container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No picture boats match this filter</div>';
+      } else {
+        container.innerHTML = `<div style="text-align:center;padding:1.5rem 1rem">
+          <div style="color:var(--text-4);font-size:.85rem;margin-bottom:.8rem">No picture boats yet</div>
+          <button class="btn btn-sm btn-primary" onclick="App.showImportFleetModal('picture')" style="margin-bottom:.5rem">Import from Fleet</button>
+          <div style="color:var(--text-4);font-size:.7rem">or use <b>+ Add</b> above to create manually</div>
+        </div>`;
+      }
       return;
     }
     container.innerHTML = boats.map(b => {
@@ -8159,7 +8269,16 @@ const App = (() => {
     const container = $('sb-boat-list');
     if (!container) return;
     if (!boats.length) {
-      container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No security boats</div>';
+      const hasAnySb = state.securityBoats && state.securityBoats.length > 0;
+      if (hasAnySb) {
+        container.innerHTML = '<div style="color:var(--text-4);font-size:.8rem;text-align:center;padding:1rem">No security boats match this filter</div>';
+      } else {
+        container.innerHTML = `<div style="text-align:center;padding:1.5rem 1rem">
+          <div style="color:var(--text-4);font-size:.85rem;margin-bottom:.8rem">No security boats yet</div>
+          <button class="btn btn-sm btn-primary" onclick="App.showImportFleetModal('security')" style="margin-bottom:.5rem">Import from Fleet</button>
+          <div style="color:var(--text-4);font-size:.7rem">or use <b>+ Add</b> above to create manually</div>
+        </div>`;
+      }
       return;
     }
     container.innerHTML = boats.map(b => {
@@ -13143,6 +13262,8 @@ const App = (() => {
     showAddPictureBoatModal, closeAddPictureBoatModal, createPictureBoat,
     openPictureBoatDetail, deletePictureBoat, confirmDeletePictureBoat, _detailBoatIdForBtn,
     pbToggleExport, pbExportCSV, pbExportJSON,
+    // Import from fleet
+    showImportFleetModal, closeImportFleetModal, importFleetToggleAll, importFleetUpdateCount, importFleetConfirm,
     openGroupsModal, closeGroupsModal, addGroup, removeGroup,
     // Transport
     tbSetBoatView, tbFilterVehicles, tbOpenVehicleView,
