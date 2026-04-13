@@ -1,5 +1,17 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] ~~Timeline API crashes with sqlite3.OperationalError~~ FIXED 2026-04-13
+- **Discovered**: 2026-04-13
+- **Fixed**: 2026-04-13 — Branch: fix/2026-04-13-timeline-api-crash-no-site-column
+- **Root cause**: `api_timeline()` referenced non-existent columns `site` (locations table) and `prep`/`filming`/`wrap` (location_schedules table)
+
+## [P1] Notification bell not wired up in app-monolith.js
+- **Discovered**: 2026-04-13
+- **Symptoms**: Notification bell button exists in index.html (line 94) and backend has `/api/notifications` endpoints (lines 7070-7104 in app.py), but `app-monolith.js` has no notification loading/display code. The `toggleNotifPanel` function is missing. Clicking the bell likely throws a JS error.
+- **Likely cause**: Notifications module exists in `static/modules/notifications.js` but was never ported to the monolith
+- **Files involved**: `static/app-monolith.js`, `static/modules/notifications.js`, `app.py` (lines 7070-7104)
+- **Estimated effort**: Medium — need to port notification loading, panel rendering, and mark-as-read logic
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
