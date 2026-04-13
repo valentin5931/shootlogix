@@ -1051,6 +1051,50 @@ def api_create_picture_boat(prod_id):
     return jsonify(dict(row)), 201
 
 
+@app.route("/api/productions/<int:prod_id>/picture-boats/import-from-fleet", methods=["POST"])
+def api_import_picture_boats_from_fleet(prod_id):
+    """Copy selected boats from the main fleet (boats table) into picture_boats."""
+    prod_or_404(prod_id)
+    data = request.json or {}
+    boat_ids = data.get("boat_ids", [])
+    if not boat_ids or not isinstance(boat_ids, list):
+        return jsonify({"error": "boat_ids array required"}), 400
+    imported = []
+    with get_db() as conn:
+        for bid in boat_ids:
+            row = conn.execute("SELECT * FROM boats WHERE id=? AND production_id=? AND deleted_at IS NULL",
+                               (bid, prod_id)).fetchone()
+            if not row:
+                continue
+            b = dict(row)
+            # Check if already imported (same name + production)
+            existing = conn.execute(
+                "SELECT id FROM picture_boats WHERE name=? AND production_id=? AND deleted_at IS NULL",
+                (b["name"], prod_id)).fetchone()
+            if existing:
+                continue
+            pb_id = create_picture_boat({
+                "production_id": prod_id,
+                "boat_nr":       b.get("boat_nr"),
+                "name":          b["name"],
+                "capacity":      b.get("capacity"),
+                "night_ok":      b.get("night_ok", 0),
+                "wave_rating":   b.get("wave_rating", "Waves"),
+                "captain":       b.get("captain"),
+                "vendor":        b.get("vendor"),
+                "group_name":    b.get("group_name", "Shared"),
+                "notes":         b.get("notes"),
+                "daily_rate_estimate": b.get("daily_rate_estimate"),
+                "daily_rate_actual":   b.get("daily_rate_actual"),
+                "image_path":    b.get("image_path"),
+                "currency":      b.get("currency", "USD"),
+            })
+            new_row = conn.execute("SELECT * FROM picture_boats WHERE id=?", (pb_id,)).fetchone()
+            if new_row:
+                imported.append(dict(new_row))
+    return jsonify({"imported": len(imported), "boats": imported}), 201
+
+
 @app.route("/api/picture-boats/<int:pb_id>", methods=["GET"])
 def api_get_picture_boat(pb_id):
     with get_db() as conn:
@@ -1496,6 +1540,49 @@ def api_create_security_boat(prod_id):
     with get_db() as conn:
         row = conn.execute("SELECT * FROM security_boats WHERE id=?", (sb_id,)).fetchone()
     return jsonify(dict(row)), 201
+
+
+@app.route("/api/productions/<int:prod_id>/security-boats/import-from-fleet", methods=["POST"])
+def api_import_security_boats_from_fleet(prod_id):
+    """Copy selected boats from the main fleet (boats table) into security_boats."""
+    prod_or_404(prod_id)
+    data = request.json or {}
+    boat_ids = data.get("boat_ids", [])
+    if not boat_ids or not isinstance(boat_ids, list):
+        return jsonify({"error": "boat_ids array required"}), 400
+    imported = []
+    with get_db() as conn:
+        for bid in boat_ids:
+            row = conn.execute("SELECT * FROM boats WHERE id=? AND production_id=? AND deleted_at IS NULL",
+                               (bid, prod_id)).fetchone()
+            if not row:
+                continue
+            b = dict(row)
+            existing = conn.execute(
+                "SELECT id FROM security_boats WHERE name=? AND production_id=? AND deleted_at IS NULL",
+                (b["name"], prod_id)).fetchone()
+            if existing:
+                continue
+            sb_id = create_security_boat({
+                "production_id": prod_id,
+                "boat_nr":       b.get("boat_nr"),
+                "name":          b["name"],
+                "capacity":      b.get("capacity"),
+                "night_ok":      b.get("night_ok", 0),
+                "wave_rating":   b.get("wave_rating", "Waves"),
+                "captain":       b.get("captain"),
+                "vendor":        b.get("vendor"),
+                "group_name":    b.get("group_name", "SAFETY"),
+                "notes":         b.get("notes"),
+                "daily_rate_estimate": b.get("daily_rate_estimate"),
+                "daily_rate_actual":   b.get("daily_rate_actual"),
+                "image_path":    b.get("image_path"),
+                "currency":      b.get("currency", "USD"),
+            })
+            new_row = conn.execute("SELECT * FROM security_boats WHERE id=?", (sb_id,)).fetchone()
+            if new_row:
+                imported.append(dict(new_row))
+    return jsonify({"imported": len(imported), "boats": imported}), 201
 
 
 @app.route("/api/security-boats/<int:sb_id>", methods=["GET"])

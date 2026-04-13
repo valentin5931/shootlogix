@@ -291,6 +291,7 @@
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
             <span class="section-title" style="margin:0">Picture Boats</span>
             <div style="display:flex;gap:.3rem">
+              <button class="btn btn-sm btn-secondary" onclick="App.showImportFleetModal('picture')" title="Import boats from main fleet">Fleet</button>
               <button class="btn btn-sm btn-secondary" onclick="App.openCsvImportModal('picture_boats')" title="Import from CSV">CSV</button>
               <button class="btn btn-sm btn-secondary" onclick="App.showAddPictureBoatModal()">+ Add</button>
             </div>
@@ -345,6 +346,7 @@
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
             <span class="section-title" style="margin:0">Security Boats</span>
             <div style="display:flex;gap:.3rem">
+              <button class="btn btn-sm btn-secondary" onclick="App.showImportFleetModal('security')" title="Import boats from main fleet">Fleet</button>
               <button class="btn btn-sm btn-secondary" onclick="App.openCsvImportModal('security_boats')" title="Import from CSV">CSV</button>
               <button class="btn btn-sm btn-secondary" onclick="App.showAddSecurityBoatModal()">+ Add</button>
             </div>
@@ -1235,6 +1237,19 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeAddPictureBoatModal()">Cancel</button>
       <button class="btn btn-primary" onclick="App.createPictureBoat()">Create picture boat</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Import from Fleet modal ──────────────────────────────────────────── -->
+<div id="import-fleet-overlay" class="modal-overlay hidden" onclick="if(event.target===this)App.closeImportFleetModal()">
+  <div class="modal-box" style="max-width:500px">
+    <div class="modal-title" id="import-fleet-title">Import from Fleet</div>
+    <p style="font-size:.78rem;color:var(--text-3);margin:0 0 .8rem">Select boats from your main fleet to copy into this tab. Boat details (name, rate, captain, etc.) will be copied.</p>
+    <div id="import-fleet-list" style="max-height:400px;overflow-y:auto;border:1px solid var(--border-lt);border-radius:6px;padding:.4rem"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeImportFleetModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="App.importFleetConfirm()">Import selected</button>
     </div>
   </div>
 </div>
