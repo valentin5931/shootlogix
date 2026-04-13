@@ -1,5 +1,28 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-13 — [P0] Fix Checklist tab completely non-functional
+
+**Problem**: The Checklist tab silently failed — clicking it showed nothing, generating a checklist returned no data, and toggling items had no effect.
+
+**Root cause**: Two bugs combined to make the feature 100% broken:
+1. **JS state reference typo**: All 3 checklist functions (`loadChecklist`, `generateChecklist`, `toggleChecklistItem`) in `app-monolith.js` referenced `state.production` and `state.production.id`, but `state.production` is **never assigned** anywhere in the app. The correct variable is `state.prodId`. The guard `if (!state.production) return;` caused every function to silently exit before making any API call.
+2. **Python nested-connection read-before-commit**: `generate_daily_checklist()` in `database.py` called `return get_daily_checklist(prod_id, date)` inside its `with get_db() as conn:` block. This opened a second SQLite connection that could not see the first connection's uncommitted writes. The first generate for any date always returned `null`; only a second call (after the first had committed) worked.
+
+**Fix**:
+- `static/app-monolith.js` (lines 13032-13055): Changed all 6 occurrences of `state.production` → `state.prodId` and `state.production.id` → `state.prodId`
+- `database.py` (line 5785): Moved `return get_daily_checklist(prod_id, date)` outside the `with` block so the transaction commits before the read-back query opens a new connection
+
+**Verification**:
+- Checklist tab now loads correctly (API calls fire)
+- First-time `generate` for any date returns items immediately (96 items for a typical shooting day)
+- Subsequent `GET` reads the checklist correctly
+- `toggleChecklistItem` works (item check state persists)
+- All 45 tests pass, JS syntax check passes, no regressions
+
+**Branch**: fix/2026-04-13-checklist-tab-broken-state-ref
+**Side effects**: None
+**Next priority**: P1 — Picture Boats / Security Boats empty list issue; missing null checks in `setBoatView()` and `filterBoats()` DOM element access
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
