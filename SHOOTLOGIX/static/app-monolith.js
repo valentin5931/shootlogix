@@ -13011,6 +13011,21 @@ const App = (() => {
       else if (tab === 'fnb')             { state.fnbCategories = null; state.fnbItems = null; state.fnbEntries = null; renderFnb(); }
       else if (tab === 'budget')          { renderBudget(); }
       else if (tab === 'dashboard')       { renderDashboard(); }
+      // Fleet unified — reload the active fleet sub-tab
+      else if (tab === 'fleet') {
+        if (_fleetSubTab === 'boats') { const [b,f,a] = await Promise.all([api('GET',`/api/productions/${state.prodId}/boats`), api('GET',`/api/productions/${state.prodId}/boat-functions?context=boats`), api('GET',`/api/productions/${state.prodId}/assignments`)]); state.boats=b; state.functions=f; state.assignments=a; renderFleetUnified(); }
+        else if (_fleetSubTab === 'picture-boats') { const [b,f,a] = await Promise.all([api('GET',`/api/productions/${state.prodId}/picture-boats`), api('GET',`/api/productions/${state.prodId}/boat-functions?context=picture`), api('GET',`/api/productions/${state.prodId}/picture-boat-assignments`)]); state.pictureBoats=b; state.pictureFunctions=f; state.pictureAssignments=a; renderFleetUnified(); }
+        else if (_fleetSubTab === 'security-boats') { await _loadAndRenderSecurityBoats(); renderFleetUnified(); }
+      }
+      // Crew unified — reload the active crew sub-tab
+      else if (tab === 'crew') {
+        if (_crewSubTab === 'labour') { await _loadAndRenderLabour(); renderCrewUnified(); }
+        else if (_crewSubTab === 'guards') { state.guardSchedules = null; state.locationSchedules = null; state.locationSites = null; renderCrewUnified(); }
+      }
+      else if (tab === 'today')            { await renderToday(); }
+      else if (tab === 'documents')        { await renderDocuments(); }
+      else if (tab === 'timeline')         { if (typeof App.renderTimeline === 'function') App.renderTimeline(); }
+      else if (tab === 'checklist')        { await loadChecklist(); }
     } catch(e) { toast('Refresh failed: ' + e.message, 'error'); }
   }
 

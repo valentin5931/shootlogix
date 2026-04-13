@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] [FIXED 2026-04-13] Pull-to-refresh broken on 6 tabs
+- **Discovered**: 2026-04-13
+- **Symptoms**: Swipe-to-refresh does nothing on Fleet, Crew, Today, Documents, Timeline, Checklist tabs
+- **Root cause**: `_reloadCurrentTab()` in `app-monolith.js` was missing handlers for these 6 tab states
+- **Fix**: Added reload handlers for all missing tabs, delegating to active sub-tabs for Fleet/Crew
+- **Branch**: fix/2026-04-13-pull-to-refresh-missing-tabs
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
