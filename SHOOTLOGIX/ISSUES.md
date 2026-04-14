@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [RESOLVED 2026-04-14] Timeline API 500 — locations/location_schedules schema mismatch
+- **Discovered**: 2026-04-14
+- **Resolved**: 2026-04-14 (branch `fix/2026-04-14-timeline-locations-site-column`)
+- **Symptoms**: `GET /api/productions/<id>/timeline` returned 500; Timeline tab never loaded.
+- **Root cause**: `api_timeline()` queried a non-existent `site` column on `locations` and non-existent `prep/filming/wrap` booleans on `location_schedules`. Real columns are `locations.location_type` and `location_schedules.status` (with `P`/`F`/`W` codes, one row per phase).
+- **Files involved**: `app.py` (`api_timeline`, around lines 7892–7915)
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
