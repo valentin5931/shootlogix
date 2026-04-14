@@ -1,5 +1,24 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-14 — [P0] Fix Checklist tab — completely non-functional due to wrong state reference
+
+**Problem**: The Checklist tab appeared to load but showed nothing. Clicking "Generate" did nothing. Checking/unchecking items did nothing. The tab was completely non-functional.
+
+**Root cause**: All three checklist functions (`loadChecklist()`, `generateChecklist()`, `toggleChecklistItem()`) in `app-monolith.js` referenced `state.production` and `state.production.id`, but this property was never set anywhere in the codebase. The rest of the app uses `state.prodId`. Because `state.production` is always `undefined`, the guard clauses (`if (!state.production) return;`) silently exited every function before any API call was made.
+
+**Fix**: Replaced all 6 occurrences of `state.production` / `state.production.id` with `state.prodId` in `static/app-monolith.js` (lines 13032-13055).
+
+**Verification**:
+- Checklist GET endpoint returns data correctly
+- Generate endpoint creates 96 checklist items from a day's assignments
+- Toggle endpoint marks items as checked/unchecked
+- JS syntax check passes
+- All 45 Python tests pass (no regressions)
+
+**Branch**: fix/2026-04-14-checklist-tab-broken
+**Side effects**: None
+**Next priority**: P1 — Picture Boats and Security Boats empty lists (data model issue); budget department breakdown showing zeros
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
