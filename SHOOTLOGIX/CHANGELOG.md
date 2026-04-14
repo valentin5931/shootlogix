@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-14 — [P1] Add missing confirmation dialogs for destructive assignment/event removal
+
+**Problem**: Five destructive actions in the UI could be triggered with a single click and no confirmation, risking accidental data loss:
+- Removing a boat assignment (Boats tab)
+- Removing a picture boat assignment (Picture Boats tab)
+- Removing a transport assignment (Transport tab)
+- Removing a security boat assignment (Security Boats tab)
+- Deleting a shooting day event from the PDT edit modal
+
+These actions immediately call DELETE on the API with no way to undo.
+
+**Root cause**: The Labour and Guard Camp tabs already had `showConfirm()` wrappers on their assignment removal functions, but the same pattern was never applied to the other four module tabs or the event delete function. Inconsistency from incremental development.
+
+**Fix**:
+- `static/app-monolith.js`: Wrapped `removeAssignmentById`, `pbRemoveAssignmentById`, `tbRemoveAssignmentById`, `sbRemoveAssignmentById`, and `deleteEventFromDay` in `showConfirm()` callbacks, matching the existing pattern from `lbRemoveAssignmentById` and `gcRemoveAssignmentById`.
+
+**Verification**:
+- JS syntax check passes (`node --check`)
+- App starts without errors, all API endpoints return correct data
+- All 5 functions now show a confirmation dialog before executing the DELETE
+
+**Branch**: fix/2026-04-14-missing-confirm-dialogs-assignments
+**Side effects**: None — only adds a confirmation step before existing operations
+**Next priority**: P1 — Picture Boats and Security Boats tables are empty (data seeding needed); helper_assignments show "?" for worker names
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

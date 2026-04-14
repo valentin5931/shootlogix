@@ -1,7 +1,13 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [FIXED] [P1] Missing confirmation dialogs for destructive assignment/event removal
+- **Discovered**: 2026-04-14
+- **Fixed**: 2026-04-14 — Branch `fix/2026-04-14-missing-confirm-dialogs-assignments`
+- **Details**: `removeAssignmentById`, `pbRemoveAssignmentById`, `tbRemoveAssignmentById`, `sbRemoveAssignmentById`, `deleteEventFromDay` now wrapped in `showConfirm()`
+
+## [FIXED] [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
+- **Fixed**: 2026-03-23 — PR #32 (Fix panel stacking when switching Fleet/Crew sub-tabs)
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
 - **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
@@ -14,12 +20,13 @@
 - **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
 - **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
 
-## [P1] Transport and Helpers lists are empty
+## [PARTIAL] [P1] Transport and Helpers lists are empty
 - **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
+- **Updated**: 2026-04-14 — Transport now has 14 seeded vehicles via `/api/productions/1/transport-vehicles`. Helpers table still empty but 73 helper_assignments exist with function names and pricing (worker names show as "?").
+- **Symptoms**: `/api/productions/1/helpers` returns `[]` (but helper-assignments has data with `helper_id: null`). Transport vehicles now seeded (14 vehicles).
+- **Likely cause**: Helpers need to be created as entities in the `helpers` table and linked to existing assignments.
 - **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+- **Estimated effort**: Medium — need to create helper entities and link them to the 73 existing assignments
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22
