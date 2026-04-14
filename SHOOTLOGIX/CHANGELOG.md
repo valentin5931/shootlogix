@@ -1,5 +1,30 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-14 — [P0] Add global API error handlers + fuel entry validation
+
+**Problem**: Multiple API endpoints crash with unhandled 500 errors (sqlite3.IntegrityError) instead of returning proper JSON error responses. For example, `POST /api/productions/{id}/fuel-entries` without `source_type` crashes with `IntegrityError: NOT NULL constraint failed: fuel_entries.source_type`. Similarly, `POST /api/productions/{id}/fnb-entries` with an invalid `item_id` crashes with `IntegrityError: FOREIGN KEY constraint failed`. The Werkzeug debug page is returned as HTML instead of JSON, and the frontend's `catch(e) { /* silent */ }` blocks silently swallow the error — meaning users lose data without any feedback.
+
+**Root cause**:
+1. No global error handler for `sqlite3.IntegrityError` — any database constraint violation crashes the whole request with a 500 HTML page.
+2. `validate_fuel_entry()` in `validation.py` did not validate required fields `source_type` and `assignment_id`, so malformed requests passed validation but crashed at the database layer.
+3. No general `@app.errorhandler(500)` to return JSON for API routes.
+
+**Fix**:
+- `app.py`: Added `import sqlite3`. Added `@app.errorhandler(sqlite3.IntegrityError)` that returns JSON 400 for NOT NULL violations, 400 for FOREIGN KEY violations, and 409 for UNIQUE violations. Added `@app.errorhandler(500)` that returns JSON for `/api/` routes and default HTML for non-API routes.
+- `validation.py`: Enhanced `validate_fuel_entry()` to check that `source_type` is present and one of the valid enum values (`boats`, `picture_boats`, `security_boats`, `transport`, `machinery`), and that `assignment_id` is present.
+
+**Verification**:
+- Fuel entry missing `source_type` → 422 with `{"error": "Validation failed", "fields": {"source_type": "...", "assignment_id": "..."}}` (was 500 crash)
+- Fuel entry with invalid `source_type` → 422 with enum validation error
+- Fuel entry with correct data → 200 success (no regression)
+- FNB entry with invalid `item_id` → 400 `{"error": "Referenced entity does not exist"}` (was 500 crash)
+- All 45 tests pass
+- All 19 GET endpoints return 200
+
+**Branch**: fix/2026-04-14-api-error-handlers-fuel-validation
+**Side effects**: None
+**Next priority**: P1 — Frontend silent error handling (`catch(e) { /* silent */ }` blocks should show toast notifications to users); P1 — Empty lists for Picture Boats, Security Boats, Transport, Helpers (seeding or data migration)
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
