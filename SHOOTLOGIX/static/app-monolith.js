@@ -2165,21 +2165,23 @@ const App = (() => {
   async function deleteEventFromDay(idx) {
     const ev = state.editingDayEvents[idx];
     if (!ev) return;
-    if (ev.id && state.editingDayId) {
-      try {
-        await api('DELETE', `/api/events/${ev.id}`);
-      } catch (e) {
-        toast('Error deleting event: ' + e.message, 'error');
-        return;
+    showConfirm(`Delete event "${ev.name || 'this event'}"?`, async () => {
+      if (ev.id && state.editingDayId) {
+        try {
+          await api('DELETE', `/api/events/${ev.id}`);
+        } catch (e) {
+          toast('Error deleting event: ' + e.message, 'error');
+          return;
+        }
       }
-    }
-    state.editingDayEvents.splice(idx, 1);
-    // Re-number sort_order
-    state.editingDayEvents.forEach((e, i) => { e.sort_order = i; });
-    // Update conseil flag if no council remains
-    const hasCouncil = state.editingDayEvents.some(e => e.event_type === 'council');
-    if (!hasCouncil) $('dm-conseil').value = '0';
-    _renderDayEvents();
+      state.editingDayEvents.splice(idx, 1);
+      // Re-number sort_order
+      state.editingDayEvents.forEach((e, i) => { e.sort_order = i; });
+      // Update conseil flag if no council remains
+      const hasCouncil = state.editingDayEvents.some(e => e.event_type === 'council');
+      if (!hasCouncil) $('dm-conseil').value = '0';
+      _renderDayEvents();
+    });
   }
 
   // ─── PDT → Locations sync helper ─────────────────────────────────────────
@@ -2933,26 +2935,30 @@ const App = (() => {
   }
 
   async function removeAssignmentById(assignmentId) {
-    try {
-      await api('DELETE', `/api/assignments/${assignmentId}`);
-      state.assignments = state.assignments.filter(a => a.id !== assignmentId);
-      closeSchedulePopover();
-      renderBoats();
-      toast('Assignment removed');
-    } catch (e) {
-      toast('Error: ' + e.message, 'error');
-    }
+    showConfirm('Remove this assignment?', async () => {
+      try {
+        await api('DELETE', `/api/assignments/${assignmentId}`);
+        state.assignments = state.assignments.filter(a => a.id !== assignmentId);
+        closeSchedulePopover();
+        renderBoats();
+        toast('Assignment removed');
+      } catch (e) {
+        toast('Error: ' + e.message, 'error');
+      }
+    });
   }
 
   async function pbRemoveAssignmentById(assignmentId) {
-    try {
-      await api('DELETE', `/api/picture-boat-assignments/${assignmentId}`);
-      state.pictureAssignments = state.pictureAssignments.filter(a => a.id !== assignmentId);
-      renderPictureBoats();
-      toast('Assignment removed');
-    } catch (e) {
-      toast('Error: ' + e.message, 'error');
-    }
+    showConfirm('Remove this assignment?', async () => {
+      try {
+        await api('DELETE', `/api/picture-boat-assignments/${assignmentId}`);
+        state.pictureAssignments = state.pictureAssignments.filter(a => a.id !== assignmentId);
+        renderPictureBoats();
+        toast('Assignment removed');
+      } catch (e) {
+        toast('Error: ' + e.message, 'error');
+      }
+    });
   }
 
   // ── Add boat ───────────────────────────────────────────────
@@ -6323,14 +6329,16 @@ const App = (() => {
   }
 
   async function tbRemoveAssignmentById(assignmentId) {
-    try {
-      await api('DELETE', `/api/transport-assignments/${assignmentId}`);
-      state.transportAssignments = state.transportAssignments.filter(a => a.id !== assignmentId);
-      renderTransport();
-      toast('Assignment removed');
-    } catch (e) {
-      toast('Error: ' + e.message, 'error');
-    }
+    showConfirm('Remove this assignment?', async () => {
+      try {
+        await api('DELETE', `/api/transport-assignments/${assignmentId}`);
+        state.transportAssignments = state.transportAssignments.filter(a => a.id !== assignmentId);
+        renderTransport();
+        toast('Assignment removed');
+      } catch (e) {
+        toast('Error: ' + e.message, 'error');
+      }
+    });
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -8820,12 +8828,14 @@ const App = (() => {
   }
 
   async function sbRemoveAssignmentById(assignmentId) {
-    try {
-      await api('DELETE', `/api/security-boat-assignments/${assignmentId}`);
-      state.securityAssignments = state.securityAssignments.filter(a => a.id !== assignmentId);
-      renderSecurityBoats();
-      toast('Assignment removed');
-    } catch (e) { toast('Error: ' + e.message, 'error'); }
+    showConfirm('Remove this assignment?', async () => {
+      try {
+        await api('DELETE', `/api/security-boat-assignments/${assignmentId}`);
+        state.securityAssignments = state.securityAssignments.filter(a => a.id !== assignmentId);
+        renderSecurityBoats();
+        toast('Assignment removed');
+      } catch (e) { toast('Error: ' + e.message, 'error'); }
+    });
   }
 
   async function sbConfirmDeleteFunc(funcId) {
