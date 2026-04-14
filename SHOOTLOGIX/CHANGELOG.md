@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-14 — [P1] Fix state variable name mismatches in picture/security boats
+
+**Problem**: Three state variable naming bugs in `app-monolith.js` caused:
+1. Pull-to-refresh on Picture Boats tab loaded data into wrong state variables (`state.pbFunctions`/`state.pbAssignments` instead of `state.pictureFunctions`/`state.pictureAssignments`), so the UI displayed stale or empty data after refresh.
+2. Multi-select `_findAssignment()` searched `state.pbAssignments`/`state.sbAssignments` (which don't exist in normal flow) instead of `state.pictureAssignments`/`state.securityAssignments`, so bulk schedule operations could never find picture/security boat assignments.
+
+**Root cause**: The `_reloadCurrentTab()` function (pull-to-refresh handler, line 13004) and `_findAssignment()` helper (line 3524) used abbreviated variable names (`pb`/`sb`) that didn't match the canonical names used everywhere else in the codebase (`pictureAssignments`/`securityAssignments`/`pictureFunctions`).
+
+**Fix**:
+- `static/app-monolith.js` line 13004: Changed `state.pbFunctions=f; state.pbAssignments=a;` to `state.pictureFunctions=f; state.pictureAssignments=a;`
+- `static/app-monolith.js` line 3524: Changed `state.pbAssignments, state.sbAssignments` to `state.pictureAssignments, state.securityAssignments`
+
+**Verification**:
+- JS syntax check passes (all braces/parens/brackets balanced)
+- All 45 backend tests pass (no regressions)
+- All API endpoints return correct data (full diagnostic checklist passed)
+
+**Branch**: fix/2026-04-14-state-variable-name-mismatches
+**Side effects**: None
+**Next priority**: Picture Boats/Security Boats tables are still empty (data issue, not code bug — users need to add boats via the UI). Consider investigating P1 UI issues: empty states, error feedback, mobile responsiveness.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

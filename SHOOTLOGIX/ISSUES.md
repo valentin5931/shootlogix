@@ -1,7 +1,8 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM — RESOLVED
 - **Discovered**: 2026-03-22
+- **Resolved**: 2026-03-23 (sub-nav injection approach fixed, layout offset via `--subnav-bar-h` CSS var)
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
 - **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
@@ -34,6 +35,14 @@
 - **Likely cause**: Guards need to be created separately from guard posts
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
+
+## [P1] Pull-to-refresh and multi-select broken for Picture/Security Boats — FIXED 2026-04-14
+- **Discovered**: 2026-04-14
+- **Fixed**: 2026-04-14
+- **Symptoms**: Pull-to-refresh on Picture Boats tab showed stale/empty data. Multi-select bulk operations on schedule grid could not find picture or security boat assignments.
+- **Root cause**: `_reloadCurrentTab()` used `state.pbFunctions`/`state.pbAssignments` instead of `state.pictureFunctions`/`state.pictureAssignments`. `_findAssignment()` used `state.pbAssignments`/`state.sbAssignments` instead of the canonical names.
+- **Files involved**: `static/app-monolith.js` (lines 3524, 13004)
+- **Branch**: fix/2026-04-14-state-variable-name-mismatches
 
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22
