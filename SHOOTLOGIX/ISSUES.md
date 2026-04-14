@@ -1,5 +1,9 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## ~~[P0] Timeline API crash — wrong column names in locations SQL~~ ✓ FIXED 2026-04-14
+- **Discovered**: 2026-04-14
+- **Fix**: Branch `fix/2026-04-14-timeline-api-crash` — changed `site` → `location_type` and `prep/filming/wrap` → `status` in `api_timeline()`
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
@@ -34,6 +38,13 @@
 - **Likely cause**: Guards need to be created separately from guard posts
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
+
+## [P1] FNB items table is empty — categories seeded but no items
+- **Discovered**: 2026-04-14
+- **Symptoms**: `/api/productions/1/fnb-items` returns `[]`. 9 FNB categories exist but no items.
+- **Likely cause**: Data seed only creates categories, not individual items. Users need to create items via the UI.
+- **Files involved**: `data_loader.py` (_seed_fnb_categories only creates categories)
+- **Estimated effort**: Quick — by design; users add items manually
 
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22
