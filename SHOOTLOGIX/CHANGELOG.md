@@ -1,5 +1,24 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-14 — [P0] Fix Timeline API 500 — mismatched locations/location_schedules schema
+
+**Problem**: `GET /api/productions/<id>/timeline` returned 500 for every caller. The Timeline tab could not load. Root traceback: `sqlite3.OperationalError: no such column: site` — and after the first fix, a second `no such column: prep`.
+
+**Root cause**: `api_timeline()` in `app.py` was written against an older schema. It selected `site` from `locations` (real column is `location_type`, with `type` as the geographic qualifier) and selected `prep, filming, wrap` booleans from `location_schedules` (real schema has a single `status` column with code `P`/`F`/`W`, one row per (location, date, phase)).
+
+**Fix** (`app.py` lines ~7892–7915):
+- Query `locations`: use `location_type` instead of `site`; also exclude soft-deleted rows via `deleted_at IS NULL` (consistent with the rest of the app and prevents stale resources on the timeline).
+- Query `location_schedules`: select `status` instead of the non-existent boolean columns, group rows by `date`, and aggregate `P`/`F`/`W` codes into the same `phases` string format (`P/F/W`) the frontend already expects.
+
+**Verification**:
+- `GET /api/productions/1/timeline` → `200` with a 40 KB JSON payload (32 shooting days, 81 resources: 46 boats + 14 vehicles + 21 locations, 121 functions). 14 locations have scheduled phases; sample entry shows `{phases: 'F', start_date: '2026-04-02', ...}`.
+- Regression: re-ran the full endpoint checklist (boats, picture-boats, security-boats, transport, helpers, guards, fuel-entries, fuel-machinery, guard-posts, locations, fnb-categories, documents, activity, today) — every one still returns 200.
+- JS and Python syntax checks pass.
+
+**Branch**: fix/2026-04-14-timeline-locations-site-column
+**Side effects**: None. The frontend consumed `resource.subgroup` and `assignment.phases` as opaque strings — the fix preserves those shapes.
+**Next priority**: The empty lists for picture-boats / security-boats / transport / helpers / fuel / guards remain (see `ISSUES.md`). Those are data-seeding gaps, not code bugs — next session should decide whether to add fixtures or just document the onboarding steps.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
