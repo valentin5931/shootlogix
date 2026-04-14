@@ -1,5 +1,18 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P0] API crashes on invalid data — FIXED 2026-04-14
+- **Discovered**: 2026-04-14
+- **Status**: FIXED — see fix/2026-04-14-api-error-handlers-fuel-validation
+- **Symptoms**: `POST /fuel-entries` without `source_type` crashed with 500 IntegrityError. `POST /fnb-entries` with invalid `item_id` crashed with 500 FOREIGN KEY error. All unhandled DB errors returned HTML instead of JSON.
+- **Fix**: Added global `@app.errorhandler(sqlite3.IntegrityError)` and `@app.errorhandler(500)` in app.py. Enhanced `validate_fuel_entry()` to require `source_type` and `assignment_id`.
+
+## [P1] Frontend silent error handling — catch(e) { /* silent */ }
+- **Discovered**: 2026-04-14
+- **Symptoms**: When API calls fail (e.g., fuel entry save, assignment save), the error is silently swallowed in `catch(e) { /* silent */ }` blocks. User gets no feedback that their data wasn't saved. Found at lines 3628, 6651, 6885, 7136 in `app-monolith.js`.
+- **Likely cause**: Error handling was not implemented for inline save operations (debounced cell edits). The developer used `/* silent */` to avoid toast spam, but this means real errors are also hidden.
+- **Files involved**: `static/app-monolith.js` (4 locations)
+- **Estimated effort**: Quick — replace `/* silent */` with `toast('Error saving...', 'error')` or similar
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

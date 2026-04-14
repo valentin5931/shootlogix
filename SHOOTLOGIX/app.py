@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import os
+import sqlite3
 import tempfile
 import threading
 from flask import Flask, jsonify, request, render_template, abort, Response, g, make_response
@@ -269,6 +270,29 @@ def api_export_download(job_id):
 @app.errorhandler(ValidationError)
 def handle_validation_error(e):
     return jsonify({"error": "Validation failed", "fields": e.errors}), 422
+
+
+@app.errorhandler(sqlite3.IntegrityError)
+def handle_integrity_error(e):
+    """Return a JSON 400 instead of crashing with a 500 on database constraint violations."""
+    msg = str(e)
+    if "NOT NULL" in msg:
+        # Extract the column name from "NOT NULL constraint failed: table.column"
+        col = msg.split(".")[-1] if "." in msg else msg
+        return jsonify({"error": f"Missing required field: {col}"}), 400
+    if "FOREIGN KEY" in msg:
+        return jsonify({"error": "Referenced entity does not exist"}), 400
+    if "UNIQUE" in msg:
+        return jsonify({"error": "Duplicate entry — this record already exists"}), 409
+    return jsonify({"error": f"Database constraint error: {msg}"}), 400
+
+
+@app.errorhandler(500)
+def handle_internal_error(e):
+    """Return JSON for API routes, default HTML for non-API routes."""
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Internal server error"}), 500
+    return e
 
 
 def jsonify_cached(data):
