@@ -158,6 +158,10 @@
   <!-- ── Main panels ─────────────────────────────────────────────────────── -->
   <div id="main-content">
 
+    <!-- Sub-navigation bar (fleet/crew). Sits above view panels; reused across sub-tabs
+         to avoid moving DOM nodes between panels on each switch. -->
+    <div id="sub-nav-bar" style="display:none"></div>
+
     <!-- TODAY ── -->
     <div id="view-today" class="view-panel">
       <div id="today-content"></div>
@@ -220,7 +224,6 @@
 
     <!-- FLEET (unified) ── -->
     <div id="view-fleet" class="view-panel">
-      <div id="fleet-sub-nav"></div>
       <div id="fleet-cards"></div>
       <div id="fleet-schedule-container" style="display:none"></div>
       <div id="fleet-budget-container" style="display:none"></div>
@@ -484,11 +487,8 @@
     </div>
 
     <!-- CREW (unified Labour + Guards) ── -->
+    <!-- Sub-nav for Crew lives in #sub-nav-bar (outside panels), rendered by JS. -->
     <div id="view-crew" class="view-panel">
-      <div class="crew-sub-nav" style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
-        <button class="filter-pill active" id="crew-subtab-labour" onclick="App.crewSetSubTab('labour')">Labor</button>
-        <button class="filter-pill" id="crew-subtab-guards" onclick="App.crewSetSubTab('guards')">Guards</button>
-      </div>
       <div id="crew-labour-panel"></div>
       <div id="crew-guards-panel" class="hidden"></div>
     </div>
