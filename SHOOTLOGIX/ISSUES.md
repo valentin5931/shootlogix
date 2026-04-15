@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P1] Timeline shows empty rows for most resource categories
+- **Discovered**: 2026-04-15
+- **Symptoms**: After fixing the Timeline 500 crash, `/api/productions/1/timeline` returns 81 resources but only boats and locations have assignments. Picture boats, security boats, transport vehicles, helpers and guard_camp_workers tables are all empty.
+- **Likely cause**: Related to existing [P1] items ("Picture Boats and Security Boats lists are empty", "Transport and Helpers lists are empty", "Guards list is empty") — no data has been seeded for these modules.
+- **Files involved**: `database.py`, `data_loader.py`
+- **Estimated effort**: Medium — needs a seeding strategy or user-entered data
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.

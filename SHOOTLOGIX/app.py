@@ -7890,26 +7890,33 @@ def api_timeline(prod_id):
             })
 
         # --- Locations ---
-        locations = conn.execute("SELECT id, name, site FROM locations WHERE production_id=?", (prod_id,)).fetchall()
+        locations = conn.execute("SELECT id, name, type FROM locations WHERE production_id=?", (prod_id,)).fetchall()
         for loc in locations:
+            # location_schedules stores one row per phase per day (status is 'P', 'F', or 'W').
+            # Aggregate by date to produce a combined phases string like 'P/F/W'.
             schedules = conn.execute(
-                "SELECT id, date, prep, filming, wrap FROM location_schedules WHERE location_id=?",
+                "SELECT id, date, status FROM location_schedules WHERE location_id=? ORDER BY date, status",
                 (loc['id'],)
             ).fetchall()
-            loc_assignments = []
+            by_date = {}
             for s in schedules:
-                phases = []
-                if s['prep']: phases.append('P')
-                if s['filming']: phases.append('F')
-                if s['wrap']: phases.append('W')
-                if phases:
+                entry = by_date.setdefault(s['date'], {'id': s['id'], 'phases': []})
+                phase = (s['status'] or '').upper()
+                if phase in ('P', 'F', 'W') and phase not in entry['phases']:
+                    entry['phases'].append(phase)
+            loc_assignments = []
+            for date in sorted(by_date.keys()):
+                entry = by_date[date]
+                if entry['phases']:
+                    # Keep a stable P/F/W ordering
+                    ordered = [p for p in ('P', 'F', 'W') if p in entry['phases']]
                     loc_assignments.append({
-                        'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
-                        'status': 'confirmed', 'phases': '/'.join(phases)
+                        'id': entry['id'], 'start_date': date, 'end_date': date,
+                        'status': 'confirmed', 'phases': '/'.join(ordered)
                     })
             resources.append({
                 'id': f"loc-{loc['id']}", 'name': loc['name'], 'type': 'location', 'group': 'Locations',
-                'subgroup': loc['site'] or 'Location',
+                'subgroup': loc['type'] or 'Location',
                 'assignments': loc_assignments
             })
 
