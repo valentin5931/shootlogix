@@ -1,5 +1,12 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## [P2] Audit remaining SQL queries for stale column references
+- **Discovered**: 2026-04-15
+- **Symptoms**: `/api/productions/<id>/timeline` was crashing on `locations.site`, `location_schedules.prep/filming/wrap`, and `guard_camp_assignments.worker_id` — three column names that had all been renamed/dropped in prior migrations. Suggests other endpoints touching these tables may have the same issue.
+- **Likely cause**: Historic refactors renamed/split columns without sweeping all callers.
+- **Files involved**: `app.py`, `database.py` — anything referencing `locations.*`, `location_schedules.*`, `guard_camp_*`.
+- **Estimated effort**: Medium — grep + targeted pytest coverage for each aggregator endpoint (dashboard, export, timeline, alerts).
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
