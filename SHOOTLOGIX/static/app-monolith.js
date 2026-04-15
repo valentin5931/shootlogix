@@ -930,22 +930,30 @@ const App = (() => {
     const targetPanel = $(`view-${target}`);
     if (targetPanel) targetPanel.classList.add('active');
 
-    // Render sub-nav inside fleet panel (shown at top)
-    const nav = $('fleet-sub-nav');
-    if (nav) {
-      nav.innerHTML = `
-        <div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
-          <button class="filter-pill${_fleetSubTab === 'boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('boats')">Boats</button>
-          <button class="filter-pill${_fleetSubTab === 'picture-boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('picture-boats')">Picture Boats</button>
-          <button class="filter-pill${_fleetSubTab === 'security-boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('security-boats')">Security Boats</button>
-        </div>`;
-      // Inject sub-nav before the target panel content
-      if (targetPanel) {
-        targetPanel.prepend(nav);
-        nav.style.display = 'block';
-        // Update CSS var so layout divs account for the sub-nav height
-        document.documentElement.style.setProperty('--subnav-bar-h', nav.offsetHeight + 'px');
+    // Hide the legacy placeholder (was moved between panels in earlier revisions —
+    // we now keep a persistent sub-nav container inside each sub-panel instead).
+    const legacyNav = $('fleet-sub-nav');
+    if (legacyNav) legacyNav.style.display = 'none';
+
+    // Build sub-nav HTML (rendered into each target panel's own container — no
+    // element movement between panels, avoiding layout shifts and lost handlers).
+    const navInnerHTML = `
+      <div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
+        <button class="filter-pill${_fleetSubTab === 'boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('boats')">Boats</button>
+        <button class="filter-pill${_fleetSubTab === 'picture-boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('picture-boats')">Picture Boats</button>
+        <button class="filter-pill${_fleetSubTab === 'security-boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('security-boats')">Security Boats</button>
+      </div>`;
+
+    if (targetPanel) {
+      let injected = targetPanel.querySelector(':scope > .fleet-subnav-injected');
+      if (!injected) {
+        injected = document.createElement('div');
+        injected.className = 'fleet-subnav-injected';
+        targetPanel.prepend(injected);
       }
+      injected.innerHTML = navInnerHTML;
+      // Update CSS var so layout divs account for the sub-nav height
+      document.documentElement.style.setProperty('--subnav-bar-h', injected.offsetHeight + 'px');
     }
 
     // Trigger the sub-tab's render function
@@ -988,21 +996,26 @@ const App = (() => {
     if (lBtn) lBtn.classList.toggle('active', _crewSubTab === 'labour');
     if (gBtn) gBtn.classList.toggle('active', _crewSubTab === 'guards');
 
-    // Inject crew sub-nav at top of target panel
-    let subNav = document.getElementById('crew-sub-nav-injected');
-    if (!subNav) {
-      subNav = document.createElement('div');
-      subNav.id = 'crew-sub-nav-injected';
-    }
-    subNav.innerHTML = `
+    // Render crew sub-nav as a persistent per-panel container (no element
+    // movement between panels — avoids layout shifts and lost handlers).
+    const crewNavInnerHTML = `
       <div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
         <button class="filter-pill${_crewSubTab === 'labour' ? ' active' : ''}" onclick="App.crewSetSubTab('labour')">Labor</button>
         <button class="filter-pill${_crewSubTab === 'guards' ? ' active' : ''}" onclick="App.crewSetSubTab('guards')">Guards</button>
       </div>`;
     if (targetPanel) {
-      targetPanel.prepend(subNav);
+      let injected = targetPanel.querySelector(':scope > .crew-subnav-injected');
+      if (!injected) {
+        injected = document.createElement('div');
+        injected.className = 'crew-subnav-injected';
+        targetPanel.prepend(injected);
+      }
+      injected.innerHTML = crewNavInnerHTML;
       // Update CSS var so layout divs account for the sub-nav height
-      document.documentElement.style.setProperty('--subnav-bar-h', subNav.offsetHeight + 'px');
+      document.documentElement.style.setProperty('--subnav-bar-h', injected.offsetHeight + 'px');
+      // Remove any legacy stray element created by earlier revisions
+      const legacy = document.getElementById('crew-sub-nav-injected');
+      if (legacy && legacy !== injected) legacy.remove();
     }
 
     // Trigger the sub-tab's render function

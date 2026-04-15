@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-15 — [P0] Stop moving fleet/crew sub-nav element between view panels
+
+**Problem**: `renderFleetUnified()` and `renderCrewUnified()` took a single shared sub-nav DOM node (`#fleet-sub-nav` or `#crew-sub-nav-injected`) and called `targetPanel.prepend(node)` on every sub-tab switch. Each switch therefore physically moved the element from one panel to another, which caused a visible layout shift (and in some browsers temporarily dropped focus/hover state on the element being moved). The logged [P0] in ISSUES.md flagged this as a likely source of sub-tab handler flakiness on Fleet > Picture Boats / Security Boats and Crew > Labor / Guards.
+
+**Root cause**: Treating the sub-nav as a single mutable DOM node that migrates between sibling panels, rather than giving each panel its own persistent sub-nav container.
+
+**Fix**:
+- `static/app-monolith.js` (`renderFleetUnified`, `renderCrewUnified`): each target sub-panel now owns a persistent injected container (`.fleet-subnav-injected` / `.crew-subnav-injected`). We only rewrite its `innerHTML` on sub-tab switch — no element movement between panels. The legacy `#fleet-sub-nav` placeholder inside `view-fleet` is hidden, and any stray `#crew-sub-nav-injected` from older revisions is cleaned up.
+- Inline `onclick="App.fleetSetSubTab(...)"` / `App.crewSetSubTab(...)` handlers preserved, so attribute-based wiring is unaffected.
+- `--subnav-bar-h` CSS var is still set from the active container's `offsetHeight`, so sidebar/layout height math from 2026-03-23 continues to work.
+
+**Verification**:
+- `node -c static/app-monolith.js` passes.
+- Full pytest suite passes: `45 passed in 4.44s`.
+- Flask test client: `GET /` returns 200; `GET /static/app-monolith.js` returns 200 with expected byte size.
+- Code audit: `#fleet-sub-nav` and the old `#crew-sub-nav-injected` id are no longer prepended anywhere in the monolith render path.
+
+**Branch**: fix/2026-04-15-subnav-stable-positioning
+**PR**: (to be created)
+**Side effects**: None. The legacy `#fleet-sub-nav` div in `templates/index.html` stays in place but is hidden — left intact to avoid touching markup another session may depend on. Dead `static/modules/fleet.js` still references the old id but that file is unused (documented in ISSUES.md P2).
+**Next priority**: P1 — seed/backfill Picture Boats and Security Boats (both endpoints still return `[]`).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

@@ -1,7 +1,8 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
+## [RESOLVED 2026-04-15] [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
+- **Resolved**: 2026-04-15 on branch `fix/2026-04-15-subnav-stable-positioning` — each sub-panel now owns a persistent `.fleet-subnav-injected` / `.crew-subnav-injected` container; only innerHTML is rewritten on sub-tab switch, so the element is no longer moved between panels.
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
 - **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
