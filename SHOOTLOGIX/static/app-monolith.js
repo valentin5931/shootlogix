@@ -930,23 +930,11 @@ const App = (() => {
     const targetPanel = $(`view-${target}`);
     if (targetPanel) targetPanel.classList.add('active');
 
-    // Render sub-nav inside fleet panel (shown at top)
-    const nav = $('fleet-sub-nav');
-    if (nav) {
-      nav.innerHTML = `
-        <div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
-          <button class="filter-pill${_fleetSubTab === 'boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('boats')">Boats</button>
-          <button class="filter-pill${_fleetSubTab === 'picture-boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('picture-boats')">Picture Boats</button>
-          <button class="filter-pill${_fleetSubTab === 'security-boats' ? ' active' : ''}" onclick="App.fleetSetSubTab('security-boats')">Security Boats</button>
-        </div>`;
-      // Inject sub-nav before the target panel content
-      if (targetPanel) {
-        targetPanel.prepend(nav);
-        nav.style.display = 'block';
-        // Update CSS var so layout divs account for the sub-nav height
-        document.documentElement.style.setProperty('--subnav-bar-h', nav.offsetHeight + 'px');
-      }
-    }
+    // Sub-nav is static HTML inside each fleet panel. Just toggle the active
+    // state of the buttons — no DOM moves, no layout shifts.
+    document.querySelectorAll('.fleet-sub-nav-bar [data-fleet-sub]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.fleetSub === _fleetSubTab);
+    });
 
     // Trigger the sub-tab's render function
     if (target === 'boats')           { _tabCtx = 'boats';   renderBoats(); }
@@ -982,28 +970,17 @@ const App = (() => {
     const targetPanel = $(`view-${target}`);
     if (targetPanel) targetPanel.classList.add('active');
 
-    // Update crew sub-tab buttons (they exist in view-crew HTML)
+    // Update crew sub-tab buttons (legacy buttons in view-crew HTML, if any)
     const lBtn = $('crew-subtab-labour');
     const gBtn = $('crew-subtab-guards');
     if (lBtn) lBtn.classList.toggle('active', _crewSubTab === 'labour');
     if (gBtn) gBtn.classList.toggle('active', _crewSubTab === 'guards');
 
-    // Inject crew sub-nav at top of target panel
-    let subNav = document.getElementById('crew-sub-nav-injected');
-    if (!subNav) {
-      subNav = document.createElement('div');
-      subNav.id = 'crew-sub-nav-injected';
-    }
-    subNav.innerHTML = `
-      <div style="display:flex;gap:.3rem;padding:.6rem 1rem .4rem;border-bottom:1px solid var(--border)">
-        <button class="filter-pill${_crewSubTab === 'labour' ? ' active' : ''}" onclick="App.crewSetSubTab('labour')">Labor</button>
-        <button class="filter-pill${_crewSubTab === 'guards' ? ' active' : ''}" onclick="App.crewSetSubTab('guards')">Guards</button>
-      </div>`;
-    if (targetPanel) {
-      targetPanel.prepend(subNav);
-      // Update CSS var so layout divs account for the sub-nav height
-      document.documentElement.style.setProperty('--subnav-bar-h', subNav.offsetHeight + 'px');
-    }
+    // Sub-nav is static HTML inside each crew panel. Just toggle the active
+    // state of the buttons — no DOM moves, no layout shifts.
+    document.querySelectorAll('.crew-sub-nav-bar [data-crew-sub]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.crewSub === _crewSubTab);
+    });
 
     // Trigger the sub-tab's render function
     if (target === 'labour') { _tabCtx = 'labour'; _loadAndRenderLabour(); }
@@ -1337,10 +1314,8 @@ const App = (() => {
     const panel = $(`view-${tab}`);
     if (panel) panel.classList.add('active');
 
-    // Reset sub-nav height offset when leaving fleet/crew tabs
-    if (tab !== 'fleet' && tab !== 'crew') {
-      document.documentElement.style.setProperty('--subnav-bar-h', '0px');
-    }
+    // --subnav-bar-h is now scoped per-panel in CSS (39px inside fleet/crew
+    // panels that have static sub-navs, 0px elsewhere), so no JS toggle needed.
 
     if (tab === 'dashboard')       renderDashboard();
     if (tab === 'pdt')             { if (_pdtView === 'calendar') { _initCalMonth(); renderPDTCalendar(); } else renderPDT(); }

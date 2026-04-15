@@ -220,7 +220,6 @@
 
     <!-- FLEET (unified) ── -->
     <div id="view-fleet" class="view-panel">
-      <div id="fleet-sub-nav"></div>
       <div id="fleet-cards"></div>
       <div id="fleet-schedule-container" style="display:none"></div>
       <div id="fleet-budget-container" style="display:none"></div>
@@ -229,6 +228,11 @@
 
     <!-- BOATS ── -->
     <div id="view-boats" class="view-panel">
+      <div class="fleet-sub-nav-bar">
+        <button class="filter-pill" data-fleet-sub="boats" onclick="App.fleetSetSubTab('boats')">Boats</button>
+        <button class="filter-pill" data-fleet-sub="picture-boats" onclick="App.fleetSetSubTab('picture-boats')">Picture Boats</button>
+        <button class="filter-pill" data-fleet-sub="security-boats" onclick="App.fleetSetSubTab('security-boats')">Security Boats</button>
+      </div>
       <div id="boats-layout">
         <!-- Sidebar: boat list -->
         <div id="boat-sidebar">
@@ -285,6 +289,11 @@
 
     <!-- PICTURE BOATS ── -->
     <div id="view-picture-boats" class="view-panel">
+      <div class="fleet-sub-nav-bar">
+        <button class="filter-pill" data-fleet-sub="boats" onclick="App.fleetSetSubTab('boats')">Boats</button>
+        <button class="filter-pill" data-fleet-sub="picture-boats" onclick="App.fleetSetSubTab('picture-boats')">Picture Boats</button>
+        <button class="filter-pill" data-fleet-sub="security-boats" onclick="App.fleetSetSubTab('security-boats')">Security Boats</button>
+      </div>
       <div id="pb-boats-layout">
         <!-- Sidebar: boat list -->
         <div id="pb-boat-sidebar">
@@ -339,6 +348,11 @@
 
     <!-- SECURITY BOATS ── -->
     <div id="view-security-boats" class="view-panel">
+      <div class="fleet-sub-nav-bar">
+        <button class="filter-pill" data-fleet-sub="boats" onclick="App.fleetSetSubTab('boats')">Boats</button>
+        <button class="filter-pill" data-fleet-sub="picture-boats" onclick="App.fleetSetSubTab('picture-boats')">Picture Boats</button>
+        <button class="filter-pill" data-fleet-sub="security-boats" onclick="App.fleetSetSubTab('security-boats')">Security Boats</button>
+      </div>
       <div id="sb-boats-layout">
         <!-- Sidebar: boat list -->
         <div id="sb-boat-sidebar">
@@ -495,6 +509,10 @@
 
     <!-- GUARDS ── -->
     <div id="view-guards" class="view-panel">
+      <div class="crew-sub-nav-bar">
+        <button class="filter-pill" data-crew-sub="labour" onclick="App.crewSetSubTab('labour')">Labor</button>
+        <button class="filter-pill" data-crew-sub="guards" onclick="App.crewSetSubTab('guards')">Guards</button>
+      </div>
       <!-- Sub-tab navigation -->
       <div id="gd-subtab-bar" style="display:flex;gap:.3rem;padding:.6rem 1rem 0;border-bottom:1px solid var(--border)">
         <button class="filter-pill active" id="gd-subtab-location" onclick="App.gdSetSubTab('location')">Location Guards</button>
@@ -558,6 +576,10 @@
 
     <!-- LABOUR ── -->
     <div id="view-labour" class="view-panel">
+      <div class="crew-sub-nav-bar">
+        <button class="filter-pill" data-crew-sub="labour" onclick="App.crewSetSubTab('labour')">Labor</button>
+        <button class="filter-pill" data-crew-sub="guards" onclick="App.crewSetSubTab('guards')">Guards</button>
+      </div>
       <div id="lb-layout">
         <!-- Sidebar: worker list -->
         <div id="lb-sidebar">
