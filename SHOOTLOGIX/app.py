@@ -7890,26 +7890,31 @@ def api_timeline(prod_id):
             })
 
         # --- Locations ---
-        locations = conn.execute("SELECT id, name, site FROM locations WHERE production_id=?", (prod_id,)).fetchall()
+        # location_schedules stores one row per (location, date, status) where
+        # status ∈ {P, F, W}. A single date may have multiple rows (e.g. P + F).
+        locations = conn.execute("SELECT id, name, type FROM locations WHERE production_id=?", (prod_id,)).fetchall()
         for loc in locations:
             schedules = conn.execute(
-                "SELECT id, date, prep, filming, wrap FROM location_schedules WHERE location_id=?",
+                "SELECT id, date, status FROM location_schedules WHERE location_id=? ORDER BY date",
                 (loc['id'],)
             ).fetchall()
-            loc_assignments = []
+            # Aggregate statuses per date so the timeline shows "P/F" etc.
+            by_date = {}
             for s in schedules:
-                phases = []
-                if s['prep']: phases.append('P')
-                if s['filming']: phases.append('F')
-                if s['wrap']: phases.append('W')
-                if phases:
-                    loc_assignments.append({
-                        'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
-                        'status': 'confirmed', 'phases': '/'.join(phases)
-                    })
+                entry = by_date.setdefault(s['date'], {'id': s['id'], 'phases': []})
+                if s['status'] and s['status'] not in entry['phases']:
+                    entry['phases'].append(s['status'])
+            loc_assignments = [
+                {
+                    'id': v['id'], 'start_date': d, 'end_date': d,
+                    'status': 'confirmed', 'phases': '/'.join(v['phases']),
+                }
+                for d, v in sorted(by_date.items())
+                if v['phases']
+            ]
             resources.append({
                 'id': f"loc-{loc['id']}", 'name': loc['name'], 'type': 'location', 'group': 'Locations',
-                'subgroup': loc['site'] or 'Location',
+                'subgroup': loc['type'] or 'Location',
                 'assignments': loc_assignments
             })
 

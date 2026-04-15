@@ -1,5 +1,44 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-15 — [P0] Fix Timeline API 500 crash (wrong column names on locations/location_schedules)
+
+**Problem**: `GET /api/productions/<id>/timeline` returned HTTP 500 whenever the
+production had any locations. The Timeline tab therefore never loaded for
+KLAS7 (which has 21 locations seeded).
+
+**Root cause**: Two bad column references in `api_timeline()`:
+1. `SELECT id, name, site FROM locations` — the `locations` table has no
+   `site` column (the real columns are `name`, `type`, `location_type`). This
+   raised `sqlite3.OperationalError: no such column: site` before any location
+   was returned.
+2. `SELECT id, date, prep, filming, wrap FROM location_schedules` — this
+   table has no `prep`/`filming`/`wrap` columns either. Its real shape is one
+   row per `(location, date, status)` where `status ∈ {P, F, W}`.
+
+Both queries were introduced in commit `e9e5328` (P6.10+ daily checklist
+batch) and have been broken since.
+
+**Fix** (`app.py`, `api_timeline()`, around lines 7893–7918):
+- Select `type` instead of `site`; use `loc['type']` as the timeline subgroup.
+- Select `status` from `location_schedules`, aggregate statuses per date into
+  a `phases` string (e.g. `"P/F"`) so the timeline UI still gets the same
+  shape it expected.
+
+**Verification**:
+- `/api/productions/1/timeline` now returns HTTP 200 with 81 resources
+  (locations included) and their assignments.
+- Manually inserted P/F/W rows for a location; response correctly lists one
+  assignment per date with the right `phases` value.
+- Full test suite: 45/45 passing (no regressions).
+
+**Branch**: fix/2026-04-15-timeline-api-500-crash
+**Side effects**: None. The endpoint was previously 500, so any callers were
+already broken; shape of successful responses is unchanged vs. what the
+broken code *intended* to return.
+**Next priority**: Address stale P0 entry in ISSUES.md (Fleet/Crew sub-tab
+event handlers — already fixed by commit `2a93828`); seed empty lists for
+Picture Boats / Security Boats / Transport / Helpers (P1).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
