@@ -35,6 +35,13 @@
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
 
+## [P1] Timeline's `days` array is always empty
+- **Discovered**: 2026-04-15
+- **Symptoms**: `/api/productions/1/timeline` returns `"days": []` even though `shooting_days` has entries. The endpoint queries `SELECT id, date, day_number, location, game_name, status FROM shooting_days` but assigns the result to a local `days` variable that is never added to the JSON payload (only `shooting_days` appears to be returned, via a different path).
+- **Likely cause**: The local `days` list is built but never attached to the response dict; verify whether the frontend reads `days` or `shooting_days`.
+- **Files involved**: `app.py` (`api_timeline`, around line 7807)
+- **Estimated effort**: Quick — either drop the dead query or wire it into the response under the key the frontend expects.
+
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22
 - **Symptoms**: Files like `fleet.js`, `crew.js`, `today.js`, `documents.js`, etc. in `static/modules/` reference `window._SL` which doesn't exist. They are never loaded by `index.html`.
