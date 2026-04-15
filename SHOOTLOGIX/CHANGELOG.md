@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-15 — [P0] Stabilize Fleet/Crew sub-nav position (no more DOM moves between panels)
+
+**Problem**: Every time the user switched Fleet sub-tabs (Boats/Picture Boats/Security Boats) or Crew sub-tabs (Labor/Guards), the sub-nav element was physically moved between view panels via `prepend()`. This caused layout shifts/reflows on every switch and left two duplicate crew sub-navs in the DOM (one static in `view-crew`, one dynamically created as `crew-sub-nav-injected`). The architecture was fragile and was logged as the top P0 issue in ISSUES.md.
+
+**Root cause**:
+- `#fleet-sub-nav` lived inside `#view-fleet`; `renderFleetUnified()` moved it via `targetPanel.prepend(nav)` into whichever sub-panel was active.
+- `renderCrewUnified()` created a separate floating `#crew-sub-nav-injected` div and prepended it into the active crew sub-panel, while a duplicate static crew sub-nav also existed in `templates/index.html` inside `view-crew`.
+- Height compensation via `--subnav-bar-h` was recomputed after every move — any layout change in the target panel could desync it.
+
+**Fix**:
+- `templates/index.html`: Added a single `#sub-nav-bar` container as the first child of `#main-content` (outside all `.view-panel` elements). Removed the in-panel `#fleet-sub-nav` from `#view-fleet` and the duplicate static crew sub-nav from `#view-crew`.
+- `static/style.css`: Gave `#sub-nav-bar` absolute positioning at the top of `#main-content` with a higher z-index. Changed `.view-panel` from `inset: 0` to `top: var(--subnav-bar-h); right:0; bottom:0; left:0;` so panels sit below the bar without covering it.
+- `static/app-monolith.js`: `renderFleetUnified()` and `renderCrewUnified()` now rewrite `#sub-nav-bar`'s innerHTML in place (no DOM move) and set `--subnav-bar-h` from `bar.offsetHeight`. `setTab()` hides and clears `#sub-nav-bar` when switching to any non-fleet/non-crew tab.
+
+**Verification**:
+- `node -c static/app-monolith.js`: passes.
+- `python -m pytest tests/`: 45/45 passing.
+- Rendered `/` HTML contains exactly one `#sub-nav-bar` (outside panels); no stale `fleet-sub-nav` or in-panel `crew-sub-nav` references remain.
+- API smoke test through authenticated `ADMIN` session: `/api/productions/1/boats`, `/transport`, `/locations` all return 200.
+
+**Branch**: fix/2026-04-15-subnav-stable-position
+**Side effects**: None. Panel content area is unchanged because the `100vh - 48px - 2.5rem - var(--subnav-bar-h)` formula on `#boats-layout`, `#pb-boats-layout`, `#sb-boats-layout`, `#lb-layout`, `#gc-layout` continues to work — the panels themselves are simply offset by the same variable now.
+**Next priority**: Seed/backfill the Picture Boats and Security Boats tables (P1 from ISSUES.md), or delete the dead `static/modules/*.js` files (P2).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
