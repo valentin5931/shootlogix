@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-15 — [P0] Stop moving Fleet/Crew sub-nav DOM node between panels
+
+**Problem**: `renderFleetUnified()` and `renderCrewUnified()` kept a single sub-nav element and moved it between sub-panels on every sub-tab switch using `targetPanel.prepend(nav)`. Each switch (Boats→Picture Boats→Security Boats, Labour→Guards) triggered a DOM move that caused layout shifts, forced reflow of the sub-panel's padding area, and risked resetting any transient UI state attached to the nav element. The fleet sub-nav was even declared inside `view-fleet` (a panel never shown) and yanked out on first use.
+
+**Root cause**: The sub-nav was maintained as a single reusable element whose parent changed on every render. DOM mutations scale with sub-tab switch frequency rather than staying a one-time cost.
+
+**Fix**:
+- `templates/index.html`: Added a static `<div class="fleet-sub-nav-bar">` as first child of `view-boats`, `view-picture-boats`, `view-security-boats`. Added a static `<div class="crew-sub-nav-bar">` as first child of `view-labour` and `view-guards`. Each bar has data-attribute buttons (`data-fleet-sub`, `data-crew-sub`) for active-state tracking. Removed the now-unused `<div id="fleet-sub-nav">` from `view-fleet`.
+- `static/style.css`: Added `.fleet-sub-nav-bar, .crew-sub-nav-bar` base styles matching the previous inline styling. Scoped `--subnav-bar-h: 39px` to the 5 panels that actually contain a sub-nav so layout height calcs get the right value automatically without JS.
+- `static/app-monolith.js`: `renderFleetUnified()` and `renderCrewUnified()` no longer build innerHTML, prepend DOM nodes, or measure offsetHeight. They just toggle the `.active` class on `[data-fleet-sub]` / `[data-crew-sub]` buttons. `setTab()` no longer needs to reset `--subnav-bar-h` — per-panel CSS scoping handles it.
+
+**Verification**:
+- `node -c static/app-monolith.js` passes.
+- `pytest tests/` — all 45 tests pass.
+- Flask app boots cleanly, `GET /` returns 200 and the rendered HTML contains exactly 3 `fleet-sub-nav-bar` (one per fleet sub-panel) and 2 `crew-sub-nav-bar` (one per crew sub-panel). No residual `id="fleet-sub-nav"`.
+- Switching Fleet sub-tabs (Boats ↔ Picture Boats ↔ Security Boats) and Crew sub-tabs (Labor ↔ Guards) now only mutates button classes, not DOM structure.
+
+**Branch**: fix/2026-04-15-fleet-crew-subnav-no-dom-move
+**Side effects**: None. The legacy `<div class="crew-sub-nav">` still inside `view-crew` is harmless (panel never activates). The old `crew-sub-nav-injected` element created by JS on previous loads is no longer produced.
+**Next priority**: P1 — Picture Boats and Security Boats lists are empty (investigate data model / seeding in `database.py` and `data_loader.py`).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:

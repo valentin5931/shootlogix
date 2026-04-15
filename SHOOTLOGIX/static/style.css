@@ -525,6 +525,27 @@ select.form-control { cursor: pointer; }
 }
 .dm-event-row .btn-del-ev:hover { color: var(--red); }
 
+/* ── Fleet / Crew unified sub-nav (static, no DOM move) ──────────────────── */
+.fleet-sub-nav-bar,
+.crew-sub-nav-bar {
+  display: flex;
+  gap: .3rem;
+  padding: .6rem 1rem .4rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Scope --subnav-bar-h to panels that actually contain a unified sub-nav.
+   This way layout divs inside these panels reserve the right height without
+   requiring JS to set the variable dynamically. */
+#view-boats,
+#view-picture-boats,
+#view-security-boats,
+#view-labour,
+#view-guards {
+  --subnav-bar-h: 39px;
+}
+
 /* ── BOATS view ─────────────────────────────────────────────────────────── */
 
 #boats-layout {
