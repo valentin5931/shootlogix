@@ -1,5 +1,26 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-15 — [P0] Fix Timeline API 500 (no such column: site / prep)
+
+**Problem**: `GET /api/productions/<id>/timeline` returned a 500 `sqlite3.OperationalError: no such column: site`. After fixing that, it also raised `no such column: prep`. Result: the Timeline tab could never load for any production.
+
+**Root cause**: `api_timeline()` in `app.py` was written against an outdated schema for the `locations` and `location_schedules` tables:
+1. It selected `locations.site`, but the column is named `location_type` (values: `tribal_camp` / `game` / `reward`). The `site` column lives on `productions`, not `locations`.
+2. It expected `location_schedules` to have boolean `prep`, `filming`, `wrap` columns. The actual schema stores one row per phase with a `status` column holding `'P' | 'F' | 'W'`.
+
+**Fix**:
+- `app.py:7893` — query `location_type` instead of `site`; use it as the timeline `subgroup`.
+- `app.py:7895-7916` — select `id, date, status` from `location_schedules`, group rows by date, and build the combined phase string (e.g. `'P/F'`) from the `status` values. Keeps the public JSON shape unchanged so the frontend renders unmodified.
+
+**Verification**:
+- `GET /api/productions/1/timeline` now returns `200` (was `500`). Response contains 67 resources (46 boats + 21 locations), 14 locations carry schedule entries, phase strings correctly reflect `P`/`F`/`W` statuses (sample: `ARENA (SABOGA)` → `F` on 2026-04-02).
+- Regression sweep of adjacent endpoints (`/boats`, `/locations`, `/documents`) all return `200`.
+- `python -c "import ast; ast.parse(open('app.py').read())"` passes.
+
+**Branch**: fix/2026-04-15-timeline-locations-site-column
+**Side effects**: None — JSON response shape unchanged.
+**Next priority**: Investigate why Picture Boats / Security Boats lists are empty (P1 in ISSUES.md); confirm whether these should be seeded from `boats` rows whose `category='picture'`/`'security'`.
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
