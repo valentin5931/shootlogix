@@ -1,5 +1,29 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-16 — [P0] Fix Timeline API crash — 3 wrong column references
+
+**Problem**: The Timeline tab crashed with a 500 error (`sqlite3.OperationalError`). The `/api/productions/<id>/timeline` endpoint was completely broken and returned no data.
+
+**Root cause**: The `api_timeline()` function in `app.py` referenced three columns that don't exist in the actual database schema:
+1. `locations.site` — column doesn't exist; the correct column is `location_type`
+2. `location_schedules.prep`, `location_schedules.filming`, `location_schedules.wrap` — these columns don't exist; the table uses a single `status` column (values like 'F' for filming)
+3. `guard_camp_assignments.worker_id` — column doesn't exist; the correct column is `helper_id`
+
+**Fix**:
+- `app.py` line 7893: Changed `SELECT id, name, site FROM locations` to `SELECT id, name, location_type FROM locations`
+- `app.py` line 7909: Changed `loc['site']` to `loc['location_type']`
+- `app.py` lines 7895-7905: Replaced `SELECT id, date, prep, filming, wrap` query and separate phase checks with `SELECT id, date, status` and single status-based phase mapping
+- `app.py` line 7883: Changed `WHERE worker_id=?` to `WHERE helper_id=?`
+
+**Verification**:
+- Timeline API returns 200 with 82 resources (47 boats, 14 vehicles, 21 locations), 32 shooting days
+- All other endpoints (dashboard, boats, locations, budget, etc.) still return 200 — no regressions
+- Location subgroups correctly show `location_type` values (e.g., "tribal_camp", "game", "reward")
+
+**Branch**: fix/2026-04-16-timeline-api-crash-no-site-column
+**Side effects**: None
+**Next priority**: Picture Boats and Security Boats empty lists (P1) — 0 entries despite 46 boats in main boats table
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
