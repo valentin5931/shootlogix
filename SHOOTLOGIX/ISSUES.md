@@ -35,6 +35,19 @@
 - **Files involved**: `database.py`
 - **Estimated effort**: Quick
 
+## [P1] /api/productions/<id>/labour returns 404
+- **Discovered**: 2026-04-16
+- **Symptoms**: `GET /api/productions/1/labour` → 404 with the standard
+  Flask "not found" payload, even though the Crew → Labour tab is expected to
+  render workers. `/api/productions/1/helpers` returns 200 (empty list).
+- **Likely cause**: There is no `/labour` route; the canonical endpoint is
+  `/helpers`. Either the front-end is calling the wrong URL or an alias route
+  was meant to exist (route renamed during a refactor without updating callers).
+- **Files involved**: `app.py` (search for `/helpers`), `static/app-monolith.js`
+  (search for `labour` fetches), `static/modules/labour.js`.
+- **Estimated effort**: Quick — either alias `/labour` → `/helpers` or
+  update the front-end to call `/helpers`.
+
 ## [P2] Module files in static/modules/ are dead code
 - **Discovered**: 2026-03-22
 - **Symptoms**: Files like `fleet.js`, `crew.js`, `today.js`, `documents.js`, etc. in `static/modules/` reference `window._SL` which doesn't exist. They are never loaded by `index.html`.
