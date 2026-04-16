@@ -1082,14 +1082,32 @@ const App = (() => {
       html += '<div style="margin-bottom:1rem;padding:1rem;background:var(--bg-2);border-radius:6px;color:var(--text-3)">No shooting day scheduled for this date</div>';
     }
 
+    // Card builder: show entity name as primary, function as subtitle.
+    // If entity is unassigned (no entity name), promote the function name to primary
+    // and mark the card with "(Unassigned)" so the card is never rendered blank.
+    const _todayCard = (borderColor, entityName, functionName, prefix) => {
+      const fn = (functionName || '').toString().trim();
+      const en = (entityName || '').toString().trim();
+      const subPrefix = prefix ? `${prefix} — ` : '';
+      let primary, secondary;
+      if (en) {
+        primary = esc(en);
+        secondary = `${subPrefix}${esc(fn)}`;
+      } else {
+        primary = fn ? esc(fn) : '<em style="color:var(--text-3)">Unassigned</em>';
+        secondary = `${subPrefix}<em>Unassigned</em>`;
+      }
+      return `<div style="padding:.5rem;border-left:3px solid ${borderColor};background:var(--bg-2);border-radius:4px"><strong>${primary}</strong><br><span style="color:var(--text-3);font-size:.8rem">${secondary}</span></div>`;
+    };
+
     // Fleet section
     const fleetTotal = (d.counts && d.counts.fleet_total) || 0;
     if (fleetTotal > 0) {
       html += `<h3 style="margin:.8rem 0 .3rem;color:#3B82F6">&#9973; Fleet (${fleetTotal})</h3>`;
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.5rem">';
-      for (const b of (d.boats || [])) html += `<div style="padding:.5rem;border-left:3px solid #3B82F6;background:var(--bg-2);border-radius:4px"><strong>${esc(b.boat_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">${esc(b.function_name || '')}</span></div>`;
-      for (const b of (d.picture_boats || [])) html += `<div style="padding:.5rem;border-left:3px solid #8B5CF6;background:var(--bg-2);border-radius:4px"><strong>${esc(b.boat_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">Picture — ${esc(b.function_name || '')}</span></div>`;
-      for (const b of (d.security_boats || [])) html += `<div style="padding:.5rem;border-left:3px solid #EF4444;background:var(--bg-2);border-radius:4px"><strong>${esc(b.boat_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">Security — ${esc(b.function_name || '')}</span></div>`;
+      for (const b of (d.boats || []))          html += _todayCard('#3B82F6', b.boat_name, b.function_name, '');
+      for (const b of (d.picture_boats || []))  html += _todayCard('#8B5CF6', b.boat_name, b.function_name, 'Picture');
+      for (const b of (d.security_boats || [])) html += _todayCard('#EF4444', b.boat_name, b.function_name, 'Security');
       html += '</div>';
     }
 
@@ -1097,7 +1115,7 @@ const App = (() => {
     if (d.transport && d.transport.length) {
       html += `<h3 style="margin:.8rem 0 .3rem;color:#22C55E">&#128663; Transport (${d.transport.length})</h3>`;
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.5rem">';
-      for (const v of d.transport) html += `<div style="padding:.5rem;border-left:3px solid #22C55E;background:var(--bg-2);border-radius:4px"><strong>${esc(v.vehicle_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">${esc(v.function_name || '')}</span></div>`;
+      for (const v of d.transport) html += _todayCard('#22C55E', v.vehicle_name, v.function_name, '');
       html += '</div>';
     }
 
@@ -1106,8 +1124,8 @@ const App = (() => {
     if (crewTotal > 0) {
       html += `<h3 style="margin:.8rem 0 .3rem;color:#F59E0B">&#128100; Crew (${crewTotal})</h3>`;
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.5rem">';
-      for (const h of (d.labour || [])) html += `<div style="padding:.5rem;border-left:3px solid #F59E0B;background:var(--bg-2);border-radius:4px"><strong>${esc(h.helper_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">${esc(h.function_name || '')}</span></div>`;
-      for (const g of (d.guards || [])) html += `<div style="padding:.5rem;border-left:3px solid #06B6D4;background:var(--bg-2);border-radius:4px"><strong>${esc(g.helper_name)}</strong><br><span style="color:var(--text-3);font-size:.8rem">Guard — ${esc(g.function_name || '')}</span></div>`;
+      for (const h of (d.labour || [])) html += _todayCard('#F59E0B', h.helper_name, h.function_name, '');
+      for (const g of (d.guards || [])) html += _todayCard('#06B6D4', g.helper_name, g.function_name, 'Guard');
       html += '</div>';
     }
 

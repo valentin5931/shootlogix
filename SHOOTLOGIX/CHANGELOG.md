@@ -1,5 +1,41 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-16 — [P1] Fix Today tab rendering blank cards when entity (helper/boat/vehicle) is unassigned
+
+**Problem**: On the Today tab, each card (boat, transport vehicle, labour helper, guard) rendered
+the entity name as a `<strong>` primary label and the function name as the subtitle. When an
+assignment exists but the entity name is null/empty (e.g. a helper_assignment with no
+`helper_id` and no `helper_name_override`), the card displayed an empty `<strong></strong>`
+above the function name. On the live KLAS7 data, this caused 65 of 66 labour cards on the
+Today tab to render with a blank bold header — looking broken to the user.
+
+**Root cause**: `renderToday()` in `static/app-monolith.js` passed `b.boat_name`,
+`v.vehicle_name`, `h.helper_name`, `g.helper_name` directly to `esc()` with no fallback.
+`esc(null)` returns `''`, so cards with missing entity names rendered as `<strong></strong>`.
+The helpers, picture_boats, security_boats, and guards tables are often empty on a fresh
+production while their assignments (linked only to a function) are seeded — this is an
+intentional data model decision, but the UI wasn't handling it.
+
+**Fix**: `static/app-monolith.js` `renderToday()`: introduced a `_todayCard(borderColor,
+entityName, functionName, prefix)` helper that promotes the function name to the primary
+label when the entity name is missing and shows `(Unassigned)` as the subtitle. All six
+card-rendering loops (boats, picture_boats, security_boats, transport, labour, guards)
+now go through this helper. Keeps the visual style identical for populated entities.
+
+**Verification**:
+- Loaded `/api/productions/1/today?date=2026-04-16` — 20 boats render with their names
+  (unchanged), 65/66 labour cards now show the function name prominently instead of
+  a blank header.
+- `node --check static/app-monolith.js` passes.
+- All 45 tests in `tests/` pass.
+- Simulated renderer with five scenarios (boat with name, helper no name, guard no name,
+  picture boat with name, both null) — all produce valid non-empty cards.
+
+**Branch**: fix/2026-04-16-today-empty-entity-names
+**Side effects**: None. Only changes visual fallback for already-empty fields.
+**Next priority**: Seed or allow manual creation of physical helpers/guards/picture-boat/
+security-boat records so the cards can show real names (tracked in ISSUES.md).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
