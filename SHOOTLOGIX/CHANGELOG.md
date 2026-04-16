@@ -1,5 +1,33 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-16 — [P0] Fix Timeline API crash — 4 SQL column errors + soft-delete leak
+
+**Problem**: The `/api/productions/<id>/timeline` endpoint crashed with a 500 error (`sqlite3.OperationalError: no such column: site`) whenever the Timeline tab was opened. This made the entire Timeline feature unusable.
+
+**Root cause**: The timeline endpoint had 4 SQL bugs:
+1. `locations` query referenced non-existent `site` column (correct column: `location_type`)
+2. `location_schedules` query referenced non-existent `prep`, `filming`, `wrap` columns (correct column: `status` with values P/F/W)
+3. `guard_camp_assignments` query used `worker_id` instead of the actual column name `helper_id`
+4. All 7 entity queries (boats, picture boats, security boats, vehicles, helpers, guards, locations) lacked `deleted_at IS NULL` filters, causing soft-deleted entities to appear in the timeline
+
+**Fix**:
+- `app.py` line ~7893: Changed `SELECT id, name, site` to `SELECT id, name, location_type` and updated subgroup reference
+- `app.py` line ~7896: Changed `SELECT id, date, prep, filming, wrap` to `SELECT id, date, status` and simplified phase logic to use the single `status` column
+- `app.py` line ~7883: Changed `WHERE worker_id=?` to `WHERE helper_id=?`
+- `app.py` lines ~7815-7893: Added `AND deleted_at IS NULL` to all 7 entity SELECT queries
+
+**Verification**:
+- Timeline endpoint returns 200 with correct data (81 resources, 32 shooting days, 121 functions)
+- Location subgroups display correctly (`tribal_camp`, `game`, `reward`)
+- Location schedule phases render correctly (`F`, `P`, `W`)
+- Soft-deleted entities excluded from timeline
+- All 45 existing tests pass
+- No regressions on other endpoints (boats, schedule, budget, dashboard, exports)
+
+**Branch**: fix/2026-04-16-timeline-api-crash
+**Side effects**: None
+**Next priority**: P1 — Picture Boats/Security Boats empty list issue; FNB items empty; form validation gaps
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
