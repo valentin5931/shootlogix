@@ -1,5 +1,27 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-16 — [P0] Fix Timeline (Gantt) endpoint: 500 → 200 (wrong column names)
+
+**Problem**: `GET /api/productions/<id>/timeline` returned HTTP 500, breaking the Timeline tab entirely. The browser saw an empty/error response and the Gantt view never rendered.
+
+**Root cause**: Two schema mismatches in `api_timeline()` (`app.py:7893`):
+1. `SELECT id, name, site FROM locations` — the `locations` table has no `site` column; the categorical field was renamed to `location_type` long ago. Query raised `sqlite3.OperationalError: no such column: site`.
+2. `SELECT id, date, prep, filming, wrap FROM location_schedules` — the table doesn't have boolean `prep`/`filming`/`wrap` columns. It stores one row per (location, date, phase) with a single `status` column whose value is `'P'`, `'F'`, or `'W'`. Even after fixing #1 the query failed with `no such column: prep`.
+
+**Fix** (`app.py:7892-7921`):
+- Switched `locations` query to `SELECT id, name, location_type` and added `AND deleted_at IS NULL` so soft-deleted locations don't pollute the timeline.
+- Replaced the per-row phase logic with a `by_date` dict that groups schedules on the same date and joins their statuses (e.g. a day with both prep and filming becomes `phases: "P/F"`). External response shape unchanged.
+- Used `loc['location_type']` for the `subgroup` field, consistent with how the rest of the codebase categorizes locations (`app.py:4092`, `4414`, `7251`).
+
+**Verification**:
+- `GET /api/productions/1/timeline` → HTTP 200, 40 628 bytes, 81 resources, 21 location resources with 31 grouped assignments (`tribal_camp`, `game`, `reward` subgroups all populated correctly).
+- All 14 other production-scoped endpoints in the diagnostic checklist still return 200 (no regressions).
+- `python -c "import app"` clean.
+
+**Branch**: fix/2026-04-16-timeline-locations-site-column
+**Side effects**: None. Soft-deleted locations are now excluded from the timeline (intended; matches behavior of other list endpoints).
+**Next priority**: P1 — empty Picture Boats / Security Boats / Transport / Helpers / Fuel / Guards lists (data seeding gap, see ISSUES.md).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
