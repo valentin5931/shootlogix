@@ -7890,26 +7890,34 @@ def api_timeline(prod_id):
             })
 
         # --- Locations ---
-        locations = conn.execute("SELECT id, name, site FROM locations WHERE production_id=?", (prod_id,)).fetchall()
+        locations = conn.execute(
+            "SELECT id, name, location_type FROM locations WHERE production_id=? AND deleted_at IS NULL",
+            (prod_id,)
+        ).fetchall()
         for loc in locations:
+            # location_schedules stores one row per (location, date, phase) with
+            # status in {'P','F','W'}. Group by date so all phases for a given
+            # day collapse to a single assignment with phases like "P/F".
             schedules = conn.execute(
-                "SELECT id, date, prep, filming, wrap FROM location_schedules WHERE location_id=?",
+                "SELECT id, date, status FROM location_schedules WHERE location_id=? ORDER BY date, id",
                 (loc['id'],)
             ).fetchall()
-            loc_assignments = []
+            by_date = {}
             for s in schedules:
-                phases = []
-                if s['prep']: phases.append('P')
-                if s['filming']: phases.append('F')
-                if s['wrap']: phases.append('W')
-                if phases:
-                    loc_assignments.append({
-                        'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
-                        'status': 'confirmed', 'phases': '/'.join(phases)
-                    })
+                if s['status'] not in ('P', 'F', 'W'):
+                    continue
+                slot = by_date.setdefault(s['date'], {'id': s['id'], 'phases': []})
+                slot['phases'].append(s['status'])
+            loc_assignments = [
+                {
+                    'id': info['id'], 'start_date': date, 'end_date': date,
+                    'status': 'confirmed', 'phases': '/'.join(info['phases'])
+                }
+                for date, info in by_date.items()
+            ]
             resources.append({
                 'id': f"loc-{loc['id']}", 'name': loc['name'], 'type': 'location', 'group': 'Locations',
-                'subgroup': loc['site'] or 'Location',
+                'subgroup': loc['location_type'] or 'Location',
                 'assignments': loc_assignments
             })
 
