@@ -7890,26 +7890,45 @@ def api_timeline(prod_id):
             })
 
         # --- Locations ---
-        locations = conn.execute("SELECT id, name, site FROM locations WHERE production_id=?", (prod_id,)).fetchall()
+        # Note: the locations table has no `site` column; `location_type`
+        # (game/camp/etc.) is the canonical grouping field used throughout
+        # the rest of the app, so we use it as the timeline subgroup.
+        # location_schedules stores one row per (location, date, phase) with
+        # status as a single-letter code ('P' prep / 'F' filming / 'W' wrap),
+        # so we aggregate phases per date.
+        locations = conn.execute(
+            "SELECT id, name, location_type FROM locations WHERE production_id=?",
+            (prod_id,)
+        ).fetchall()
         for loc in locations:
             schedules = conn.execute(
-                "SELECT id, date, prep, filming, wrap FROM location_schedules WHERE location_id=?",
+                "SELECT id, date, status FROM location_schedules WHERE location_id=? ORDER BY date, id",
                 (loc['id'],)
             ).fetchall()
-            loc_assignments = []
+            phases_by_date = {}
+            first_id_by_date = {}
             for s in schedules:
-                phases = []
-                if s['prep']: phases.append('P')
-                if s['filming']: phases.append('F')
-                if s['wrap']: phases.append('W')
-                if phases:
-                    loc_assignments.append({
-                        'id': s['id'], 'start_date': s['date'], 'end_date': s['date'],
-                        'status': 'confirmed', 'phases': '/'.join(phases)
-                    })
+                code = (s['status'] or '').strip().upper()
+                if code not in ('P', 'F', 'W'):
+                    continue
+                date = s['date']
+                bucket = phases_by_date.setdefault(date, [])
+                if code not in bucket:
+                    bucket.append(code)
+                first_id_by_date.setdefault(date, s['id'])
+            loc_assignments = [
+                {
+                    'id': first_id_by_date[date],
+                    'start_date': date,
+                    'end_date': date,
+                    'status': 'confirmed',
+                    'phases': '/'.join(phases),
+                }
+                for date, phases in sorted(phases_by_date.items())
+            ]
             resources.append({
                 'id': f"loc-{loc['id']}", 'name': loc['name'], 'type': 'location', 'group': 'Locations',
-                'subgroup': loc['site'] or 'Location',
+                'subgroup': loc['location_type'] or 'Location',
                 'assignments': loc_assignments
             })
 

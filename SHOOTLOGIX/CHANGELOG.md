@@ -1,5 +1,50 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-16 — [P0] Fix Timeline API 500 — wrong column names in locations join
+
+**Problem**: `GET /api/productions/<id>/timeline` always returned HTTP 500 with
+`sqlite3.OperationalError: no such column: site` (and once that was patched, a
+follow-on `no such column: prep`). The Timeline tab was effectively broken for
+every user — the request 500'd before any timeline data could render.
+
+**Root cause**: Two stale schema assumptions in `api_timeline()`
+(`app.py:7797`):
+1. The query selected `site` from `locations`, but the `locations` table has
+   no such column. The codebase uses `location_type` (`game`/`camp`/etc.)
+   everywhere else as the canonical grouping field (see `app.py:4063`,
+   `app.py:7251`).
+2. The query selected `prep, filming, wrap` from `location_schedules` as if
+   they were three boolean columns. The actual schema stores one row per
+   (location, date, phase) with a single `status` column holding `'P'`,
+   `'F'`, or `'W'`.
+
+**Fix** (`SHOOTLOGIX/app.py:7892-7929`):
+- Replace `SELECT id, name, site …` with `SELECT id, name, location_type …`,
+  and use `loc['location_type']` as the Timeline subgroup label.
+- Replace `SELECT id, date, prep, filming, wrap …` with
+  `SELECT id, date, status …` and aggregate phases per date by collecting
+  the distinct `status` codes for each date into the existing `phases`
+  string (e.g. `"P/F"`).
+
+**Verification**:
+- `curl /api/productions/1/timeline` → HTTP 200, 40 KB payload, 32 shooting
+  days, 81 resources (46 boats + 21 locations + 14 vehicles), 121 boat
+  functions. Sample location `ARENA (SABOGA)` now returns `subgroup=game`
+  with 4 dated phase assignments.
+- `python -m py_compile app.py` passes.
+- Full pytest suite: **45 passed**.
+- Re-ran the 17-endpoint diagnostic checklist — every endpoint returns 200
+  (no regressions on boats, locations, budget, documents, fnb, etc.).
+
+**Branch**: `fix/2026-04-16-timeline-500-no-such-column-site`
+**Side effects**: None. Locations with no scheduled phases produce an empty
+`assignments` array (same as before). Locations with multiple phases on the
+same date now correctly merge to e.g. `"P/F"` — previously this code path
+crashed before producing any output.
+**Next priority**: P1 — investigate why `picture_boats` and `security_boats`
+tables are empty (boats categorized as `picture` may live in the main
+`boats` table; see ISSUES.md).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
