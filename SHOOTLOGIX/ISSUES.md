@@ -1,11 +1,11 @@
 # ISSUES — ShootLogix Known Issues Log
 
-## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
-- **Discovered**: 2026-03-22
-- **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
-- **Likely cause**: The fleet/crew unified tabs switch the active view panel rather than cloning content, so event handlers work. However, the injected sub-nav element is moved between panels on each sub-tab switch.
-- **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
-- **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
+## [P1] Notification endpoints return 404
+- **Discovered**: 2026-04-16
+- **Symptoms**: `GET /api/productions/<id>/notifications` and `GET /api/notifications/unread-count` both 404. The notifications bell/feed in the topbar relies on these — any call that triggers a poll produces a silent `fetch` failure.
+- **Likely cause**: Routes were never implemented (or were removed) but the frontend still references them.
+- **Files involved**: `app.py` (routes), `static/app-monolith.js` (callers)
+- **Estimated effort**: Medium — either implement the endpoints against the existing `notifications` table or remove/guard the frontend callers
 
 ## [P1] Picture Boats and Security Boats lists are empty
 - **Discovered**: 2026-03-22
