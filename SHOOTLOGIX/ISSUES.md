@@ -7,19 +7,20 @@
 - **Files involved**: `static/app-monolith.js` (renderFleetUnified, renderCrewUnified)
 - **Estimated effort**: Quick fix — may need to keep sub-nav in a fixed position outside view panels
 
-## [P1] Picture Boats and Security Boats lists are empty
-- **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/picture-boats` returns `[]`, `/api/productions/1/security-boats` returns `[]`. All boats are in the main boats table with category "picture".
-- **Likely cause**: The data loader may not be seeding picture_boats and security_boats tables separately, or the boats were all created in the main `boats` table regardless of intended category.
-- **Files involved**: `database.py`, `data_loader.py`, `app.py` (picture-boats/security-boats routes)
-- **Estimated effort**: Medium — need to investigate data model and potentially migrate boats to correct tables
+## [P1] Physical helpers/guards/picture-boat/security-boat entities are not seeded, only assignments are
+- **Discovered**: 2026-04-16 (supersedes earlier 2026-03-22 entries below for picture-boats, security-boats, helpers, guards)
+- **Symptoms**: `/api/productions/1/helpers`, `/api/productions/1/picture-boats`, `/api/productions/1/security-boats`, `/api/productions/1/guards` all return `[]`. However `/helper-assignments` returns 73 items, `/boat-functions?context=picture` returns functions, etc. So the functional/scheduling layer has data but the physical-entity layer does not. Before today's fix, this caused 65/66 labour cards on the Today tab to render with a blank bold header.
+- **Likely cause**: The seed/bootstrap code (`database.py`, `data_loader.py`) populates `boat_functions` and `*_assignments` rows but never creates rows in the `helpers`, `picture_boats`, `security_boats`, `guards` tables. Assignments end up with `helper_id=None`, `helper_name_override=''`.
+- **Workaround shipped**: Today tab now promotes the function name to the primary label when the entity name is missing (see CHANGELOG 2026-04-16). Other tabs (Fleet/Crew per-entity detail views) still show empty entity lists.
+- **Files involved**: `database.py`, `data_loader.py`, `static/app-monolith.js` (tab renderers)
+- **Estimated effort**: Medium — need to seed realistic entity rows OR wire a "generate helpers from assignments" maintenance action.
 
-## [P1] Transport and Helpers lists are empty
-- **Discovered**: 2026-03-22
-- **Symptoms**: `/api/productions/1/transport` returns `[]`, `/api/productions/1/helpers` returns `[]` (but helper-assignments has data). No transport vehicles or helpers have been created.
-- **Likely cause**: Data was never seeded for these modules, or they need to be created manually by users.
-- **Files involved**: `database.py`, `data_loader.py`
-- **Estimated effort**: Quick — may just need user to add data through the UI
+## [P1] Transport: `/api/productions/<id>/transport` returns empty despite 14 vehicles
+- **Discovered**: 2026-04-16
+- **Symptoms**: The legacy `/transport` endpoint returns `[]` because `get_transport_schedules()` in `database.py` joins `transport_schedules` + `vehicles` tables — but current data lives in `transport_vehicles` + `transport_assignments`. The frontend has already migrated to `/transport-vehicles` + `/transport-assignments` (correctly returns 14 vehicles / 0 assignments), so the broken endpoint is mostly dead weight today.
+- **Likely cause**: Leftover from an earlier data model.
+- **Files involved**: `app.py` (line 1892), `database.py` (`get_transport_schedules`)
+- **Estimated effort**: Quick — either fix the query to use the new tables or remove the dead endpoint.
 
 ## [P1] Fuel entries and machinery are empty
 - **Discovered**: 2026-03-22
