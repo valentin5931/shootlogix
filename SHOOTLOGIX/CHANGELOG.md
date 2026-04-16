@@ -1,5 +1,38 @@
 # CHANGELOG — ShootLogix
 
+## 2026-04-16 — [P0] Fix Timeline endpoint 500 crash (bad column names)
+
+**Problem**: `GET /api/productions/<id>/timeline` crashed with 500
+(`sqlite3.OperationalError: no such column: site`). The Timeline tab was
+completely unusable — the Gantt never rendered any data.
+
+**Root cause**: `api_timeline()` in `app.py` (line ~7893) queried columns that
+don't exist in the current schema:
+- `locations.site` — the `locations` table has `location_type` (TEXT DEFAULT
+  'game'), not `site`.
+- `location_schedules.prep`, `.filming`, `.wrap` — this table stores one row
+  per (location, date, phase) with a single `status` column in {'P','F','W'}.
+  The code assumed three boolean columns.
+
+**Fix** (`app.py` lines ~7893-7920):
+- Query `location_type` instead of `site`; also filter `deleted_at IS NULL`
+  so soft-deleted locations don't leak into the Gantt.
+- Query `id, date, status` from `location_schedules`, then group rows by date
+  and aggregate `status` values (deduped) into a canonical P/F/W phase string.
+- Added `tests/test_timeline.py` with two regression tests: (1) endpoint
+  returns 200 with the expected payload shape, (2) every location assignment
+  exposes a valid P/F/W phase string.
+
+**Verification**:
+- `pytest tests/` → 47 passed (was 45; added 2 timeline regression tests).
+- Manual: `GET /api/productions/1/timeline` → 200, 81 resources, 21 location
+  resources, 14 with phase assignments (e.g. ARENA (SABOGA) → 4 F days).
+
+**Branch**: fix/2026-04-16-timeline-location-schema
+**Side effects**: None. Soft-deleted locations are now correctly hidden from
+the Gantt (previously all locations raised a 500 before any data was returned).
+**Next priority**: P2 — remove dead code in `static/modules/` (noted in ISSUES.md).
+
 ## 2026-03-23 — [P0/P1] Fix fleet/crew sub-nav layout overflow + missing CSS variables
 
 **Problem**:
