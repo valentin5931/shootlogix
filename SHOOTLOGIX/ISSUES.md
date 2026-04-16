@@ -1,5 +1,14 @@
 # ISSUES — ShootLogix Known Issues Log
 
+## ~~[P0] Timeline endpoint crashes with 500 on locations query~~ — FIXED 2026-04-16
+- **Discovered**: 2026-04-16
+- **Symptoms**: `GET /api/productions/1/timeline` returned 500; Timeline tab never loaded.
+- **Root cause**: Queried `locations.site` (doesn't exist; column is `location_type`) and
+  `location_schedules.prep/filming/wrap` (don't exist; table uses a single `status` column with
+  rows per phase P/F/W).
+- **Fix**: PR fix/2026-04-16-timeline-location-schema — rewrote both queries, added regression
+  tests in `tests/test_timeline.py`.
+
 ## [P0] Fleet/Crew sub-tab event handlers may not fire on cloned DOM
 - **Discovered**: 2026-03-22
 - **Symptoms**: When clicking Fleet > Picture Boats or Fleet > Security Boats, the sub-tab content is rendered in the original view panel. Interactive elements (drag-drop, inline edits) work because they use the original DOM, but the fleet sub-nav is injected via `prepend()` which may cause layout shifts.
